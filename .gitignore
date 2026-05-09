@@ -1,0 +1,21 @@
+# Dependencies
+node_modules/
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+
+# Local agent/runtime state
+.aithy/
+.axbot/
+.claude/
+
+# Framework/build output
+.tanstack/
+dist/
+coverage/
+
+# Logs and OS/editor noise
+*.log
+.DS_Store

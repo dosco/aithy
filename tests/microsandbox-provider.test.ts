@@ -1,0 +1,236 @@
+import { mkdtemp, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { describe, expect, test } from "bun:test";
+import { MicrosandboxProvider } from "../src/sandbox/microsandbox-provider";
+
+describe("MicrosandboxProvider", () => {
+  test("bind-mounts the host workspace and replays session mounts", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "aithy-msb-"));
+    const workspacePath = path.join(root, "workspace");
+
+    const fakeFactory = createFakeSandboxFactory();
+    const provider = new MicrosandboxProvider({
+      image: "python:3.11-slim",
+      cpus: 1,
+      memoryMb: 512,
+      network: "none",
+      sandboxFactory: fakeFactory as any
+    });
+
+    const session = await provider.createSession("conversation", workspacePath, [
+      { hostPath: "/host/data", mountName: "data-aabbccdd" },
+      { hostPath: "/host/scratch", mountName: "scratch-eeff0011" }
+    ]);
+    const created = fakeFactory.created[0];
+    expect(created?.image).toBe("python:3.11-slim");
+    expect(created?.network).toBe("none");
+    expect(created?.libkrunfwPath).toContain("libkrunfw");
+    expect(created?.volumes).toEqual([
+      { guest: "/workspace", host: workspacePath, readonly: false },
+      { guest: "/cache", host: path.join(workspacePath, "_cache"), readonly: false },
+      { guest: "/workspace/mounts/data-aabbccdd", host: "/host/data", readonly: false },
+      { guest: "/workspace/mounts/scratch-eeff0011", host: "/host/scratch", readonly: false }
+    ]);
+    expect(created?.envs).toMatchObject({
+      npm_config_cache: "/cache/npm",
+      PIP_CACHE_DIR: "/cache/pip",
+      XDG_CACHE_HOME: "/cache/xdg",
+      HF_HOME: "/cache/hf",
+    });
+
+    const bash = await provider.bash(session.id, { command: "echo hi", cwd: "/workspace" });
+    expect(bash.exitCode).toBe(0);
+    expect(bash.stdout).toContain("bash -lc");
+
+    await provider.write(session.id, "/workspace/out/result.txt", "hello world");
+    expect(await provider.read(session.id, "/workspace/out/result.txt")).toBe("hello world");
+
+    const inboxStat = await stat(path.join(workspacePath, "inbox"));
+    expect(inboxStat.isDirectory()).toBe(true);
+
+    await provider.recreate(session.id, workspacePath, [
+      { hostPath: "/host/data", mountName: "data-aabbccdd" }
+    ]);
+    expect(fakeFactory.created).toHaveLength(2);
+    expect(fakeFactory.created[1]?.volumes).toEqual([
+      { guest: "/workspace", host: workspacePath, readonly: false },
+      { guest: "/cache", host: path.join(workspacePath, "_cache"), readonly: false },
+      { guest: "/workspace/mounts/data-aabbccdd", host: "/host/data", readonly: false }
+    ]);
+
+    await provider.destroy(session.id);
+    expect(fakeFactory.instances[1]?.stopped).toBe(true);
+  });
+
+  test("park stops the VM but resume reuses persisted state without rebuilding", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "aithy-msb-park-"));
+    const workspacePath = path.join(root, "workspace");
+    const fakeFactory = createFakeSandboxFactory();
+    const provider = new MicrosandboxProvider({
+      image: "python:3.11-slim",
+      cpus: 1,
+      memoryMb: 512,
+      network: "none",
+      sandboxFactory: fakeFactory as any
+    });
+
+    const session = await provider.createSession("park-conv", workspacePath, []);
+    const initialBuilds = fakeFactory.created.length;
+
+    await provider.park(session.id);
+    expect(fakeFactory.instances[0]?.stopped).toBe(true);
+
+    // bash on a parked session should implicitly resume (no rebuild) and execute.
+    const bash = await provider.bash(session.id, { command: "echo back", cwd: "/workspace" });
+    expect(bash.exitCode).toBe(0);
+    expect(fakeFactory.created.length).toBe(initialBuilds);
+    expect(fakeFactory.instances[0]?.resumes).toBe(1);
+
+    // /cache directory should exist on the host so npm/pip caches persist across park/resume.
+    const cacheStat = await stat(path.join(workspacePath, "_cache"));
+    expect(cacheStat.isDirectory()).toBe(true);
+
+    // destroy on a live session removes the cache directory.
+    await provider.destroy(session.id);
+    await expect(stat(path.join(workspacePath, "_cache"))).rejects.toThrow();
+  });
+
+  test("destroy on a parked session removes the persisted DB record", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "aithy-msb-destroyparked-"));
+    const workspacePath = path.join(root, "workspace");
+    const fakeFactory = createFakeSandboxFactory();
+    const provider = new MicrosandboxProvider({
+      image: "python:3.11-slim",
+      cpus: 1,
+      memoryMb: 512,
+      network: "none",
+      sandboxFactory: fakeFactory as any
+    });
+
+    const session = await provider.createSession("destroy-parked", workspacePath, []);
+    await provider.park(session.id);
+    await provider.destroy(session.id);
+
+    expect(fakeFactory.removed).toContain(session.id);
+  });
+});
+
+interface FakeConfig {
+  name: string;
+  image?: string;
+  cpus?: number;
+  memory?: number;
+  network?: string;
+  libkrunfwPath?: string;
+  volumes: Array<{ guest: string; host: string; readonly: boolean }>;
+  envs: Record<string, string>;
+}
+
+function createFakeSandboxFactory() {
+  const created: FakeConfig[] = [];
+  const instances: FakeSandbox[] = [];
+  const byName = new Map<string, FakeSandbox>();
+  const removed: string[] = [];
+  const factory: any = {
+    created,
+    instances,
+    byName,
+    removed,
+    async get(name: string) {
+      const stored = byName.get(name);
+      if (!stored) throw new Error(`no persisted sandbox named ${name}`);
+      return {
+        async start() { return stored.start(); },
+        async startDetached() { return stored.start(); },
+      };
+    },
+    async remove(name: string) {
+      removed.push(name);
+      byName.delete(name);
+    },
+    builder(name: string) {
+      const config: FakeConfig = { name, volumes: [], envs: {} };
+      const builder: any = {
+        image(value: string) { config.image = value; return builder; },
+        cpus(value: number) { config.cpus = value; return builder; },
+        memory(value: number) { config.memory = value; return builder; },
+        replace() { return builder; },
+        libkrunfwPath(value: string) { config.libkrunfwPath = value; return builder; },
+        env(key: string, value: string) { config.envs[key] = value; return builder; },
+        envs(vars: Record<string, string>) { Object.assign(config.envs, vars); return builder; },
+        network(configure: (b: any) => any) {
+          configure({
+            policy(policy: unknown) {
+              config.network = (policy as { defaultEgress?: string }).defaultEgress === "deny" ? "none" : "custom";
+              return this;
+            }
+          });
+          return builder;
+        },
+        volume(guest: string, configure: (b: any) => any) {
+          let host = "";
+          let readonly = false;
+          configure({
+            bind(value: string) {
+              host = value;
+              return {
+                readonly() { readonly = true; return this; },
+              };
+            }
+          });
+          config.volumes.push({ guest, host, readonly });
+          return builder;
+        },
+        async create() {
+          created.push(config);
+          const sandbox = new FakeSandbox(name);
+          instances.push(sandbox);
+          byName.set(name, sandbox);
+          return sandbox;
+        }
+      };
+      return builder;
+    }
+  };
+  return factory;
+}
+
+class FakeSandbox {
+  readonly files = new Map<string, string>();
+  stopped = false;
+  resumes = 0;
+
+  constructor(public readonly name: string = "fake") {}
+
+  async exec(cmd: string, args: string[] = []) {
+    return {
+      code: 0,
+      stdout: () => `${cmd} ${args.join(" ")}`,
+      stderr: () => ""
+    };
+  }
+
+  fs() {
+    return {
+      readToString: async (filePath: string) => this.files.get(filePath) ?? "",
+      write: async (filePath: string, content: string) => {
+        this.files.set(filePath, content);
+      }
+    };
+  }
+
+  async stopAndWait() {
+    this.stopped = true;
+    return { code: 0 };
+  }
+
+  async removePersisted() {}
+
+  // Used by the fake `Sandbox.get(name).startDetached()` path.
+  start(): FakeSandbox {
+    this.stopped = false;
+    this.resumes += 1;
+    return this;
+  }
+}

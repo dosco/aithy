@@ -1,0 +1,400 @@
+@import "tailwindcss";
+@source "../";
+
+:root {
+  color-scheme: light;
+  --background: 248 247 244;
+  --foreground: 16 16 16;
+  --muted: 235 234 230;
+  --muted-foreground: 103 101 96;
+  --border: 218 216 209;
+  --panel: 255 255 252;
+  --bubble-user: 244 243 240;
+  --bubble-bot: 226 222 250;
+  --accent: 10 36 255;
+  --accent-foreground: 255 255 255;
+  --danger: 210 40 36;
+  --dot: 198 196 188;
+  --ascii: 154 88 255;
+}
+
+.dark {
+  color-scheme: dark;
+  --background: 14 15 15;
+  --foreground: 239 238 232;
+  --muted: 35 36 36;
+  --muted-foreground: 168 166 158;
+  --border: 58 59 58;
+  --panel: 20 21 21;
+  --bubble-user: 22 23 23;
+  --bubble-bot: 42 38 70;
+  --accent: 179 134 255;
+  --accent-foreground: 20 16 26;
+  --danger: 255 104 94;
+  --dot: 63 64 63;
+  --ascii: 183 119 255;
+}
+
+[data-theme="graphite"] {
+  --background: 238 238 235;
+  --foreground: 17 18 18;
+  --muted: 224 224 220;
+  --panel: 250 250 247;
+  --accent: 34 34 34;
+  --ascii: 86 86 86;
+  --bubble-user: 244 244 240;
+  --bubble-bot: 224 224 220;
+}
+
+.dark[data-theme="graphite"] {
+  --background: 10 11 12;
+  --foreground: 232 232 226;
+  --panel: 17 18 20;
+  --accent: 232 232 226;
+  --accent-foreground: 15 15 15;
+  --ascii: 190 190 184;
+  --bubble-user: 14 14 16;
+  --bubble-bot: 30 30 34;
+}
+
+[data-theme="violet-ascii"] {
+  --background: 250 247 255;
+  --foreground: 19 13 30;
+  --muted: 239 231 255;
+  --panel: 255 252 255;
+  --accent: 150 85 255;
+  --ascii: 164 92 255;
+  --dot: 215 200 245;
+  --bubble-user: 246 242 255;
+  --bubble-bot: 224 210 250;
+}
+
+.dark[data-theme="violet-ascii"] {
+  --background: 15 10 24;
+  --foreground: 247 240 255;
+  --muted: 38 27 56;
+  --panel: 21 15 33;
+  --accent: 196 141 255;
+  --accent-foreground: 20 12 32;
+  --ascii: 190 117 255;
+  --bubble-user: 22 16 36;
+  --bubble-bot: 56 34 88;
+}
+
+[data-theme="terminal-glow"] {
+  --background: 245 247 239;
+  --foreground: 11 24 16;
+  --muted: 229 235 220;
+  --panel: 252 255 248;
+  --accent: 33 130 84;
+  --ascii: 33 160 104;
+  --bubble-user: 240 244 230;
+  --bubble-bot: 212 232 184;
+}
+
+.dark[data-theme="terminal-glow"] {
+  --background: 5 13 9;
+  --foreground: 220 255 230;
+  --muted: 19 36 25;
+  --panel: 8 20 13;
+  --accent: 90 255 165;
+  --accent-foreground: 5 13 9;
+  --ascii: 80 255 160;
+  --dot: 34 70 47;
+  --bubble-user: 10 22 14;
+  --bubble-bot: 22 44 28;
+}
+
+[data-theme="sunrise"] {
+  --background: 255 245 236;
+  --foreground: 58 26 10;
+  --muted: 255 225 200;
+  --panel: 255 250 243;
+  --accent: 255 122 61;
+  --ascii: 255 147 88;
+  --dot: 248 211 180;
+  --bubble-user: 255 240 226;
+  --bubble-bot: 255 214 184;
+}
+
+.dark[data-theme="sunrise"] {
+  --background: 28 14 6;
+  --foreground: 255 232 210;
+  --muted: 56 26 12;
+  --panel: 36 18 8;
+  --accent: 255 158 96;
+  --accent-foreground: 28 14 6;
+  --ascii: 255 174 120;
+  --dot: 70 36 18;
+  --bubble-user: 36 18 8;
+  --bubble-bot: 80 40 18;
+}
+
+[data-theme="ocean"] {
+  --background: 238 247 251;
+  --foreground: 10 34 48;
+  --muted: 210 233 243;
+  --panel: 247 251 253;
+  --accent: 10 122 168;
+  --ascii: 26 155 208;
+  --dot: 196 220 232;
+  --bubble-user: 232 244 250;
+  --bubble-bot: 196 226 244;
+}
+
+.dark[data-theme="ocean"] {
+  --background: 6 18 26;
+  --foreground: 220 240 250;
+  --muted: 18 38 52;
+  --panel: 8 22 32;
+  --accent: 80 192 232;
+  --accent-foreground: 6 18 26;
+  --ascii: 110 210 245;
+  --dot: 28 56 72;
+  --bubble-user: 8 22 32;
+  --bubble-bot: 22 48 66;
+}
+
+[data-theme="matcha"] {
+  --background: 243 247 236;
+  --foreground: 26 40 16;
+  --muted: 221 233 200;
+  --panel: 250 253 243;
+  --accent: 90 138 50;
+  --ascii: 122 172 79;
+  --dot: 208 222 184;
+  --bubble-user: 238 244 224;
+  --bubble-bot: 210 228 184;
+}
+
+.dark[data-theme="matcha"] {
+  --background: 10 20 8;
+  --foreground: 224 240 208;
+  --muted: 26 44 18;
+  --panel: 14 26 12;
+  --accent: 156 210 96;
+  --accent-foreground: 10 20 8;
+  --ascii: 174 220 110;
+  --dot: 36 60 28;
+  --bubble-user: 14 26 10;
+  --bubble-bot: 32 56 22;
+}
+
+[data-theme="rose-quartz"] {
+  --background: 254 240 243;
+  --foreground: 58 18 36;
+  --muted: 252 217 225;
+  --panel: 255 247 249;
+  --accent: 216 82 122;
+  --ascii: 232 122 160;
+  --dot: 244 200 214;
+  --bubble-user: 252 234 240;
+  --bubble-bot: 246 200 216;
+}
+
+.dark[data-theme="rose-quartz"] {
+  --background: 26 10 18;
+  --foreground: 252 222 232;
+  --muted: 50 22 36;
+  --panel: 32 14 22;
+  --accent: 244 138 178;
+  --accent-foreground: 26 10 18;
+  --ascii: 248 158 192;
+  --dot: 64 30 46;
+  --bubble-user: 32 14 24;
+  --bubble-bot: 60 28 44;
+}
+
+[data-theme="noir"] {
+  --background: 0 0 0;
+  --foreground: 255 255 255;
+  --muted: 26 26 26;
+  --muted-foreground: 168 168 168;
+  --border: 48 48 48;
+  --panel: 12 12 12;
+  --bubble-user: 10 10 10;
+  --bubble-bot: 36 36 36;
+  --accent: 255 255 255;
+  --accent-foreground: 0 0 0;
+  --ascii: 204 204 204;
+  --dot: 40 40 40;
+}
+
+.dark[data-theme="noir"] {
+  --background: 0 0 0;
+  --foreground: 255 255 255;
+  --muted: 26 26 26;
+  --muted-foreground: 168 168 168;
+  --border: 48 48 48;
+  --panel: 12 12 12;
+  --bubble-user: 10 10 10;
+  --bubble-bot: 36 36 36;
+  --accent: 255 255 255;
+  --accent-foreground: 0 0 0;
+  --ascii: 204 204 204;
+  --dot: 40 40 40;
+}
+
+[data-theme="amber"] {
+  --background: 253 246 227;
+  --foreground: 58 42 8;
+  --muted: 243 227 184;
+  --panel: 255 250 236;
+  --accent: 201 138 26;
+  --ascii: 216 160 44;
+  --dot: 236 218 168;
+  --bubble-user: 250 240 214;
+  --bubble-bot: 232 210 156;
+}
+
+.dark[data-theme="amber"] {
+  --background: 26 18 4;
+  --foreground: 252 232 184;
+  --muted: 52 38 12;
+  --panel: 34 24 8;
+  --accent: 240 188 80;
+  --accent-foreground: 26 18 4;
+  --ascii: 244 200 112;
+  --dot: 64 48 20;
+  --bubble-user: 32 22 6;
+  --bubble-bot: 64 46 16;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background:
+    radial-gradient(rgb(var(--dot) / 0.6) 1px, transparent 1px),
+    rgb(var(--background));
+  background-size: 12px 12px;
+  color: rgb(var(--foreground));
+  font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  letter-spacing: 0;
+}
+
+html[data-layout="work"] body {
+  background:
+    linear-gradient(rgb(var(--border) / 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--border) / 0.08) 1px, transparent 1px),
+    rgb(var(--background));
+  background-size: 48px 48px;
+}
+
+.app-shell-main,
+.app-page-frame,
+.app-chat-page {
+  max-width: 64rem;
+}
+
+html[data-layout="work"] .app-shell-main,
+html[data-layout="work"] .app-page-frame,
+html[data-layout="work"] .app-chat-page {
+  max-width: 80rem;
+}
+
+html[data-layout="work"] .app-page-frame,
+html[data-layout="work"] .app-chat-page {
+  padding-top: 5.5rem;
+}
+
+html[data-layout="work"] .app-page-frame > div:first-child,
+html[data-layout="work"] .app-chat-header {
+  border-bottom: 1px solid rgb(var(--border) / 0.7);
+  margin-bottom: 1.5rem;
+  padding-bottom: 1.25rem;
+}
+
+html[data-layout="work"] .app-page-frame h1 {
+  font-size: clamp(2rem, 4vw, 3.25rem);
+  max-width: 48rem;
+}
+
+html[data-layout="work"] .app-chat-timeline {
+  margin-top: 1.5rem;
+}
+
+html[data-layout="work"] .app-chat-message-list {
+  gap: 0.75rem;
+}
+
+html[data-layout="work"] .app-chat-bubble-frame,
+html[data-layout="work"] .app-chat-bubble {
+  max-width: min(54rem, 78%);
+}
+
+html[data-layout="work"] .app-chat-bubble {
+  box-shadow: none;
+  font-size: 0.95rem;
+  line-height: 1.55;
+}
+
+html[data-layout="work"] .app-chat-bubble-user {
+  background: rgb(var(--accent));
+  border-radius: 8px;
+  color: rgb(var(--accent-foreground));
+  padding: 0.75rem 1rem;
+}
+
+html[data-layout="work"] .app-chat-bubble-assistant {
+  background: transparent;
+  border-radius: 0;
+  padding: 0;
+}
+
+html[data-layout="work"] .app-chat-composer-wrap {
+  margin-top: 2rem;
+}
+
+html[data-layout="work"] .app-chat-composer {
+  border-radius: 10px;
+  box-shadow: none;
+  padding: 0.35rem 0.5rem 0.35rem 0.875rem;
+}
+
+html[data-layout="work"] .app-sessions-actions {
+  margin-bottom: 1rem;
+}
+
+html[data-layout="work"] .app-session-empty {
+  border-radius: 8px;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  letter-spacing: 0;
+}
+
+pre,
+code {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+@keyframes mind-breath {
+  0%, 100% { opacity: 0.45; }
+  50% { opacity: 0.95; }
+}
+
+.mind-breath {
+  animation: mind-breath 2.6s ease-in-out infinite;
+}
+
+@keyframes mind-dot-pulse {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.6); opacity: 0.55; }
+}
+
+.mind-dot-pulse {
+  animation: mind-dot-pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mind-breath { animation: none; opacity: 0.75; }
+  .mind-dot-pulse { animation: none; }
+}

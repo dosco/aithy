@@ -1,0 +1,12 @@
+node_modules/
+.aithy/
+.axbot/
+.claude/
+.tanstack/
+dist/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+.DS_Store
