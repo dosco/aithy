@@ -1,4 +1,4 @@
-import { agent, AxJSRuntime, f } from "@ax-llm/ax";
+import { ax, f } from "@ax-llm/ax";
 import { createAiService } from "../agent/ai-service";
 import type { AppConfig } from "../config/env";
 import { buildMemoryAgentTools } from "./agent-tools";
@@ -51,15 +51,13 @@ export interface ConsolidatorAgent {
 export function createConsolidatorAgent(deps: ConsolidatorAgentDeps): ConsolidatorAgent {
   const llm = createAiService(deps.config);
   const tools = buildMemoryAgentTools({ memory: deps.memory });
-  const agentConfig: any = {
-    agentIdentity: { name: "MemoryConsolidator", description: "Cleans up the memory store." },
-    actorOptions: { description },
+  const program = ax(signature, {
+    description,
     functions: tools,
-    runtime: new AxJSRuntime(),
-    functionDiscovery: false,
+    functionCallMode: "auto",
+    maxSteps: 8,
     debug: false,
-  };
-  const program = agent(signature, agentConfig);
+  } as any);
   return {
     program,
     async forward(input) {

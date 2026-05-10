@@ -1,4 +1,4 @@
-import { agent, AxJSRuntime, f } from "@ax-llm/ax";
+import { ax, f } from "@ax-llm/ax";
 import { createAiService } from "../agent/ai-service";
 import type { AppConfig } from "../config/env";
 import { buildMemoryAgentTools } from "./agent-tools";
@@ -14,6 +14,7 @@ const memoryAgentSignature = f()
   .input("trigger", f.string("'auto' for end-of-turn or 'explicit' when the user asked the main agent to remember something."))
   .input("hint", f.string("If trigger='explicit', the user's request verbatim. Empty otherwise.").optional())
   .input("thread", f.string("The full conversation thread, oldest first, formatted as '[ts] role: content'."))
+  .input("memories", f.string("Recent existing durable memories, formatted one per line. Empty if none.").optional())
   .output("summary", f.string("One short line describing what you did, or 'nothing to remember' if you wrote nothing."))
   .build();
 
@@ -35,7 +36,7 @@ DO NOT WRITE:
 - anything derivable from current code or git history.
 - transient state for the current conversation.
 - speculation; only confirmed facts.
-- duplicates — \`inputs.memories\` already contains relevant prior memories. Call \`recall([...])\` with extra topic queries when in doubt before writing.
+- duplicates — \`memories\` contains recent existing durable memories. If the fact is already present, do not write it again.
 
 Prefer \`memory.supersede\` over delete+write when correcting an existing fact.
 
@@ -51,6 +52,7 @@ export interface MemoryAgent {
     trigger: "auto" | "explicit";
     hint?: string;
     thread: string;
+    memories?: string;
   }): Promise<{ summary: string }>;
   /** Underlying ax program — exposed for usage capture. */
   readonly program: unknown;
@@ -61,33 +63,25 @@ export function createMemoryAgent(deps: MemoryAgentDeps): MemoryAgent {
   // tool calls (writes a confident summary without ever invoking memory.write).
   const llm = createAiService(deps.config);
   const tools = buildMemoryAgentTools({ memory: deps.memory });
-  const agentConfig: any = {
-    agentIdentity: { name: "MemoryTriage", description: "Decides what to persist." },
-    actorOptions: { description },
+  const program = ax(memoryAgentSignature, {
+    description,
     functions: tools,
-    runtime: new AxJSRuntime(),
-    functionDiscovery: false,
-    onMemoriesSearch: async (
-      searches: readonly string[],
-      alreadyLoaded: readonly { id: string; content: string }[],
-    ) => {
-      const hits = await deps.memory.search([...searches], {
-        limit: 5,
-        excludeIds: alreadyLoaded.map((m) => m.id),
-      });
-      return hits.map((m) => ({
-        id: m.id,
-        content: formatMemoryForRecall(m),
-      }));
-    },
+    functionCallMode: "auto",
+    maxSteps: 8,
     debug: false,
-  };
-  const program = agent(memoryAgentSignature, agentConfig);
+  } as any);
   return {
     program,
     async forward(input) {
-      const result = await program.forward(llm, input);
+      const result = await program.forward(llm, {
+        ...input,
+        memories: input.memories ?? formatRecentMemories(deps.memory),
+      });
       return { summary: String(result.summary ?? "nothing to remember") };
     },
   };
+}
+
+function formatRecentMemories(memory: SqliteMemoryStore): string {
+  return memory.recent(50).map(formatMemoryForRecall).join("\n");
 }

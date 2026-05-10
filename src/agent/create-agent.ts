@@ -122,7 +122,7 @@ export function createAithyAgent({
       },
     ],
     contextOptions: { description: contextDescription },
-    actorOptions: { description: actorDescriptionForSandbox(config) },
+    executorOptions: { description: actorDescriptionForSandbox(config) },
     responderOptions,
     recursionOptions,
     functions: tools,

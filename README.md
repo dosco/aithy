@@ -102,7 +102,7 @@ The agent never gets host shell access. Host files are exposed only through expl
 
 Each retrieval layer degrades independently. Vector failures fall back to FTS-only for that query. Reranker failures fall back to RRF plus importance and recency. `search()` keeps the same hook contract for the agent regardless of retrieval mode.
 
-Session transcripts are durable conversation memory. They are stored in `session_items` and used to rebuild the agent context each turn. The Microsandbox VM is a process resource and is recreated after restart; the bot's `/workspace` files persist on disk between runs.
+Session transcripts are durable conversation memory. They are stored in `messages` and used to rebuild the agent context each turn. The Microsandbox VM is a process resource and is recreated after restart; the bot's `/workspace` files persist on disk between runs.
 
 ## Development checks
 
@@ -110,6 +110,8 @@ Session transcripts are durable conversation memory. They are stored in `session
 bun run check                                # line budget + typecheck + tests
 bun test                                     # full suite
 bun run check:lines                         # 500-line file limit
+bun run memory <session id>                  # re-run memory triage for a stored session
+bun run memory <session id> --hybrid         # re-run triage and embed new memories immediately
 bun run scripts/memory-smoke.ts --hybrid     # hybrid retrieval smoke test
 bun run scripts/embed-backfill.ts            # re-embed memories after a model change
 ```

@@ -41,6 +41,7 @@ describe("createAithyAgent", () => {
 
     expect(typeof created.program.forward).toBe("function");
     expect(typeof created.program.getState).toBe("function");
+    expect(executorDescription(created.program)).toContain("Bun Shell");
     expect(responderDescription(created.program)).toContain("Speak with warm precision.");
   });
 
@@ -94,4 +95,8 @@ function configFixture(sandboxProvider: "microsandbox" | "disabled") {
 
 function responderDescription(program: any): string {
   return program.responder.program.getSignature().getDescription();
+}
+
+function executorDescription(program: any): string {
+  return program.executor._buildActorInstruction();
 }
