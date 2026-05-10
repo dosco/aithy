@@ -19,9 +19,7 @@ export type AxAgentMemoryResult = { id: string; content: string };
 export type AxAgentMemoriesSearchFn = (
   searches: readonly string[],
   alreadyLoaded: readonly AxAgentMemoryResult[],
-) =>
-  | readonly AxAgentMemoryResult[]
-  | Promise<readonly AxAgentMemoryResult[]>;
+) => readonly AxAgentMemoryResult[] | Promise<readonly AxAgentMemoryResult[]>;
 
 export interface CreatedAgent {
   program: any;
@@ -133,8 +131,10 @@ export function createAithyAgent({
     functionDiscovery: false,
     onSkillsSearch,
     onMemoriesSearch,
-    onFunctionCall: onFunctionCall ? (call: unknown) => onFunctionCall(call as AxFunctionCallTrace) : undefined,
-    debug: true,
+    onFunctionCall: onFunctionCall
+      ? (call: unknown) => onFunctionCall(call as AxFunctionCallTrace)
+      : undefined,
+    // debug: true,
   };
   const program = agent(aithySignature, agentConfig);
 

@@ -43,6 +43,7 @@
     },
   },
   "trustedDependencies": [
+    "sharp",
     "protobufjs",
   ],
   "packages": {
