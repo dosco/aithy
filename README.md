@@ -104,26 +104,6 @@ Each retrieval layer degrades independently. Vector failures fall back to FTS-on
 
 Session transcripts are durable conversation memory. They are stored in `session_items` and used to rebuild the agent context each turn. The Microsandbox VM is a process resource and is recreated after restart; the bot's `/workspace` files persist on disk between runs.
 
-## Configuration
-
-Almost everything is editable from the **Settings** page. The env vars below are headless overrides for scripted setups; you do not need them for normal use.
-
-```bash
-AITHY_BOT_ID=default                # namespaces state directory; run multiple bots side by side
-AITHY_STATE_DIR=~/.config/aithy     # state root
-AITHY_AI_PROVIDER=openai            # primary model provider
-AITHY_AI_APIKEY=...                 # otherwise stored via Bun.secrets when set in the UI
-AITHY_AI_MODEL=gpt-4.1
-AITHY_SANDBOX_PROVIDER=microsandbox # microsandbox | disabled
-AITHY_SANDBOX_IMAGE=python:3.11-slim
-AITHY_SANDBOX_NETWORK=none          # none | public | allow-all
-AITHY_PARALLEL_AGENTS=1             # worker pool for the user-chat queue
-```
-
-API keys entered through the Settings page are stored with `Bun.secrets` under the `com.aithy.local` service. SQLite stores only non-secret settings and a flag indicating whether a key is configured.
-
-The default bot soul is seeded from `config/config.json` when no stored profile exists. Editable soul fields are persisted in SQLite `metadata` rows using `bot.*` keys such as `bot.name`, `bot.description`, and `bot.coreNature`.
-
 ## Development checks
 
 ```bash
