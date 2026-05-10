@@ -2,9 +2,8 @@ import { homedir } from "node:os";
 import path from "node:path";
 import {
   DEFAULT_IDLE_PARK_MS,
-  DEFAULT_MAX_LIVE_SANDBOXES,
+  DEFAULT_PARALLEL_AGENTS,
   DEFAULT_SESSION_TTL_MS,
-  WORKSPACE_ROOT_NAME,
 } from "./limits";
 
 export type SandboxProviderKind = "microsandbox" | "disabled";
@@ -27,7 +26,7 @@ export interface AppConfig {
   sandboxNetwork: "none" | "public" | "allow-all";
   sessionTtlMs: number;
   idleParkMs: number;
-  maxLiveSandboxes: number;
+  parallelAgents: number;
   workspaceRoot: string;
   botId: string;
   stateDir: string;
@@ -74,12 +73,12 @@ export function loadConfig(
       env.AITHY_IDLE_PARK_MS,
       DEFAULT_IDLE_PARK_MS,
     ),
-    maxLiveSandboxes: parsePositiveInt(
-      env.AITHY_MAX_LIVE_SANDBOXES,
-      DEFAULT_MAX_LIVE_SANDBOXES,
+    parallelAgents: parsePositiveInt(
+      env.AITHY_PARALLEL_AGENTS,
+      DEFAULT_PARALLEL_AGENTS,
     ),
     workspaceRoot:
-      env.AITHY_WORKSPACE_ROOT ?? `${process.cwd()}/${WORKSPACE_ROOT_NAME}`,
+      env.AITHY_WORKSPACE_ROOT ?? path.join(stateDir, botId, "workspace"),
     botId,
     stateDir,
     stateDbPath: path.join(stateDir, botId, "state.db"),

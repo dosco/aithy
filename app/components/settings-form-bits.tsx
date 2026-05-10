@@ -1,7 +1,8 @@
 import type { ReactNode, TextareaHTMLAttributes } from "react";
-import { Check, KeyRound } from "lucide-react";
+import { Check, KeyRound, X } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 import type { SecretStatusDto } from "@/server/dto";
 import { AX_AI_PROVIDERS, modelsForProvider } from "../../src/agent/ai-providers";
 
@@ -55,14 +56,19 @@ export function ApiKeyInput({
   secret,
   disabled,
   fallback,
+  onClear,
+  clearLabel = "Clear API key",
 }: {
   value: string;
   onChange: (value: string) => void;
   secret: SecretStatusDto | null;
   disabled?: boolean;
   fallback: string;
+  onClear?: () => void;
+  clearLabel?: string;
 }) {
   const placeholder = secret?.configured ? `Stored in ${secret.source}` : fallback;
+  const canClear = Boolean(onClear) && (secret?.configured || value.length > 0);
   return (
     <div
       className={cn(
@@ -87,6 +93,20 @@ export function ApiKeyInput({
           <Check className="h-3 w-3" /> {secret.source}
         </span>
       ) : null}
+      {onClear ? (
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          aria-label={clearLabel}
+          title={clearLabel}
+          disabled={disabled || !canClear}
+          onClick={onClear}
+          className="h-11 w-11 shrink-0 rounded-none border-0 border-l border-[rgb(var(--border))] text-[rgb(var(--muted-foreground))]"
+        >
+          <X className="h-4 w-4" />
+        </Button>
+      ) : null}
     </div>
   );
 }
@@ -97,32 +117,83 @@ export function ModelCombobox({
   onChange,
   disabled,
   placeholder,
+  onClear,
+  clearLabel = "Clear model",
 }: {
   provider: string;
   value: string;
   onChange: (value: string) => void;
   disabled?: boolean;
   placeholder?: string;
+  onClear?: () => void;
+  clearLabel?: string;
 }) {
-  const listId = `model-options-${provider || "none"}`;
   const models = provider ? modelsForProvider(provider) : [];
+  const options = value && !models.includes(value) ? [value, ...models] : models;
+  const canClear = Boolean(onClear) && value.trim().length > 0;
+  if (models.length > 0) {
+    return (
+      <div
+        className={cn(
+          "flex items-stretch overflow-hidden rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] transition focus-within:border-[rgb(var(--foreground))]",
+          disabled && "opacity-50",
+        )}
+      >
+        <select
+          value={value}
+          disabled={disabled}
+          onChange={(event) => onChange(event.target.value)}
+          className={cn(selectClass, "h-11 rounded-none border-0 bg-transparent")}
+        >
+          <option value="" disabled>{placeholder ?? "Select model"}</option>
+          {options.map((model) => <option key={model} value={model}>{model}</option>)}
+        </select>
+        {onClear ? <ClearButton label={clearLabel} disabled={disabled || !canClear} onClear={onClear} /> : null}
+      </div>
+    );
+  }
   return (
-    <>
+    <div
+      className={cn(
+        "flex items-stretch overflow-hidden rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] transition focus-within:border-[rgb(var(--foreground))]",
+        disabled && "opacity-50",
+      )}
+    >
       <input
-        className={fieldClass}
+        className="h-11 w-full bg-transparent px-3.5 text-sm outline-none placeholder:text-[rgb(var(--muted-foreground))] disabled:cursor-not-allowed"
         value={value}
-        list={models.length > 0 ? listId : undefined}
         disabled={disabled}
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         autoComplete="off"
       />
-      {models.length > 0 ? (
-        <datalist id={listId}>
-          {models.map((model) => <option key={model} value={model} />)}
-        </datalist>
-      ) : null}
-    </>
+      {onClear ? <ClearButton label={clearLabel} disabled={disabled || !canClear} onClear={onClear} /> : null}
+    </div>
+  );
+}
+
+function ClearButton({
+  label,
+  disabled,
+  onClear,
+}: {
+  label: string;
+  disabled?: boolean;
+  onClear: () => void;
+}) {
+  return (
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon"
+      aria-label={label}
+      title={label}
+      disabled={disabled}
+      onClick={onClear}
+      className="h-11 w-11 shrink-0 rounded-none border-0 border-l border-[rgb(var(--border))] text-[rgb(var(--muted-foreground))]"
+    >
+      <X className="h-4 w-4" />
+    </Button>
   );
 }
 

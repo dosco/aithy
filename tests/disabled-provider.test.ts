@@ -71,18 +71,20 @@ describe("DisabledSandboxProvider", () => {
     ).rejects.toThrow("Disabled sandbox path must stay under /workspace");
   });
 
-  test("ignores mounts when creating or recreating sessions", async () => {
-    const { provider, session, workspace } = await makeSession([
-      { hostPath: "/tmp/secret", mountName: "secret-1234" },
+  test("translates /mounts/<name> bash cwds to the bound host path", async () => {
+    const mountHost = await mkdtemp(path.join(tmpdir(), "aithy-disabled-mount-"));
+    await Bun.write(path.join(mountHost, "marker.txt"), "from-mount");
+    const { provider, session } = await makeSession([
+      { hostPath: mountHost, mountName: "secret-1234" },
     ]);
 
-    await provider.recreate(session.id, workspace, [
-      { hostPath: "/tmp/other", mountName: "other-1234" },
-    ]);
-    const result = await provider.bash(session.id, { command: "ls -A mounts" });
+    const result = await provider.bash(session.id, {
+      command: "cat marker.txt",
+      cwd: "/mounts/secret-1234",
+    });
 
     expect(result.exitCode).toBe(0);
-    expect(result.stdout).toBe("");
+    expect(result.stdout).toBe("from-mount");
   });
 });
 

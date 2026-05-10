@@ -4,9 +4,9 @@ import {
   BarChart3,
   BookOpen,
   Brain,
-  Command,
   Eye,
   EyeOff,
+  Menu,
   MessageCircle,
   MessagesSquare,
   Palette,
@@ -197,7 +197,7 @@ function TopChrome() {
                   transition={transition}
                   className="flex h-11 w-11 items-center justify-center rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--panel)/0.9)] text-[rgb(var(--muted-foreground))] shadow-lg shadow-black/5 backdrop-blur-xl transition-colors hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
                 >
-                  <Command className="h-[18px] w-[18px]" strokeWidth={1.75} />
+                  <Menu className="h-[18px] w-[18px]" strokeWidth={1.75} />
                 </motion.button>
               )}
             </AnimatePresence>

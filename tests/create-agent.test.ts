@@ -15,7 +15,7 @@ describe("createAithyAgent", () => {
         sandboxNetwork: "none",
         sessionTtlMs: 1000,
         idleParkMs: 60_000,
-        maxLiveSandboxes: 8,
+        parallelAgents: 1,
         workspaceRoot: "/tmp/aithy-create-agent-test",
         botId: "default",
         stateDir: "/tmp/aithy-state",
@@ -48,10 +48,12 @@ describe("createAithyAgent", () => {
     const description = actorDescriptionForSandbox(configFixture("disabled"));
 
     expect(description).toContain("Bun Shell");
+    expect(description).toContain("bot-shared");
     expect(description).not.toContain("microVM");
     expect(description).not.toContain("/cache");
     expect(description).not.toContain("Mounting policy");
     expect(description).not.toContain("mount");
+    expect(description).not.toContain("per-session");
   });
 
   test("uses the microVM actor prompt for microsandbox mode", () => {
@@ -59,6 +61,12 @@ describe("createAithyAgent", () => {
 
     expect(description).toContain("Linux microVM");
     expect(description).toContain("Mounting policy");
+    // New topology: top-level /mounts/<name> + bot-shared /workspace, no /cache
+    // mount, no "per-session" framing.
+    expect(description).toContain("/mounts/");
+    expect(description).toContain("bot-shared");
+    expect(description).not.toContain("/cache");
+    expect(description).not.toContain("per-session");
   });
 });
 
@@ -73,7 +81,7 @@ function configFixture(sandboxProvider: "microsandbox" | "disabled") {
     sandboxNetwork: "none" as const,
     sessionTtlMs: 1000,
     idleParkMs: 60_000,
-    maxLiveSandboxes: 8,
+    parallelAgents: 1,
     workspaceRoot: "/tmp/aithy-create-agent-test",
     botId: "default",
     stateDir: "/tmp/aithy-state",

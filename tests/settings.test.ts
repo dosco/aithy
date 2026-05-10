@@ -6,6 +6,7 @@ import { loadConfig } from "../src/config/env";
 import { isLoopbackRequest } from "../src/settings/localhost";
 import {
   apiKeySecretName,
+  normalizePostedSecret,
   readProviderApiKey,
   writeProviderApiKey,
   deleteProviderApiKey,
@@ -59,6 +60,53 @@ describe("web settings", () => {
     expect(runtimeSandboxChanged(base, next)).toBe(true);
   });
 
+  test("clear model settings override env fallback", () => {
+    const base = loadConfig({
+      AITHY_AI_MODEL: "gpt-test",
+      OPENAI_API_KEY: "env-key",
+    });
+    const next = applyRuntimeSettings(base, {
+      aiProvider: "openai",
+      aiModel: null,
+    });
+
+    expect(next.aiModel).toBeUndefined();
+  });
+
+  test("clear api key settings override env fallback", () => {
+    const base = loadConfig({
+      AITHY_AI_MODEL: "gpt-test",
+      OPENAI_API_KEY: "env-key",
+    });
+    const next = applyRuntimeSettings(base, {
+      aiApiKey: null,
+    }, null);
+
+    expect(next.aiApiKey).toBeUndefined();
+  });
+
+  test("new api key patch clears persisted clear-key override", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "aithy-settings-"));
+    const dbPath = path.join(root, "state.db");
+    const store = new SqliteSettingsStore(dbPath);
+    store.save({ runtime: { aiApiKey: null } });
+
+    const saved = store.save({
+      runtime: {
+        aiProvider: "openai",
+        aiModel: "gpt-test",
+        aiApiKey: undefined,
+      },
+    });
+    const base = loadConfig({ AITHY_AI_MODEL: "gpt-test" });
+    const next = applyRuntimeSettings(base, saved.runtime, "sk-test");
+
+    expect(next.aiApiKey).toBe("sk-test");
+    expect(
+      new SqliteSettingsStore(dbPath).load().runtime.aiApiKey,
+    ).toBeUndefined();
+  });
+
   test("normalizes legacy mock sandbox settings to disabled", () => {
     const base = loadConfig({});
     const next = applyRuntimeSettings(base, {
@@ -71,16 +119,33 @@ describe("web settings", () => {
 
   test("uses Bun.secrets compatible service and name fields", async () => {
     const fake = new MemorySecretStore();
-    await writeProviderApiKey("openai", "sk-test", fake);
+    await writeProviderApiKey("openai", "sk-test", "alpha", fake);
 
-    expect(await readProviderApiKey("openai", fake)).toBe("sk-test");
+    expect(await readProviderApiKey("openai", "alpha", fake)).toBe("sk-test");
     expect(fake.lastSet).toEqual({
-      service: "com.aithy.local",
+      service: "aithy.alpha",
       name: apiKeySecretName("openai"),
       value: "sk-test",
     });
-    expect(await deleteProviderApiKey("openai", fake)).toBe(true);
-    expect(await readProviderApiKey("openai", fake)).toBeUndefined();
+    expect(await deleteProviderApiKey("openai", "alpha", fake)).toBe(true);
+    expect(await readProviderApiKey("openai", "alpha", fake)).toBeUndefined();
+  });
+
+  test("reads legacy shared secrets after bot namespace migration", async () => {
+    const fake = new MemorySecretStore();
+    await fake.set({
+      service: "com.aithy.local",
+      name: apiKeySecretName("openai"),
+      value: "sk-legacy",
+    });
+
+    expect(await readProviderApiKey("openai", "alpha", fake)).toBe("sk-legacy");
+  });
+
+  test("normalizes posted secrets by trimming whitespace and wrapping quotes", () => {
+    expect(normalizePostedSecret("  'sk-test'  ")).toBe("sk-test");
+    expect(normalizePostedSecret('  "  sk-test  "  ')).toBe("sk-test");
+    expect(normalizePostedSecret("sk-test")).toBe("sk-test");
   });
 
   test("allows only localhost web mutations", () => {

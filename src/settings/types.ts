@@ -26,7 +26,8 @@ export interface UiPreferences {
 
 export interface RuntimeSettings {
   aiProvider?: string;
-  aiModel?: string;
+  aiApiKey?: string | null;
+  aiModel?: string | null;
   fastAiProvider?: string;
   fastAiModel?: string;
   sandboxProvider?: SandboxProviderKind;
@@ -35,6 +36,7 @@ export interface RuntimeSettings {
   sandboxMemoryMb?: number;
   sandboxNetwork?: AppConfig["sandboxNetwork"];
   sessionTtlMs?: number;
+  parallelAgents?: number;
   traceEnabled?: boolean;
   globalMounts?: GlobalMount[];
 }
@@ -59,4 +61,3 @@ export const defaultUiPreferences: UiPreferences = {
 };
 
 export const metadataSettingsKey = "web.settings";
-export const aithySecretService = "com.aithy.local";

@@ -1,4 +1,4 @@
-import { mkdir, readFile, writeFile, rm } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   DEFAULT_BASH_TIMEOUT_MS,
@@ -19,6 +19,7 @@ import type {
 
 interface DisabledSandboxEntry {
   hostWorkspacePath: string;
+  mounts: SessionMount[];
   state: "live" | "parked";
 }
 
@@ -40,23 +41,23 @@ export class DisabledSandboxProvider implements SandboxProvider {
   readonly sessions = new Map<string, DisabledSandboxEntry>();
 
   async createSession(
-    conversationId: string,
+    botId: string,
     hostWorkspacePath: string,
-    _mounts: SessionMount[],
+    mounts: SessionMount[],
   ): Promise<SandboxSession> {
-    const id = disabledSessionIdFor(conversationId);
+    const id = disabledSessionIdFor(botId);
     await ensureHostWorkspace(hostWorkspacePath);
-    this.sessions.set(id, { hostWorkspacePath, state: "live" });
+    this.sessions.set(id, { hostWorkspacePath, mounts: [...mounts], state: "live" });
     return { id, name: id };
   }
 
   async recreate(
     sessionId: string,
     hostWorkspacePath: string,
-    _mounts: SessionMount[],
+    mounts: SessionMount[],
   ): Promise<SandboxSession> {
     await ensureHostWorkspace(hostWorkspacePath);
-    this.sessions.set(sessionId, { hostWorkspacePath, state: "live" });
+    this.sessions.set(sessionId, { hostWorkspacePath, mounts: [...mounts], state: "live" });
     return { id: sessionId, name: sessionId };
   }
 
@@ -64,7 +65,7 @@ export class DisabledSandboxProvider implements SandboxProvider {
     await this.resume(sessionId);
     const entry = this.getEntry(sessionId);
     const timeoutMs = Math.min(request.timeoutMs ?? DEFAULT_BASH_TIMEOUT_MS, MAX_BASH_TIMEOUT_MS);
-    const cwd = toHostWorkspacePath(entry.hostWorkspacePath, request.cwd ?? "/workspace");
+    const cwd = toHostPath(entry, request.cwd ?? "/workspace");
     const result = await runBunShell({
       command: request.command,
       cwd,
@@ -81,17 +82,19 @@ export class DisabledSandboxProvider implements SandboxProvider {
 
   async read(sessionId: string, sandboxPath: string, maxBytes = MAX_SANDBOX_INLINE_BYTES): Promise<string> {
     await this.resume(sessionId);
-    const hostPath = this.hostPath(sessionId, sandboxPath);
+    const entry = this.getEntry(sessionId);
+    const hostPath = toHostPath(entry, sandboxPath);
     const content = await readFile(hostPath, "utf8");
     return content.length > maxBytes ? content.slice(0, maxBytes) : content;
   }
 
   async write(sessionId: string, sandboxPath: string, content: string): Promise<SandboxFile> {
     await this.resume(sessionId);
-    const hostPath = this.hostPath(sessionId, sandboxPath);
+    const entry = this.getEntry(sessionId);
+    const hostPath = toHostPath(entry, sandboxPath);
     await mkdir(path.dirname(hostPath), { recursive: true });
     await writeFile(hostPath, content, "utf8");
-    return { path: toSandboxPath(hostPath, this.getEntry(sessionId).hostWorkspacePath), sizeBytes: Buffer.byteLength(content) };
+    return { path: toSandboxPath(entry, hostPath), sizeBytes: Buffer.byteLength(content) };
   }
 
   async edit(sessionId: string, sandboxPath: string, search: string, replace: string): Promise<SandboxFile> {
@@ -115,14 +118,7 @@ export class DisabledSandboxProvider implements SandboxProvider {
   }
 
   async destroy(sessionId: string): Promise<void> {
-    const entry = this.sessions.get(sessionId);
     this.sessions.delete(sessionId);
-    if (!entry) return;
-    await rm(path.join(entry.hostWorkspacePath, "_cache"), { recursive: true, force: true }).catch(() => undefined);
-  }
-
-  private hostPath(sessionId: string, sandboxPath: string): string {
-    return toHostWorkspacePath(this.getEntry(sessionId).hostWorkspacePath, sandboxPath);
   }
 
   private getEntry(sessionId: string): DisabledSandboxEntry {
@@ -132,31 +128,36 @@ export class DisabledSandboxProvider implements SandboxProvider {
   }
 }
 
-export function disabledSessionIdFor(conversationId: string): string {
-  return `disabled-${conversationId.replace(/[^a-zA-Z0-9-]/g, "-").slice(0, 40)}`;
+export function disabledSessionIdFor(botId: string): string {
+  return `disabled-${botId.replace(/[^a-zA-Z0-9-]/g, "-").slice(0, 40)}`;
 }
 
-function toHostWorkspacePath(hostWorkspacePath: string, sandboxPath: string): string {
-  if (sandboxPath === "/workspace") return hostWorkspacePath;
+function toHostPath(entry: DisabledSandboxEntry, sandboxPath: string): string {
+  if (sandboxPath === "/workspace") return entry.hostWorkspacePath;
   if (sandboxPath.startsWith("/workspace/")) {
-    return safeJoin(hostWorkspacePath, sandboxPath.slice("/workspace/".length));
+    return safeJoin(entry.hostWorkspacePath, sandboxPath.slice("/workspace/".length));
+  }
+  if (sandboxPath === "/mounts" || sandboxPath.startsWith("/mounts/")) {
+    const rest = sandboxPath === "/mounts" ? "" : sandboxPath.slice("/mounts/".length);
+    const [name, ...tail] = rest.split("/");
+    if (!name) throw new Error("Disabled sandbox /mounts path missing mount name");
+    const mount = entry.mounts.find((m) => m.mountName === name);
+    if (!mount) throw new Error(`Disabled sandbox mount not found: ${name}`);
+    return tail.length === 0 ? mount.hostPath : safeJoin(mount.hostPath, tail.join("/"));
   }
   if (path.isAbsolute(sandboxPath)) {
-    throw new Error("Disabled sandbox path must stay under /workspace");
+    throw new Error("Disabled sandbox path must stay under /workspace or /mounts");
   }
-  return safeJoin(hostWorkspacePath, sandboxPath);
+  return safeJoin(entry.hostWorkspacePath, sandboxPath);
 }
 
-function toSandboxPath(hostPath: string, hostWorkspacePath: string): string {
-  const relativePath = path.relative(hostWorkspacePath, hostPath);
+function toSandboxPath(entry: DisabledSandboxEntry, hostPath: string): string {
+  const relativePath = path.relative(entry.hostWorkspacePath, hostPath);
   return `/workspace/${ensureRelativePath(relativePath)}`;
 }
 
 async function ensureHostWorkspace(hostWorkspacePath: string): Promise<void> {
-  await mkdir(path.join(hostWorkspacePath, "inbox"), { recursive: true });
-  await mkdir(path.join(hostWorkspacePath, "out"), { recursive: true });
-  await mkdir(path.join(hostWorkspacePath, "mounts"), { recursive: true });
-  await mkdir(path.join(hostWorkspacePath, "_cache"), { recursive: true });
+  await mkdir(hostWorkspacePath, { recursive: true });
 }
 
 async function runBunShell(input: {

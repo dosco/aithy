@@ -35,4 +35,30 @@ describe("web live events", () => {
       message: { role: "user", content: "live turn" },
     });
   });
+
+  test("converts sandbox startup lifecycle events to activity labels", () => {
+    const hub = new LiveEventHub();
+    const received: unknown[] = [];
+    const unsubscribe = hub.subscribe((event) => received.push(event));
+
+    hub.publishBotEvent({ type: "sandbox.starting", conversationId: "conversation" });
+    hub.publishBotEvent({
+      type: "sandbox.resuming",
+      conversationId: "conversation",
+      sessionId: "sandbox-1",
+    });
+    hub.publishBotEvent({
+      type: "sandbox.mountsRefreshing",
+      conversationId: "conversation",
+      sessionId: "sandbox-1",
+    });
+    unsubscribe();
+
+    expect(received).toHaveLength(3);
+    expect(received).toEqual([
+      expect.objectContaining({ type: "activity", label: "starting sandbox..." }),
+      expect.objectContaining({ type: "activity", label: "resuming sandbox..." }),
+      expect.objectContaining({ type: "activity", label: "refreshing sandbox mounts..." }),
+    ]);
+  });
 });

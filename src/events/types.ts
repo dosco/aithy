@@ -14,10 +14,13 @@ export type BotEvent =
     }
   | { type: "agent.completed"; conversationId: string; agentResponse: string }
   | { type: "agent.clarification"; conversationId: string; question: string }
+  | { type: "sandbox.starting"; conversationId: string }
+  | { type: "sandbox.resuming"; conversationId: string; sessionId: string }
   | { type: "sandbox.created"; conversationId: string; sessionId: string }
   | { type: "sandbox.exec"; conversationId: string; command: string }
   | { type: "sandbox.destroyed"; conversationId: string; sessionId: string }
   | { type: "sandbox.mountsRefreshPending"; conversationId: string }
+  | { type: "sandbox.mountsRefreshing"; conversationId: string; sessionId: string }
   | { type: "sandbox.mountsRefreshed"; conversationId: string; sessionId: string }
   | {
       type: "error";

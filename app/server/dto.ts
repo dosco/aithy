@@ -1,5 +1,6 @@
 import { loadConfig } from "../../src/config/env";
 import type { AppConfig } from "../../src/config/env";
+import { isAiConfigured } from "../../src/config/validate";
 import type { BotSessionSummary } from "../../src/session/types";
 import {
   serializableMessage,
@@ -34,6 +35,7 @@ export interface ConfigDto {
   sandboxMemoryMb: number;
   sandboxNetwork: string;
   sessionTtlMs: number;
+  parallelAgents: number;
   traceEnabled: boolean;
   botId: string;
   stateDbPath: string;
@@ -158,6 +160,7 @@ export interface WebStateDto {
   memoryRuns: MemoryRunDto[];
   notifications: NotificationDto[];
   unreadNotifications: number;
+  aiConfigured: boolean;
 }
 
 export function sessionDto(session: BotSessionSummary): SessionSummaryDto {
@@ -176,6 +179,7 @@ export function configDto(config: AppConfig): ConfigDto {
     sandboxMemoryMb: config.sandboxMemoryMb,
     sandboxNetwork: config.sandboxNetwork,
     sessionTtlMs: config.sessionTtlMs,
+    parallelAgents: config.parallelAgents,
     traceEnabled: config.traceEnabled,
     botId: config.botId,
     stateDbPath: config.stateDbPath,
@@ -241,6 +245,7 @@ export async function webStateDto(
   runtime: AithyRuntime,
   activeSessionId: string | null,
 ): Promise<WebStateDto> {
+  const settings = runtime.settings.load();
   const skillsPage = runtime.skills.page({ cursor: null, limit: SKILLS_PAGE_SIZE });
   const memoriesPage = runtime.memory.page({ cursor: null, limit: MEMORIES_PAGE_SIZE });
   const mostRecent = runtime.memory.mostRecent();
@@ -250,11 +255,13 @@ export async function webStateDto(
     messages: messagePage.items.map((item) => item.message),
     messagePage,
     sessions: runtime.sessions.listSessions().map(sessionDto),
-    settings: runtime.settings.load(),
+    settings,
     config: configDto(runtime.config),
-    secret: await secretStatus(runtime.config),
+    secret: await secretStatus(runtime.config, settings),
     fastSecret: runtime.config.fastAiProvider
-      ? await secretStatusForProvider(runtime.config.fastAiProvider)
+      ? runtime.config.fastAiProvider === runtime.config.aiProvider
+        ? await secretStatus(runtime.config, settings)
+        : await secretStatusForProvider(runtime.config.fastAiProvider, runtime.config.botId)
       : null,
     soul: soulDto(runtime.soul),
     skills: skillsPage.items.map(skillDto),
@@ -268,6 +275,7 @@ export async function webStateDto(
     memoryRuns: runtime.memoryRuns.recent(50).map(memoryRunDto),
     notifications: runtime.notifications.recent(50).map(notificationDto),
     unreadNotifications: runtime.notifications.unreadCount(),
+    aiConfigured: isAiConfigured(runtime.config),
   };
 }
 
@@ -310,12 +318,19 @@ function emptyMessagePageDto(): MessagePageDto {
   };
 }
 
-export async function secretStatus(config: AppConfig): Promise<SecretStatusDto> {
-  return secretStatusForProvider(config.aiProvider);
+export async function secretStatus(
+  config: AppConfig,
+  settings?: StoredSettings,
+): Promise<SecretStatusDto> {
+  if (settings?.runtime.aiApiKey === null) {
+    return { provider: config.aiProvider, configured: false, source: null };
+  }
+  return secretStatusForProvider(config.aiProvider, config.botId);
 }
 
 export async function secretStatusForProvider(
   provider: string,
+  botId: string,
 ): Promise<SecretStatusDto> {
   const envConfig = loadConfig({
     ...process.env,
@@ -324,7 +339,7 @@ export async function secretStatusForProvider(
   if (envConfig.aiApiKey) {
     return { provider, configured: true, source: "env" };
   }
-  const secret = await readProviderApiKey(provider);
+  const secret = await readProviderApiKey(provider, botId);
   return {
     provider,
     configured: Boolean(secret),

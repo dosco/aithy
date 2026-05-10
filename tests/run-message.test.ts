@@ -10,15 +10,13 @@ import { runMessage } from "../src/agent/run-message";
 import { MockSandboxProvider } from "../src/sandbox/mock-provider";
 import { SessionManager } from "../src/session/session-manager";
 import { SqliteSessionStateStore } from "../src/session/sqlite-state-store";
-import { WorkspaceStore } from "../src/workspace/store";
 
 describe("runMessage", () => {
   test("passes prior user and assistant turns to the next agent call", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "aithy-run-"));
     const events = new EventBus();
     const sandbox = new MockSandboxProvider();
-    const workspaces = new WorkspaceStore(root);
-    const sessions = new SessionManager({ sandbox, workspaces, events, ttlMs: 1000 });
+    const sessions = new SessionManager({ sandbox, botId: "default", workspaceRoot: root, events, ttlMs: 1000 });
     const seenInputs: any[] = [];
 
     const deps = {
@@ -26,7 +24,6 @@ describe("runMessage", () => {
       events,
       sandbox,
       sessions,
-      workspaces,
       agentFactory: () => ({
         llm: {},
         program: {
@@ -99,7 +96,6 @@ describe("runMessage", () => {
       events: clarifyEvents,
       sandbox: new MockSandboxProvider(),
       sessions,
-      workspaces: new WorkspaceStore(root),
       agentFactory: () => ({
         llm: {},
         program: {
@@ -133,7 +129,6 @@ describe("runMessage", () => {
       events: new EventBus(),
       sandbox: new MockSandboxProvider(),
       sessions: sessionsFor(root, path.join(root, "state.db")),
-      workspaces: new WorkspaceStore(root),
       skills: [{ name: "shell-helper", content: "Use boring shell commands." }],
       agentFactory: () => ({
         llm: {},
@@ -156,7 +151,6 @@ describe("runMessage", () => {
 
 function depsFor(root: string, dbPath: string, seenInputs: any[]) {
   const sandbox = new MockSandboxProvider();
-  const workspaces = new WorkspaceStore(root);
   const events = new EventBus();
   return {
     config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
@@ -164,12 +158,12 @@ function depsFor(root: string, dbPath: string, seenInputs: any[]) {
     sandbox,
     sessions: new SessionManager({
       sandbox,
-      workspaces,
+      botId: "default",
+      workspaceRoot: root,
       events: new EventBus(),
       ttlMs: 1000,
       state: new SqliteSessionStateStore(dbPath),
     }),
-    workspaces,
     agentFactory: () => ({
       llm: {},
       program: {
@@ -189,7 +183,8 @@ function sessionsFor(root: string, dbPath: string): SessionManager {
   const sandbox = new MockSandboxProvider();
   return new SessionManager({
     sandbox,
-    workspaces: new WorkspaceStore(root),
+    botId: "default",
+    workspaceRoot: root,
     events: new EventBus(),
     ttlMs: 1000,
     state: new SqliteSessionStateStore(dbPath),

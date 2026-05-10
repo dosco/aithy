@@ -7,7 +7,6 @@ node_modules/
 !.env.example
 
 # Local agent/runtime state
-.aithy/
 .axbot/
 .claude/
 

@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { MicrosandboxProvider } from "../src/sandbox/microsandbox-provider";
 
 describe("MicrosandboxProvider", () => {
-  test("bind-mounts the host workspace and replays session mounts", async () => {
+  test("bind-mounts the bot workspace and exposes user mounts at /mounts/<name>", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "aithy-msb-"));
     const workspacePath = path.join(root, "workspace");
 
@@ -18,7 +18,7 @@ describe("MicrosandboxProvider", () => {
       sandboxFactory: fakeFactory as any
     });
 
-    const session = await provider.createSession("conversation", workspacePath, [
+    const session = await provider.createSession("default", workspacePath, [
       { hostPath: "/host/data", mountName: "data-aabbccdd" },
       { hostPath: "/host/scratch", mountName: "scratch-eeff0011" }
     ]);
@@ -28,26 +28,23 @@ describe("MicrosandboxProvider", () => {
     expect(created?.libkrunfwPath).toContain("libkrunfw");
     expect(created?.volumes).toEqual([
       { guest: "/workspace", host: workspacePath, readonly: false },
-      { guest: "/cache", host: path.join(workspacePath, "_cache"), readonly: false },
-      { guest: "/workspace/mounts/data-aabbccdd", host: "/host/data", readonly: false },
-      { guest: "/workspace/mounts/scratch-eeff0011", host: "/host/scratch", readonly: false }
+      { guest: "/mounts/data-aabbccdd", host: "/host/data", readonly: false },
+      { guest: "/mounts/scratch-eeff0011", host: "/host/scratch", readonly: false }
     ]);
-    expect(created?.envs).toMatchObject({
-      npm_config_cache: "/cache/npm",
-      PIP_CACHE_DIR: "/cache/pip",
-      XDG_CACHE_HOME: "/cache/xdg",
-      HF_HOME: "/cache/hf",
-    });
+    expect(created?.envs).toEqual({});
 
     const bash = await provider.bash(session.id, { command: "echo hi", cwd: "/workspace" });
     expect(bash.exitCode).toBe(0);
     expect(bash.stdout).toContain("bash -lc");
 
-    await provider.write(session.id, "/workspace/out/result.txt", "hello world");
-    expect(await provider.read(session.id, "/workspace/out/result.txt")).toBe("hello world");
+    await provider.write(session.id, "/workspace/result.txt", "hello world");
+    expect(await provider.read(session.id, "/workspace/result.txt")).toBe("hello world");
 
-    const inboxStat = await stat(path.join(workspacePath, "inbox"));
-    expect(inboxStat.isDirectory()).toBe(true);
+    // The host workspace directory exists, but no auto-subdirs (no inbox/out/mounts/_cache).
+    const wsStat = await stat(workspacePath);
+    expect(wsStat.isDirectory()).toBe(true);
+    await expect(stat(path.join(workspacePath, "inbox"))).rejects.toThrow();
+    await expect(stat(path.join(workspacePath, "_cache"))).rejects.toThrow();
 
     await provider.recreate(session.id, workspacePath, [
       { hostPath: "/host/data", mountName: "data-aabbccdd" }
@@ -55,8 +52,7 @@ describe("MicrosandboxProvider", () => {
     expect(fakeFactory.created).toHaveLength(2);
     expect(fakeFactory.created[1]?.volumes).toEqual([
       { guest: "/workspace", host: workspacePath, readonly: false },
-      { guest: "/cache", host: path.join(workspacePath, "_cache"), readonly: false },
-      { guest: "/workspace/mounts/data-aabbccdd", host: "/host/data", readonly: false }
+      { guest: "/mounts/data-aabbccdd", host: "/host/data", readonly: false }
     ]);
 
     await provider.destroy(session.id);
@@ -75,7 +71,7 @@ describe("MicrosandboxProvider", () => {
       sandboxFactory: fakeFactory as any
     });
 
-    const session = await provider.createSession("park-conv", workspacePath, []);
+    const session = await provider.createSession("park-bot", workspacePath, []);
     const initialBuilds = fakeFactory.created.length;
 
     await provider.park(session.id);
@@ -87,13 +83,7 @@ describe("MicrosandboxProvider", () => {
     expect(fakeFactory.created.length).toBe(initialBuilds);
     expect(fakeFactory.instances[0]?.resumes).toBe(1);
 
-    // /cache directory should exist on the host so npm/pip caches persist across park/resume.
-    const cacheStat = await stat(path.join(workspacePath, "_cache"));
-    expect(cacheStat.isDirectory()).toBe(true);
-
-    // destroy on a live session removes the cache directory.
     await provider.destroy(session.id);
-    await expect(stat(path.join(workspacePath, "_cache"))).rejects.toThrow();
   });
 
   test("destroy on a parked session removes the persisted DB record", async () => {

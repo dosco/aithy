@@ -10,7 +10,6 @@ import {
   SessionManager,
 } from "../src/session/session-manager";
 import { EventBus } from "../src/events/bus";
-import { WorkspaceStore } from "../src/workspace/store";
 import type { SandboxProvider, SessionMount } from "../src/sandbox/provider";
 
 function configFixture(globalMounts: AppConfig["globalMounts"] = []): AppConfig {
@@ -23,7 +22,7 @@ function configFixture(globalMounts: AppConfig["globalMounts"] = []): AppConfig 
     sandboxNetwork: "none",
     sessionTtlMs: 1,
     idleParkMs: 1,
-    maxLiveSandboxes: 1,
+    parallelAgents: 1,
     workspaceRoot: "/tmp",
     botId: "default",
     stateDir: "/tmp",
@@ -116,7 +115,8 @@ describe("SessionManager.mountsForSandbox", () => {
 
     const mgr = new SessionManager({
       sandbox,
-      workspaces: new WorkspaceStore(tmp),
+      botId: "default",
+      workspaceRoot: tmp,
       events: new EventBus(),
       globalMounts: [
         { hostPath: present },
@@ -155,14 +155,15 @@ describe("SessionManager.addGlobalMount", () => {
     const persisted: Array<Array<{ hostPath: string }>> = [];
     const mgr = new SessionManager({
       sandbox,
-      workspaces: new WorkspaceStore(tmp),
+      botId: "default",
+      workspaceRoot: tmp,
       events: new EventBus(),
       persistGlobalMounts: (mounts) => persisted.push(mounts),
     });
 
     const r1 = await mgr.addGlobalMount(folder);
     expect(r1.alreadyExisted).toBe(false);
-    expect(r1.sandboxPath).toBe(`/workspace/mounts/${computeMountName(folder)}`);
+    expect(r1.sandboxPath).toBe(`/mounts/${computeMountName(folder)}`);
     expect(persisted).toHaveLength(1);
     expect(persisted[0]).toEqual([{ hostPath: folder }]);
 

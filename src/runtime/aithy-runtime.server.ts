@@ -1,6 +1,11 @@
 import path from "node:path";
+import { mkdir } from "node:fs/promises";
 import { SESSION_SWEEP_INTERVAL_MS } from "../config/limits";
 import { ActiveRunRegistry } from "../agent/active-runs";
+import { AgentDispatcher, type UserChatJobData, type UserChatJobResult } from "../agent/dispatcher";
+import { runMessage } from "../agent/run-message";
+import type { ChannelMessage } from "../channel/types";
+import { formatSkillContent } from "../skills/skills-store";
 import { loadConfig, type AppConfig } from "../config/env";
 import { assertStartupConfig } from "../config/validate";
 import { EventBus } from "../events/bus";
@@ -10,7 +15,7 @@ import { SqliteMemoryRunsStore } from "../memory/memory-runs";
 import { MemoryQueue } from "../memory/memory-queue";
 import { MemoryConsolidateQueue } from "../memory/consolidate-queue";
 import { RerankerService } from "../memory/rerank";
-import { probeAndConfigureSqlite } from "../memory/vec-extension";
+import { assertVecExtensionReady, probeAndConfigureSqlite } from "../memory/vec-extension";
 import { shutdownManager } from "bunqueue/client";
 import { SqliteNotificationStore } from "../notifications/notification-store";
 import type { NotificationCreate, NotificationEntry } from "../notifications/types";
@@ -25,7 +30,6 @@ import { SkillPromoteQueue } from "../skills/promote-queue";
 import { loadOrSeedSoul, saveSoul } from "../soul/service";
 import { SqliteSoulStore } from "../soul/sqlite-soul-store";
 import type { SoulFields, SoulProfile } from "../soul/types";
-import { WorkspaceStore } from "../workspace/store";
 import { LiveEventHub } from "../web/live-events";
 import {
   applyRuntimeSettings,
@@ -46,7 +50,6 @@ export interface AithyRuntime {
   sessions: SessionManager;
   soul: SoulProfile;
   soulStore: SqliteSoulStore;
-  workspaces: WorkspaceStore;
   settings: SqliteSettingsStore;
   skills: SqliteSkillsStore;
   memory: SqliteMemoryStore;
@@ -58,8 +61,9 @@ export interface AithyRuntime {
   memoryConsolidate: MemoryConsolidateQueue;
   skillPromote: SkillPromoteQueue;
   activeRuns: ActiveRunRegistry;
+  dispatcher: AgentDispatcher;
   assertReady(): void;
-  updateSettings(patch: SettingsPatch): Promise<StoredSettings>;
+  updateSettings(patch: SettingsPatch, secrets?: RuntimeSecretOverrides): Promise<StoredSettings>;
   updateSoul(fields: SoulFields): SoulProfile;
   shutdown(): Promise<void>;
   isShuttingDown(): boolean;
@@ -94,7 +98,6 @@ class RuntimeImpl implements AithyRuntime {
     public sessions: SessionManager,
     public soul: SoulProfile,
     public soulStore: SqliteSoulStore,
-    public workspaces: WorkspaceStore,
     public settings: SqliteSettingsStore,
     public skills: SqliteSkillsStore,
     public memory: SqliteMemoryStore,
@@ -105,6 +108,7 @@ class RuntimeImpl implements AithyRuntime {
     public notifications: SqliteNotificationStore,
     public usage: SqliteUsageStore,
     public activeRuns: ActiveRunRegistry,
+    public dispatcher: AgentDispatcher,
   ) {}
 
   notify(input: NotificationCreate): NotificationEntry {
@@ -132,6 +136,7 @@ class RuntimeImpl implements AithyRuntime {
     });
 
     const vecState = probeAndConfigureSqlite();
+    assertVecExtensionReady(vecState);
 
     const settings = new SqliteSettingsStore(baseConfig.stateDbPath);
     const config = await resolveEffectiveConfig(baseConfig, settings.load());
@@ -166,16 +171,16 @@ class RuntimeImpl implements AithyRuntime {
     events.subscribe((event) => live.publishBotEvent(event));
 
     const sandbox = createSandboxProvider(config);
-    const workspaces = new WorkspaceStore(config.workspaceRoot);
+    await mkdir(config.workspaceRoot, { recursive: true });
     const activeRuns = new ActiveRunRegistry();
     let runtimeRef: RuntimeImpl | null = null;
     const sessions = new SessionManager({
       sandbox,
-      workspaces,
+      botId: config.botId,
+      workspaceRoot: config.workspaceRoot,
       events,
       ttlMs: config.sessionTtlMs,
       idleParkMs: config.idleParkMs,
-      maxLiveSandboxes: config.maxLiveSandboxes,
       state: new SqliteSessionStateStore(config.stateDbPath),
       source: "web",
       activeRuns,
@@ -271,15 +276,16 @@ class RuntimeImpl implements AithyRuntime {
       events.emit({ type: "error", message: `[skill.promote] failed to schedule cron: ${describe(error)}` }),
     );
 
-    if (process.platform === "darwin" && !vecState.customSqliteApplied) {
-      console.log(`[memory] sqlite-vec disabled: ${vecState.reason ?? "no extension-enabled SQLite"}`);
-      pushNotification({
-        kind: "info",
-        title: "Memory: vector search disabled",
-        body: "Run `brew install sqlite` to enable hybrid retrieval. Falling back to keyword-only search.",
-        link: null,
-      });
-    }
+    const dispatcher = new AgentDispatcher({
+      stateDbPath: config.stateDbPath,
+      parallelAgents: config.parallelAgents,
+      ensureBotSandbox: () => sessions.ensureBotSandbox(),
+      onError: onQueueError,
+      process: async (data: UserChatJobData): Promise<UserChatJobResult> => {
+        if (!runtimeRef) throw new Error("runtime not yet initialized");
+        return processUserChatJob(runtimeRef, data);
+      },
+    });
 
     void Promise.all([embedder.init(), reranker.init()])
       .then(async () => {
@@ -320,7 +326,6 @@ class RuntimeImpl implements AithyRuntime {
       sessions,
       soul,
       soulStore,
-      workspaces,
       settings,
       skills,
       memory,
@@ -331,6 +336,7 @@ class RuntimeImpl implements AithyRuntime {
       notifications,
       usage,
       activeRuns,
+      dispatcher,
     );
     runtimeRef = runtime;
     runtime.startSweep();
@@ -343,11 +349,12 @@ class RuntimeImpl implements AithyRuntime {
     assertStartupConfig(this.config);
   }
 
-  async updateSettings(patch: SettingsPatch): Promise<StoredSettings> {
+  async updateSettings(patch: SettingsPatch, secrets?: RuntimeSecretOverrides): Promise<StoredSettings> {
     const nextSettings = this.settings.save(patch);
     const nextConfig = await resolveEffectiveConfig(
       loadConfig(process.env, { traceEnabled: process.argv.includes("--trace") }),
       nextSettings,
+      secrets,
     );
     if (runtimeSandboxChanged(this.config, nextConfig)) {
       this.sandbox = createSandboxProvider(nextConfig);
@@ -355,7 +362,9 @@ class RuntimeImpl implements AithyRuntime {
     }
     this.sessions.setTtlMs(nextConfig.sessionTtlMs);
     this.sessions.setIdleParkMs(nextConfig.idleParkMs);
-    this.sessions.setMaxLiveSandboxes(nextConfig.maxLiveSandboxes);
+    if (this.config.parallelAgents !== nextConfig.parallelAgents) {
+      this.dispatcher.setConcurrency(nextConfig.parallelAgents);
+    }
     if (globalMountsChanged(this.config, nextConfig)) {
       this.sessions.setGlobalMounts(nextConfig.globalMounts);
       this.sessions.refreshAllMounts();
@@ -448,6 +457,7 @@ class RuntimeImpl implements AithyRuntime {
 
   private async closeQueues(): Promise<void> {
     const queues = [
+      ["dispatcher", this.dispatcher.close.bind(this.dispatcher)],
       ["memoryQueue", this.memoryQueue.close.bind(this.memoryQueue)],
       ["memoryConsolidate", this.memoryConsolidate.close.bind(this.memoryConsolidate)],
       ["skillPromote", this.skillPromote.close.bind(this.skillPromote)],
@@ -480,18 +490,61 @@ async function doResetAithyRuntimeSystem(): Promise<AithyRuntime> {
   const impl = runtime as RuntimeImpl;
   await impl.prepareForFullReset();
   runtimePromise = undefined;
-  await clearManagedProviderSecrets();
+  await clearManagedProviderSecrets(impl.config.botId);
   await removeSqliteFiles(impl.config.stateDbPath);
   await removeSqliteFiles(path.join(path.dirname(impl.config.stateDbPath), "bunqueue.db"));
   return getAithyRuntime();
 }
+async function processUserChatJob(
+  runtime: RuntimeImpl,
+  data: UserChatJobData,
+): Promise<UserChatJobResult> {
+  const message: ChannelMessage = {
+    id: crypto.randomUUID(),
+    channelId: "web",
+    conversationId: data.conversationId,
+    senderId: "local-user",
+    text: data.text,
+    createdAt: new Date(data.createdAt),
+  };
+  const skills = runtime.skills
+    .getByIds([...data.skillIds])
+    .map((skill) => ({ name: skill.name, content: formatSkillContent(skill) }));
+  const reply = await runMessage(message, {
+    config: runtime.config,
+    events: runtime.events,
+    sandbox: runtime.sandbox,
+    sessions: runtime.sessions,
+    soul: runtime.soul,
+    memory: runtime.memory,
+    memoryQueue: runtime.memoryQueue,
+    usage: runtime.usage,
+    activeRuns: runtime.activeRuns,
+    notify: (input) => runtime.notify(input),
+    skills,
+    skillsSearch: (queries) =>
+      runtime.skills
+        .search(queries)
+        .map((s) => ({ name: s.name, content: formatSkillContent(s) })),
+  });
+  return { conversationId: reply.conversationId, text: reply.text };
+}
+
 async function resolveEffectiveConfig(
   baseConfig: AppConfig,
   settings: StoredSettings,
+  secrets: RuntimeSecretOverrides = {},
 ): Promise<AppConfig> {
   const provider = settings.runtime.aiProvider?.trim() || baseConfig.aiProvider;
-  const apiKey = baseConfig.aiApiKey ?? await readProviderApiKey(provider);
+  const apiKey =
+    settings.runtime.aiApiKey === null
+      ? null
+      : baseConfig.aiApiKey ?? secrets.apiKey ?? await readProviderApiKey(provider, baseConfig.botId);
   const fastProvider = settings.runtime.fastAiProvider?.trim();
-  const fastApiKey = fastProvider ? (fastProvider === provider ? apiKey : await readProviderApiKey(fastProvider)) : undefined;
+  const fastApiKey = fastProvider
+    ? (fastProvider === provider ? apiKey : secrets.fastApiKey ?? await readProviderApiKey(fastProvider, baseConfig.botId))
+    : undefined;
   return applyRuntimeSettings(baseConfig, settings.runtime, apiKey, fastApiKey);
 }
+
+type RuntimeSecretOverrides = { apiKey?: string; fastApiKey?: string };

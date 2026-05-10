@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsageRouteImport } from './routes/usage'
 import { Route as ThemesRouteImport } from './routes/themes'
 import { Route as SkillsRouteImport } from './routes/skills'
+import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SessionsRouteImport } from './routes/sessions'
 import { Route as NotificationsRouteImport } from './routes/notifications'
@@ -34,6 +35,11 @@ const ThemesRoute = ThemesRouteImport.update({
 const SkillsRoute = SkillsRouteImport.update({
   id: '/skills',
   path: '/skills',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsRoute = SettingsRouteImport.update({
@@ -84,6 +90,7 @@ export interface FileRoutesByFullPath {
   '/notifications': typeof NotificationsRoute
   '/sessions': typeof SessionsRoute
   '/settings': typeof SettingsRoute
+  '/setup': typeof SetupRoute
   '/skills': typeof SkillsRoute
   '/themes': typeof ThemesRoute
   '/usage': typeof UsageRoute
@@ -97,6 +104,7 @@ export interface FileRoutesByTo {
   '/notifications': typeof NotificationsRoute
   '/sessions': typeof SessionsRoute
   '/settings': typeof SettingsRoute
+  '/setup': typeof SetupRoute
   '/skills': typeof SkillsRoute
   '/themes': typeof ThemesRoute
   '/usage': typeof UsageRoute
@@ -111,6 +119,7 @@ export interface FileRoutesById {
   '/notifications': typeof NotificationsRoute
   '/sessions': typeof SessionsRoute
   '/settings': typeof SettingsRoute
+  '/setup': typeof SetupRoute
   '/skills': typeof SkillsRoute
   '/themes': typeof ThemesRoute
   '/usage': typeof UsageRoute
@@ -126,6 +135,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/sessions'
     | '/settings'
+    | '/setup'
     | '/skills'
     | '/themes'
     | '/usage'
@@ -139,6 +149,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/sessions'
     | '/settings'
+    | '/setup'
     | '/skills'
     | '/themes'
     | '/usage'
@@ -152,6 +163,7 @@ export interface FileRouteTypes {
     | '/notifications'
     | '/sessions'
     | '/settings'
+    | '/setup'
     | '/skills'
     | '/themes'
     | '/usage'
@@ -166,6 +178,7 @@ export interface RootRouteChildren {
   NotificationsRoute: typeof NotificationsRoute
   SessionsRoute: typeof SessionsRoute
   SettingsRoute: typeof SettingsRoute
+  SetupRoute: typeof SetupRoute
   SkillsRoute: typeof SkillsRoute
   ThemesRoute: typeof ThemesRoute
   UsageRoute: typeof UsageRoute
@@ -193,6 +206,13 @@ declare module '@tanstack/react-router' {
       path: '/skills'
       fullPath: '/skills'
       preLoaderRoute: typeof SkillsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings': {
@@ -271,6 +291,7 @@ const rootRouteChildren: RootRouteChildren = {
   NotificationsRoute: NotificationsRoute,
   SessionsRoute: SessionsRoute,
   SettingsRoute: SettingsRoute,
+  SetupRoute: SetupRoute,
   SkillsRoute: SkillsRoute,
   ThemesRoute: ThemesRoute,
   UsageRoute: UsageRoute,

@@ -29,7 +29,7 @@ export interface SessionMount {
 
 export interface SandboxProvider {
   createSession(
-    conversationId: string,
+    botId: string,
     hostWorkspacePath: string,
     mounts: SessionMount[]
   ): Promise<SandboxSession>;

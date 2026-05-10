@@ -4,15 +4,15 @@ import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { z } from "zod";
-import { runMessage } from "../../src/agent/run-message";
 import type { ChannelCommand, ChannelMessage } from "../../src/channel/types";
 import { handleSlashCommand } from "../../src/commands/slash-commands";
-import { formatSkillContent } from "../../src/skills/skills-store";
 import { assertLoopbackRequest } from "../../src/settings/localhost";
 import {
   deleteProviderApiKey,
+  normalizePostedSecret,
   writeProviderApiKey,
 } from "../../src/settings/secrets";
+import { isAiConfigured } from "../../src/config/validate";
 import {
   getAithyRuntime,
   resetAithyRuntimeSystem,
@@ -30,6 +30,7 @@ import {
   notificationDto,
   usageBucketDto,
 } from "./dto";
+import { assertPrimaryAiSettings } from "./ai-settings-test";
 
 const sessionInput = z.object({
   conversationId: z.string().min(1).optional(),
@@ -53,7 +54,8 @@ const confirmationInput = z.object({
 const settingsInput = z.object({
   runtime: z.object({
     aiProvider: z.string().optional(),
-    aiModel: z.string().optional(),
+    aiApiKey: z.string().optional().nullable(),
+    aiModel: z.string().optional().nullable(),
     fastAiProvider: z.string().optional(),
     fastAiModel: z.string().optional(),
     sandboxProvider: z.enum(["microsandbox", "disabled"]).optional(),
@@ -62,6 +64,7 @@ const settingsInput = z.object({
     sandboxMemoryMb: z.number().positive().optional(),
     sandboxNetwork: z.enum(["none", "public", "allow-all"]).optional(),
     sessionTtlMs: z.number().positive().optional(),
+    parallelAgents: z.number().int().min(1).max(8).optional(),
     traceEnabled: z.boolean().optional(),
     globalMounts: z
       .array(z.object({ hostPath: z.string().min(1) }))
@@ -87,6 +90,7 @@ const settingsInput = z.object({
   }).optional(),
   apiKey: z.string().optional(),
   clearApiKey: z.boolean().optional(),
+  clearAiModel: z.boolean().optional(),
   fastApiKey: z.string().optional(),
   clearFastApiKey: z.boolean().optional(),
 });
@@ -162,26 +166,11 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     try {
       runtime.assertReady();
       runtime.live.publish(userMessageEvent(data.conversationId, user.text, user.createdAt));
-      const skills = runtime.skills
-        .getByIds(data.skillIds ?? [])
-        .map((skill) => ({ name: skill.name, content: formatSkillContent(skill) }));
-      const reply = await runMessage(user, {
-        config: runtime.config,
-        events: runtime.events,
-        sandbox: runtime.sandbox,
-        sessions: runtime.sessions,
-        soul: runtime.soul,
-        workspaces: runtime.workspaces,
-        memory: runtime.memory,
-        memoryQueue: runtime.memoryQueue,
-        usage: runtime.usage,
-        activeRuns: runtime.activeRuns,
-        notify: (input) => runtime.notify(input),
-        skills,
-        skillsSearch: (queries) =>
-          runtime.skills
-            .search(queries)
-            .map((s) => ({ name: s.name, content: formatSkillContent(s) })),
+      const reply = await runtime.dispatcher.enqueueUserChat({
+        conversationId: data.conversationId,
+        text: user.text,
+        createdAt: user.createdAt.toISOString(),
+        skillIds: data.skillIds ?? [],
       });
       const bot = assistantMessage(reply.text);
       runtime.live.publish(messageEvent(reply.conversationId, bot));
@@ -202,7 +191,8 @@ export const stopChatMessage = createServerFn({ method: "POST" })
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
     const stopped = runtime.activeRuns.stop(data.conversationId);
-    return { stopped };
+    const dropped = runtime.dispatcher.cancelByConversation(data.conversationId);
+    return { stopped, queuedDropped: dropped };
   });
 
 export const renameSession = createServerFn({ method: "POST" })
@@ -284,15 +274,21 @@ export const saveSettings = createServerFn({ method: "POST" })
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
     const provider = data.runtime?.aiProvider?.trim() || runtime.config.aiProvider;
-    const apiKey = data.apiKey?.trim();
-    if (apiKey) await writeProviderApiKey(provider, apiKey);
-    if (data.clearApiKey) await deleteProviderApiKey(provider);
+    const apiKey = normalizePostedSecret(data.apiKey);
     const fastProvider = data.runtime?.fastAiProvider?.trim();
-    const fastApiKey = data.fastApiKey?.trim();
-    if (fastProvider && fastApiKey) await writeProviderApiKey(fastProvider, fastApiKey);
-    if (data.clearFastApiKey && fastProvider) await deleteProviderApiKey(fastProvider);
+    const fastApiKey = normalizePostedSecret(data.fastApiKey);
 
     let runtimePatch = data.runtime;
+    if (apiKey && !data.clearApiKey) {
+      runtimePatch = { ...(runtimePatch ?? {}), aiApiKey: undefined };
+    }
+    if (data.clearApiKey) {
+      runtimePatch = { ...(runtimePatch ?? {}), aiApiKey: null };
+    }
+    if (data.clearAiModel) {
+      runtimePatch = { ...(runtimePatch ?? {}), aiModel: null };
+    }
+    await assertPrimaryAiSettings(runtime.config, { ...data, runtime: runtimePatch });
     let skippedPaths: string[] = [];
     if (runtimePatch?.globalMounts) {
       const result = await prepareGlobalMounts(
@@ -302,18 +298,25 @@ export const saveSettings = createServerFn({ method: "POST" })
       runtimePatch = { ...runtimePatch, globalMounts: result.mounts };
       skippedPaths = result.skippedPaths;
     }
+    if (apiKey) await writeProviderApiKey(provider, apiKey, runtime.config.botId);
+    if (data.clearApiKey) await deleteProviderApiKey(provider, runtime.config.botId);
+    if (fastProvider && fastApiKey) await writeProviderApiKey(fastProvider, fastApiKey, runtime.config.botId);
+    if (data.clearFastApiKey && fastProvider) await deleteProviderApiKey(fastProvider, runtime.config.botId);
 
-    const settings = await runtime.updateSettings({
-      runtime: runtimePatch,
-      ui: data.ui,
-    });
+    const settings = await runtime.updateSettings(
+      { runtime: runtimePatch, ui: data.ui },
+      { apiKey, fastApiKey },
+    );
     return {
       settings,
       config: configDto(runtime.config),
-      secret: await secretStatus(runtime.config),
+      secret: await secretStatus(runtime.config, settings),
       fastSecret: runtime.config.fastAiProvider
-        ? await secretStatusForProvider(runtime.config.fastAiProvider)
+        ? runtime.config.fastAiProvider === runtime.config.aiProvider
+          ? await secretStatus(runtime.config, settings)
+          : await secretStatusForProvider(runtime.config.fastAiProvider, runtime.config.botId)
         : null,
+      aiConfigured: isAiConfigured(runtime.config),
       skippedPaths,
     };
   });

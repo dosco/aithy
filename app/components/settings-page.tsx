@@ -1,6 +1,8 @@
 import { useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { Check } from "lucide-react";
+import { useRouter } from "@tanstack/react-router";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PageFrame } from "@/components/page-frame";
 import { SettingsDangerZone } from "@/components/settings-danger-zone";
 import {
@@ -29,53 +31,86 @@ import type {
   WebStateDto,
 } from "@/server/dto";
 
+type PrimaryClearAction = "model" | "key";
+
 export function SettingsPage({ initialState }: { initialState: WebStateDto }) {
+  const router = useRouter();
   const [config, setConfig] = useState(initialState.config);
   const [secret, setSecret] = useState(initialState.secret);
   const [fastSecret, setFastSecret] = useState<SecretStatusDto | null>(initialState.fastSecret);
   const [apiKey, setApiKey] = useState("");
   const [fastApiKey, setFastApiKey] = useState("");
   const [saved, setSaved] = useState(false);
+  const [saveBusy, setSaveBusy] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const [skippedPaths, setSkippedPaths] = useState<string[]>([]);
   const [soul, setSoul] = useState<SoulDto>(initialState.soul);
   const [soulSaved, setSoulSaved] = useState(false);
   const [ui, setUi] = useState(initialState.settings.ui);
+  const [primaryClearAction, setPrimaryClearAction] = useState<PrimaryClearAction | null>(null);
+  const [primaryClearBusy, setPrimaryClearBusy] = useState(false);
 
-  async function save() {
-    const result = await saveSettings({
-      data: {
-        runtime: {
-          aiProvider: config.aiProvider,
-          aiModel: config.aiModel,
-          fastAiProvider: config.fastAiProvider,
-          fastAiModel: config.fastAiModel,
-          sandboxProvider: config.sandboxProvider === "disabled" ? "disabled" : "microsandbox",
-          sandboxImage: config.sandboxImage,
-          sandboxCpus: Number(config.sandboxCpus),
-          sandboxMemoryMb: Number(config.sandboxMemoryMb),
-          sandboxNetwork: networkValue(config.sandboxNetwork),
-          sessionTtlMs: Number(config.sessionTtlMs),
-          traceEnabled: config.traceEnabled,
-          globalMounts: config.globalMounts
-            .map((m) => ({ hostPath: m.hostPath.trim() }))
-            .filter((m) => m.hostPath.length > 0),
+  async function save(options?: { clearApiKey?: boolean; clearAiModel?: boolean }) {
+    const clearAiModel = options?.clearAiModel ?? config.aiModel.trim().length === 0;
+    setSaveBusy(true);
+    setSaveError(null);
+    try {
+      const result = await saveSettings({
+        data: {
+          runtime: {
+            aiProvider: config.aiProvider,
+            aiModel: clearAiModel ? null : config.aiModel,
+            fastAiProvider: config.fastAiProvider,
+            fastAiModel: config.fastAiModel,
+            sandboxProvider: config.sandboxProvider === "disabled" ? "disabled" : "microsandbox",
+            sandboxImage: config.sandboxImage,
+            sandboxCpus: Number(config.sandboxCpus),
+            sandboxMemoryMb: Number(config.sandboxMemoryMb),
+            sandboxNetwork: networkValue(config.sandboxNetwork),
+            sessionTtlMs: Number(config.sessionTtlMs),
+            parallelAgents: Number(config.parallelAgents),
+            traceEnabled: config.traceEnabled,
+            globalMounts: config.globalMounts
+              .map((m) => ({ hostPath: m.hostPath.trim() }))
+              .filter((m) => m.hostPath.length > 0),
+          },
+          ui: {
+            detailsDefault: ui.detailsDefault,
+          },
+          apiKey: options?.clearApiKey ? undefined : apiKey || undefined,
+          clearApiKey: options?.clearApiKey,
+          clearAiModel,
+          fastApiKey: fastApiKey || undefined,
         },
-        ui: {
-          detailsDefault: ui.detailsDefault,
-        },
-        apiKey: apiKey || undefined,
-        fastApiKey: fastApiKey || undefined,
-      },
-    });
-    setConfig(result.config);
-    setUi(result.settings.ui);
-    setSecret(result.secret);
-    setFastSecret(result.fastSecret);
-    setApiKey("");
-    setFastApiKey("");
-    setSkippedPaths(result.skippedPaths ?? []);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 1400);
+      });
+      setConfig(result.config);
+      setUi(result.settings.ui);
+      setSecret(result.secret);
+      setFastSecret(result.fastSecret);
+      setApiKey("");
+      setFastApiKey("");
+      setSkippedPaths(result.skippedPaths ?? []);
+      if (!result.aiConfigured && (options?.clearApiKey || clearAiModel)) {
+        await router.navigate({ to: "/chat" });
+        return;
+      }
+      setSaved(true);
+      setTimeout(() => setSaved(false), 1400);
+    } catch (error) {
+      setSaveError(error instanceof Error ? error.message : "Failed to save settings");
+    } finally {
+      setSaveBusy(false);
+    }
+  }
+
+  async function clearPrimary(action: PrimaryClearAction) {
+    setPrimaryClearBusy(true);
+    try {
+      await save(action === "model" ? { clearAiModel: true } : { clearApiKey: true });
+    } finally {
+      setPrimaryClearBusy(false);
+      setPrimaryClearAction(null);
+    }
   }
 
   async function saveSoulFields() {
@@ -106,6 +141,12 @@ export function SettingsPage({ initialState }: { initialState: WebStateDto }) {
           <TabsTrigger value="system">System</TabsTrigger>
         </TabsList>
 
+        {saveError ? (
+          <p className="mb-5 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-500" role="alert">
+            {saveError}
+          </p>
+        ) : null}
+
         <TabsContent value="model">
           <div className="grid gap-5">
             <Section title="Primary" subtitle="Drives the executor, context, and final responder by default.">
@@ -121,6 +162,7 @@ export function SettingsPage({ initialState }: { initialState: WebStateDto }) {
                     provider={config.aiProvider}
                     value={config.aiModel}
                     onChange={(value) => setConfigValue(setConfig, "aiModel", value)}
+                    onClear={() => setPrimaryClearAction("model")}
                   />
                 </Field>
               </div>
@@ -130,6 +172,7 @@ export function SettingsPage({ initialState }: { initialState: WebStateDto }) {
                   onChange={setApiKey}
                   secret={secret}
                   fallback="Stored with Bun.secrets when saved"
+                  onClear={() => setPrimaryClearAction("key")}
                 />
               </Field>
             </Section>
@@ -167,7 +210,9 @@ export function SettingsPage({ initialState }: { initialState: WebStateDto }) {
                     !config.fastAiProvider
                       ? "Set provider first"
                       : config.fastAiProvider === config.aiProvider
-                        ? "Reuses primary key"
+                        ? secret.configured
+                          ? "Reuses primary key"
+                          : "Set primary key first"
                         : "Stored with Bun.secrets when saved"
                   }
                 />
@@ -175,9 +220,9 @@ export function SettingsPage({ initialState }: { initialState: WebStateDto }) {
             </Section>
 
             <div className="flex justify-end pt-1">
-              <Button onClick={() => void save()} className="sm:min-w-[140px]">
+              <Button onClick={() => void save()} disabled={saveBusy} className="sm:min-w-[140px]">
                 {saved ? <Check className="h-4 w-4" /> : null}
-                {saved ? "Saved" : "Save settings"}
+                {saveButtonLabel(saveBusy, saved)}
               </Button>
             </div>
           </div>
@@ -268,6 +313,23 @@ export function SettingsPage({ initialState }: { initialState: WebStateDto }) {
                     </span>
                   </div>
                 </Field>
+                <Field label={`Parallel agents (${config.parallelAgents})`}>
+                  <div className="flex h-11 items-center gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5">
+                    <input
+                      type="range"
+                      min={1}
+                      max={8}
+                      step={1}
+                      value={config.parallelAgents}
+                      onChange={(event) => setConfigValue(setConfig, "parallelAgents", Number(event.target.value))}
+                      className="flex-1"
+                      aria-label="Parallel agents"
+                    />
+                    <span className="w-6 text-right tabular-nums text-sm text-[rgb(var(--muted-foreground))]">
+                      {config.parallelAgents}
+                    </span>
+                  </div>
+                </Field>
               </div>
             </Section>
             {config.sandboxProvider === "microsandbox" ? (
@@ -279,9 +341,9 @@ export function SettingsPage({ initialState }: { initialState: WebStateDto }) {
             ) : null}
 
             <div className="flex justify-end pt-1">
-              <Button onClick={() => void save()} className="sm:min-w-[140px]">
+              <Button onClick={() => void save()} disabled={saveBusy} className="sm:min-w-[140px]">
                 {saved ? <Check className="h-4 w-4" /> : null}
-                {saved ? "Saved" : "Save settings"}
+                {saveButtonLabel(saveBusy, saved)}
               </Button>
             </div>
           </div>
@@ -303,9 +365,9 @@ export function SettingsPage({ initialState }: { initialState: WebStateDto }) {
               </Field>
             </Section>
             <div className="flex justify-end pt-1">
-              <Button onClick={() => void save()} className="sm:min-w-[140px]">
+              <Button onClick={() => void save()} disabled={saveBusy} className="sm:min-w-[140px]">
                 {saved ? <Check className="h-4 w-4" /> : null}
-                {saved ? "Saved" : "Save settings"}
+                {saveButtonLabel(saveBusy, saved)}
               </Button>
             </div>
           </div>
@@ -374,8 +436,34 @@ export function SettingsPage({ initialState }: { initialState: WebStateDto }) {
           {config.stateDbPath}
         </code>
       </div>
+      <ConfirmDialog
+        open={primaryClearAction !== null}
+        title={primaryClearCopy(primaryClearAction).title}
+        body={primaryClearCopy(primaryClearAction).body}
+        confirmLabel={primaryClearCopy(primaryClearAction).confirmLabel}
+        busy={primaryClearBusy}
+        onCancel={() => setPrimaryClearAction(null)}
+        onConfirm={() => {
+          if (primaryClearAction) void clearPrimary(primaryClearAction);
+        }}
+      />
     </PageFrame>
   );
+}
+
+function primaryClearCopy(action: PrimaryClearAction | null) {
+  if (action === "key") {
+    return {
+      title: "Clear primary API key?",
+      body: "Aithy will forget the stored primary key for this bot and return to setup until a key is set again.",
+      confirmLabel: "Clear key",
+    };
+  }
+  return {
+    title: "Clear primary model?",
+    body: "Aithy will remove the primary model and return to setup until a model is selected again.",
+    confirmLabel: "Clear model",
+  };
 }
 
 function setConfigValue<K extends keyof ConfigDto>(
@@ -384,6 +472,11 @@ function setConfigValue<K extends keyof ConfigDto>(
   value: ConfigDto[K],
 ) {
   setter((current) => ({ ...current, [key]: value }));
+}
+
+function saveButtonLabel(busy: boolean, saved: boolean) {
+  if (busy) return "Testing...";
+  return saved ? "Saved" : "Save settings";
 }
 
 function networkValue(value: string) {

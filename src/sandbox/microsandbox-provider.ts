@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { NetworkPolicy, Sandbox } from "microsandbox";
@@ -38,24 +38,17 @@ interface SandboxEntry {
   state: SandboxState;
 }
 
-const CACHE_ENV_VARS: Record<string, string> = {
-  npm_config_cache: "/cache/npm",
-  PIP_CACHE_DIR: "/cache/pip",
-  XDG_CACHE_HOME: "/cache/xdg",
-  HF_HOME: "/cache/hf",
-};
-
 export class MicrosandboxProvider implements SandboxProvider {
   private readonly sandboxes = new Map<string, SandboxEntry>();
 
   constructor(private readonly options: MicrosandboxOptions) {}
 
   async createSession(
-    conversationId: string,
+    botId: string,
     hostWorkspacePath: string,
     mounts: SessionMount[]
   ): Promise<SandboxSession> {
-    const name = sandboxNameFor(conversationId);
+    const name = sandboxNameFor(botId);
     await ensureHostWorkspace(hostWorkspacePath);
     const sandbox = await this.createSandbox(name, hostWorkspacePath, mounts);
     this.sandboxes.set(name, { sandbox, hostWorkspacePath, mounts: [...mounts], state: "live" });
@@ -161,9 +154,6 @@ export class MicrosandboxProvider implements SandboxProvider {
         await (factory as any).remove(sessionId).catch(() => undefined);
       }
     }
-    // Clean up the per-session cache directory (workspace itself is owned by WorkspaceStore).
-    const cacheDir = path.join(entry.hostWorkspacePath, "_cache");
-    await rm(cacheDir, { recursive: true, force: true }).catch(() => undefined);
   }
 
   private async ensureLive(sessionId: string): Promise<void> {
@@ -187,11 +177,9 @@ export class MicrosandboxProvider implements SandboxProvider {
       builder = applyBundledRuntime(builder);
       builder = applyNetwork(builder, this.options.network);
       builder = builder.volume("/workspace", (v: any) => v.bind(hostWorkspacePath));
-      builder = builder.volume("/cache", (v: any) => v.bind(path.join(hostWorkspacePath, "_cache")));
       for (const mount of mounts) {
-        builder = builder.volume(`/workspace/mounts/${mount.mountName}`, (v: any) => v.bind(mount.hostPath));
+        builder = builder.volume(`/mounts/${mount.mountName}`, (v: any) => v.bind(mount.hostPath));
       }
-      builder = applyCacheEnv(builder);
       return await builder.create();
     } catch (error) {
       throw new Error(`Failed to start Microsandbox microVM: ${formatMicrosandboxStartError(error)}`);
@@ -233,25 +221,12 @@ export class MicrosandboxProvider implements SandboxProvider {
   }
 }
 
-export function sandboxNameFor(conversationId: string): string {
-  return `aithy-${conversationId.replace(/[^a-zA-Z0-9-]/g, "-").slice(0, 40)}`;
+export function sandboxNameFor(botId: string): string {
+  return `aithy-${botId.replace(/[^a-zA-Z0-9-]/g, "-").slice(0, 40)}`;
 }
 
 async function ensureHostWorkspace(hostWorkspacePath: string): Promise<void> {
-  await mkdir(path.join(hostWorkspacePath, "inbox"), { recursive: true });
-  await mkdir(path.join(hostWorkspacePath, "out"), { recursive: true });
-  await mkdir(path.join(hostWorkspacePath, "mounts"), { recursive: true });
-  await mkdir(path.join(hostWorkspacePath, "_cache"), { recursive: true });
-}
-
-function applyCacheEnv(builder: any) {
-  if (typeof builder.envs === "function") return builder.envs(CACHE_ENV_VARS);
-  if (typeof builder.env === "function") {
-    let next = builder;
-    for (const [key, value] of Object.entries(CACHE_ENV_VARS)) next = next.env(key, value);
-    return next;
-  }
-  return builder;
+  await mkdir(hostWorkspacePath, { recursive: true });
 }
 
 function applyNetwork(builder: any, network: MicrosandboxOptions["network"]) {

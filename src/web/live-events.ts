@@ -163,6 +163,12 @@ function liveEventFromBotEvent(event: BotEvent): WebLiveEvent | undefined {
   if (event.type === "agent.completed") {
     return activity(event.conversationId, "agent completed", undefined, "success");
   }
+  if (event.type === "sandbox.starting") {
+    return activity(event.conversationId, "starting sandbox...");
+  }
+  if (event.type === "sandbox.resuming") {
+    return activity(event.conversationId, "resuming sandbox...");
+  }
   if (event.type === "sandbox.created") {
     return activity(event.conversationId, `sandbox ready: ${event.sessionId}`);
   }
@@ -174,6 +180,9 @@ function liveEventFromBotEvent(event: BotEvent): WebLiveEvent | undefined {
   }
   if (event.type === "sandbox.mountsRefreshPending") {
     return activity(event.conversationId, "mounts updating after current run", undefined, "neutral");
+  }
+  if (event.type === "sandbox.mountsRefreshing") {
+    return activity(event.conversationId, "refreshing sandbox mounts...");
   }
   if (event.type === "sandbox.mountsRefreshed") {
     return activity(event.conversationId, `mounts refreshed: ${event.sessionId}`, undefined, "success");

@@ -16,11 +16,11 @@ export class MockSandboxProvider implements SandboxProvider {
   readonly events: Array<{ kind: "create" | "park" | "resume" | "destroy"; sessionId: string }> = [];
 
   async createSession(
-    conversationId: string,
+    botId: string,
     _hostWorkspacePath: string,
     mounts: SessionMount[]
   ): Promise<SandboxSession> {
-    const id = `mock-${conversationId}`;
+    const id = `mock-${botId}`;
     this.mounts.set(id, [...mounts]);
     this.state.set(id, "live");
     this.events.push({ kind: "create", sessionId: id });

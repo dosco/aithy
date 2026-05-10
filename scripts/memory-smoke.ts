@@ -27,7 +27,7 @@ const dbPath = path.join(dir, "state.db");
 try {
   const baseConfig = loadConfig();
   const apiKey =
-    baseConfig.aiApiKey ?? (await readProviderApiKey(baseConfig.aiProvider));
+    baseConfig.aiApiKey ?? (await readProviderApiKey(baseConfig.aiProvider, baseConfig.botId));
   if (!apiKey) {
     console.error(`✗ no API key for provider="${baseConfig.aiProvider}"`);
     process.exit(2);

@@ -21,7 +21,7 @@ function makeConfig(tracesDir: string): AppConfig {
     sandboxNetwork: "none",
     sessionTtlMs: 1000,
     idleParkMs: 60_000,
-    maxLiveSandboxes: 8,
+    parallelAgents: 1,
     workspaceRoot: "/tmp/ws",
     botId: "default",
     stateDir: "/tmp/state",

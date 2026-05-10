@@ -8,7 +8,6 @@ import { EventBus } from "../src/events/bus";
 import { MockSandboxProvider } from "../src/sandbox/mock-provider";
 import { SessionManager } from "../src/session/session-manager";
 import { SqliteSessionStateStore } from "../src/session/sqlite-state-store";
-import { WorkspaceStore } from "../src/workspace/store";
 
 describe("handleSlashCommand", () => {
   test("removed legacy web commands are unknown", async () => {
@@ -71,7 +70,8 @@ async function createSessions(): Promise<SessionManager> {
   const root = await mkdtemp(path.join(tmpdir(), "aithy-commands-"));
   return new SessionManager({
     sandbox: new MockSandboxProvider(),
-    workspaces: new WorkspaceStore(root),
+    botId: "default",
+    workspaceRoot: root,
     events: new EventBus(),
     ttlMs: 1000,
     state: new SqliteSessionStateStore(path.join(root, "state.db")),

@@ -57,6 +57,7 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [sessions, setSessions] = useState(initialState.sessions);
   const [activities, setActivities] = useState<Array<Extract<WebLiveEvent, { type: "activity" }>>>([]);
+  const [sandboxStatus, setSandboxStatus] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [selectedSkills, setSelectedSkills] = useState<SelectedSkill[]>([]);
   const [sending, setSending] = useState(false);
@@ -75,6 +76,7 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
     setHasMoreBefore(initialPage.hasMoreBefore);
     setLoadingMore(false);
     setActivities([]);
+    setSandboxStatus(null);
   }, [resolvedInitialSessionId, initialPage]);
 
   useEffect(() => {
@@ -119,6 +121,7 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
         }
         if (event.type === "activity") {
           setActivities((current) => [...current.slice(-79), event]);
+          setSandboxStatus((current) => nextSandboxStatus(current, event));
         }
       }
     };
@@ -239,6 +242,7 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
           activities={activities}
           details={details}
           sending={sending}
+          sandboxStatus={sandboxStatus}
           resetKey={activeSessionId}
           hasMoreBefore={hasMoreBefore}
           loadingMore={loadingMore}
@@ -299,6 +303,28 @@ function contentOf(message: SerializableBotMessage): string {
   if (message.role === "user") return message.content;
   if (message.kind === "text") return message.content;
   return `${message.toolName}:${JSON.stringify(message.toolArgs)}`;
+}
+
+function nextSandboxStatus(
+  current: string | null,
+  event: ActivityEvent,
+): string | null {
+  if (
+    event.label === "starting sandbox..."
+    || event.label === "resuming sandbox..."
+    || event.label === "refreshing sandbox mounts..."
+  ) {
+    return event.label;
+  }
+  if (
+    event.tone === "danger"
+    || event.label === "agent completed"
+    || event.label.startsWith("sandbox ready:")
+    || event.label.startsWith("mounts refreshed:")
+  ) {
+    return null;
+  }
+  return current;
 }
 
 function sessionIdFromPath(pathname: string): string | null {

@@ -24,7 +24,6 @@ import type {
   BotSession,
   UserMessage,
 } from "../session/types";
-import type { WorkspaceStore } from "../workspace/store";
 import {
   MAX_CONVERSATION_HISTORY_TEXT_CHARS,
 } from "../config/limits";
@@ -42,7 +41,6 @@ export interface RunMessageDeps {
   sandbox: SandboxProvider;
   sessions: SessionManager;
   soul?: SoulProfile;
-  workspaces: WorkspaceStore;
   memory?: SqliteMemoryStore;
   memoryQueue?: MemoryQueue;
   usage?: SqliteUsageStore;
@@ -69,7 +67,7 @@ export async function runMessage(
     session,
     sandbox: deps.sandbox,
     sessions: deps.sessions,
-    workspaces: deps.workspaces,
+    workspacePath: deps.config.workspaceRoot,
     events: deps.events,
     memory: deps.memory,
     enqueueRemember: memoryQueue

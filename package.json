@@ -15,7 +15,7 @@
     "check": "bun run check:lines && bun run typecheck && bun test"
   },
   "dependencies": {
-    "@ax-llm/ax": "link:@ax-llm/ax",
+    "@ax-llm/ax": "^21.0.0",
     "@radix-ui/react-popover": "^1.1.15",
     "@radix-ui/react-select": "^2.2.6",
     "@radix-ui/react-slot": "^1.2.4",
@@ -38,7 +38,7 @@
     "microsandbox": "^0.4.3",
     "postcss": "^8.5.14",
     "react": "19.2.5",
-    "react-dom": "^19.2.5",
+    "react-dom": "19.2.5",
     "sqlite-vec": "^0.1.9",
     "tailwind-merge": "^3.5.0",
     "tailwindcss": "^4.2.4",

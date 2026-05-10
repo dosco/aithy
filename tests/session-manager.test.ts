@@ -4,7 +4,6 @@ import path from "node:path";
 import { describe, expect, test } from "bun:test";
 import { SessionManager } from "../src/session/session-manager";
 import { MockSandboxProvider } from "../src/sandbox/mock-provider";
-import { WorkspaceStore } from "../src/workspace/store";
 import { EventBus } from "../src/events/bus";
 import { ActiveRunRegistry, type StoppableProgram } from "../src/agent/active-runs";
 import { SqliteSessionStateStore } from "../src/session/sqlite-state-store";
@@ -12,22 +11,20 @@ import { SqliteSessionStateStore } from "../src/session/sqlite-state-store";
 async function makeManager(opts: {
   ttlMs?: number;
   idleParkMs?: number;
-  maxLiveSandboxes?: number;
 } = {}) {
   const root = await mkdtemp(path.join(tmpdir(), "aithy-sm-"));
   const sandbox = new MockSandboxProvider();
-  const workspaces = new WorkspaceStore(path.join(root, "ws"));
   const events = new EventBus();
   const sessions = new SessionManager({
     sandbox,
-    workspaces,
+    botId: "default",
+    workspaceRoot: path.join(root, "ws"),
     events,
     ttlMs: opts.ttlMs ?? 60_000,
     idleParkMs: opts.idleParkMs ?? 100,
-    maxLiveSandboxes: opts.maxLiveSandboxes ?? 8,
     source: "test",
   });
-  return { sessions, sandbox };
+  return { sessions, sandbox, events };
 }
 
 async function makePersistentManager() {
@@ -36,11 +33,11 @@ async function makePersistentManager() {
   const activeRuns = new ActiveRunRegistry();
   const sessions = new SessionManager({
     sandbox,
-    workspaces: new WorkspaceStore(path.join(root, "ws")),
+    botId: "default",
+    workspaceRoot: path.join(root, "ws"),
     events: new EventBus(),
     ttlMs: 60_000,
     idleParkMs: 100,
-    maxLiveSandboxes: 8,
     source: "test",
     activeRuns,
     state: new SqliteSessionStateStore(path.join(root, "state.db")),
@@ -49,31 +46,46 @@ async function makePersistentManager() {
 }
 
 describe("SessionManager lifecycle", () => {
-  test("sweepExpired parks live sessions that have been idle past idleParkMs", async () => {
+  test("two conversations share one bot sandbox VM", async () => {
+    const { sessions, sandbox } = await makeManager();
+    const a = await sessions.get("conv-a");
+    const b = await sessions.get("conv-b");
+    expect(a.sandboxSessionId).toBe(b.sandboxSessionId);
+    // MockSandboxProvider only sees a single create event for the bot.
+    const creates = sandbox.events.filter((e) => e.kind === "create");
+    expect(creates).toHaveLength(1);
+  });
+
+  test("sweepExpired parks the bot VM only when every session is idle", async () => {
     const { sessions, sandbox } = await makeManager({ idleParkMs: 50 });
-    const session = await sessions.get("conv-idle");
-    expect(sandbox.state.get(session.sandboxSessionId)).toBe("live");
+    const a = await sessions.get("conv-a");
+    const b = await sessions.get("conv-b");
+    expect(sandbox.state.get(a.sandboxSessionId)).toBe("live");
 
-    // Force the session to look idle by rewinding lastActivityAt.
-    session.lastActivityAt = new Date(Date.now() - 10_000);
-
+    // Only A is idle; the bot VM must stay live because B is fresh.
+    a.lastActivityAt = new Date(Date.now() - 10_000);
     await sessions.sweepExpired();
-    expect(sandbox.state.get(session.sandboxSessionId)).toBe("parked");
-    expect(sandbox.events.some((e) => e.kind === "park")).toBe(true);
+    expect(sandbox.state.get(a.sandboxSessionId)).toBe("live");
+
+    // Now both are idle — bot VM parks.
+    b.lastActivityAt = new Date(Date.now() - 10_000);
+    await sessions.sweepExpired();
+    expect(sandbox.state.get(a.sandboxSessionId)).toBe("parked");
   });
 
-  test("sweepExpired destroys sessions past TTL even if they were parked", async () => {
+  test("sweepExpired removes expired sessions but leaves the VM alone if other sessions are live", async () => {
     const { sessions, sandbox } = await makeManager({ ttlMs: 50, idleParkMs: 1_000_000 });
-    const session = await sessions.get("conv-ttl");
-    // Force expiry.
-    session.expiresAt = new Date(Date.now() - 1);
+    const a = await sessions.get("conv-ttl");
+    await sessions.get("conv-fresh");
+    a.expiresAt = new Date(Date.now() - 1);
 
     await sessions.sweepExpired();
-    expect(sandbox.state.has(session.sandboxSessionId)).toBe(false);
-    expect(sandbox.events.some((e) => e.kind === "destroy")).toBe(true);
+    expect(sessions.getSummary("conv-ttl")).toBeUndefined();
+    // Bot VM still live for the fresh session.
+    expect(sandbox.state.get(a.sandboxSessionId)).toBe("live");
   });
 
-  test("get() on a parked session resumes it through the provider", async () => {
+  test("get() resumes the bot VM after sweep parks it", async () => {
     const { sessions, sandbox } = await makeManager({ idleParkMs: 1 });
     const session = await sessions.get("conv-resume");
     session.lastActivityAt = new Date(Date.now() - 10_000);
@@ -86,29 +98,80 @@ describe("SessionManager lifecycle", () => {
     expect(sandbox.events.some((e) => e.kind === "resume")).toBe(true);
   });
 
-  test("creating a new session past maxLiveSandboxes parks the LRU live one", async () => {
-    const { sessions, sandbox } = await makeManager({ maxLiveSandboxes: 2, idleParkMs: 1_000_000 });
-
-    const a = await sessions.get("conv-a");
-    // Make A older than the rest so it becomes the LRU candidate.
-    a.lastActivityAt = new Date(Date.now() - 10_000);
-    await sessions.get("conv-b");
-    // Adding the 3rd live session must evict A.
-    await sessions.get("conv-c");
-
-    expect(sandbox.state.get(a.sandboxSessionId)).toBe("parked");
-    // B and C remain live.
-    expect([...sandbox.state.values()].filter((s) => s === "live").length).toBe(2);
-  });
-
-  test("destroy clears state and emits a destroy event on the provider", async () => {
+  test("destroy clears the in-memory session but leaves the bot VM alone", async () => {
     const { sessions, sandbox } = await makeManager();
-    const session = await sessions.get("conv-destroy");
-    await sessions.destroy("conv-destroy");
-    expect(sandbox.state.has(session.sandboxSessionId)).toBe(false);
+    const a = await sessions.get("conv-a");
+    await sessions.get("conv-b");
+    await sessions.destroy("conv-a");
+    expect(sessions.getSummary("conv-a")).toBeUndefined();
+    // Shared VM still up.
+    expect(sandbox.state.get(a.sandboxSessionId)).toBe("live");
   });
 
-  test("deleteSession stops active run and removes child sessions", async () => {
+  test("emits sandbox starting before created on first conversation", async () => {
+    const { sessions, events } = await makeManager();
+    const emitted: string[] = [];
+    events.subscribe((event) => emitted.push(event.type));
+
+    await sessions.get("conv-starting");
+
+    expect(emitted).toEqual([
+      "sandbox.starting",
+      "sandbox.created",
+    ]);
+  });
+
+  test("does not emit sandbox.starting again for the second conversation", async () => {
+    const { sessions, events } = await makeManager();
+    await sessions.get("conv-1");
+    const emitted: string[] = [];
+    events.subscribe((event) => emitted.push(event.type));
+    await sessions.get("conv-2");
+    expect(emitted).toEqual([]);
+  });
+
+  test("emits sandbox resuming before created when waking the parked VM", async () => {
+    const { sessions, events } = await makeManager({ idleParkMs: 1 });
+    const session = await sessions.get("conv-resuming");
+    session.lastActivityAt = new Date(Date.now() - 10_000);
+    await sessions.sweepExpired();
+    const emitted: string[] = [];
+    events.subscribe((event) => emitted.push(event.type));
+
+    await sessions.get("conv-resuming");
+
+    expect(emitted).toEqual([
+      "sandbox.resuming",
+      "sandbox.created",
+    ]);
+  });
+
+  test("emits sandbox mounts refreshing before refreshed", async () => {
+    const { sessions, events } = await makeManager();
+    await sessions.get("conv-mount-refresh");
+    const emitted: string[] = [];
+    events.subscribe((event) => emitted.push(event.type));
+
+    await sessions.refreshMounts("conv-mount-refresh");
+
+    expect(emitted).toEqual([
+      "sandbox.mountsRefreshing",
+      "sandbox.mountsRefreshed",
+    ]);
+  });
+
+  test("ensureBotSandbox is single-flight under concurrent get() calls", async () => {
+    const { sessions, sandbox } = await makeManager();
+    await Promise.all([
+      sessions.get("conv-1"),
+      sessions.get("conv-2"),
+      sessions.get("conv-3"),
+    ]);
+    const creates = sandbox.events.filter((e) => e.kind === "create");
+    expect(creates).toHaveLength(1);
+  });
+
+  test("deleteSession stops active run and removes child sessions but keeps the bot VM", async () => {
     const { sessions, sandbox, activeRuns } = await makePersistentManager();
     const active = await sessions.get("parent");
     sessions.createSubSession({ parentSessionId: "parent", name: "child" });
@@ -119,9 +182,10 @@ describe("SessionManager lifecycle", () => {
 
     expect(stopper.stopped).toBe(true);
     expect(deleted).toContain("parent");
-    expect(sandbox.state.has(active.sandboxSessionId)).toBe(false);
     expect(sessions.getSummary("parent")).toBeUndefined();
     expect(sessions.listSessions()).toEqual([]);
+    // Bot VM is shared — destroying a conversation does NOT tear it down.
+    expect(sandbox.state.get(active.sandboxSessionId)).toBe("live");
   });
 });
 

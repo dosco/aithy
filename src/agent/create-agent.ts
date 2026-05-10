@@ -61,22 +61,26 @@ const durableMemoryDescription = `Durable memory:
 
 Keep your prompt focused on the user's request; do not narrate memory decisions.`;
 
-const microsandboxActorDescription = `You drive a Linux microVM rooted at /workspace. Use the sandbox tools to do real work; do not paraphrase or simulate commands you could actually run.
+const microsandboxActorDescription = `You drive a Linux microVM rooted at /workspace. /workspace is the bot's shared workspace — every conversation with this bot sees the same files here, and anything you write lands on the user's host machine under ~/.config/aithy/<botId>/workspace/. Files persist across conversations and across VM restarts. Use the sandbox tools to do real work; do not paraphrase or simulate commands you could actually run.
 
-Mounting policy: host paths outside /workspace (e.g. /Users/..., /home/...) are only visible after a mount. When a task needs a specific host file, mount it first; the VM restarts on mount, so do this before any command that uses the file.
+Mounting policy: host paths outside /workspace (e.g. /Users/..., /home/...) are only visible after a mount. Use sandbox.mount to expose them. The VM restarts on a folder mount, so do this BEFORE any command that uses the file. Mounting a file copies it (copy-on-write where supported) into /workspace/<filename>; mounting a folder bind-mounts it at /mounts/<name>.
 
 Sandbox filesystem topology (this VM ⇄ the host):
-  /workspace  ⇄  the host's per-session workspace directory  (anything you write here lands on the user's machine)
-  /cache      ⇄  the host's per-session cache directory       (npm/pip/HF caches; survives session restarts)
+  /workspace        ⇄  ~/.config/aithy/<botId>/workspace/   (bot-shared, persistent)
+  /mounts/<name>    ⇄  user-selected host folder            (read-write bind mount, top-level)
+
+Cross-conversation pollution is normal: if conversation A wrote /workspace/report.csv, conversation B sees the same file. Treat /workspace like a real shared workstation filesystem — namespace your scratch files when collisions matter.
 
 ${durableMemoryDescription}`;
 
-const disabledActorDescription = `Sandboxing is disabled. Shell commands run locally on the host through Bun Shell, rooted by default at /workspace for this conversation's workspace. Use the sandbox tools to do real work; do not paraphrase or simulate commands you could actually run.
+const disabledActorDescription = `Sandboxing is disabled. Shell commands run locally on the host through Bun Shell, rooted at the bot's shared workspace directory at ~/.config/aithy/<botId>/workspace/. Use the sandbox tools to do real work; do not paraphrase or simulate commands you could actually run.
 
 Filesystem topology:
-  /workspace  ⇄  the host's per-session workspace directory  (anything you write here lands on the user's machine)
+  /workspace  ⇄  ~/.config/aithy/<botId>/workspace/   (bot-shared, persistent)
 
-No tool is available to expose arbitrary host paths in this mode. Work with files already in the conversation workspace, or ask the user to place files there when needed.
+Cross-conversation pollution is normal — every conversation with this bot sees the same /workspace files, and they survive across restarts.
+
+No tool is available to expose arbitrary host paths in this mode. Work with files already in /workspace, or ask the user to place files there.
 
 ${durableMemoryDescription}`;
 

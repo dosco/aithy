@@ -4,6 +4,7 @@ import {
   HeadContent,
   Link,
   Outlet,
+  redirect,
   Scripts,
   useLocation,
 } from "@tanstack/react-router";
@@ -12,6 +13,11 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { TriangleAlert } from "lucide-react";
 import { AppShell } from "@/components/shell";
 import { Button } from "@/components/ui/button";
+import {
+  isSetupGuardExemptPath,
+  sanitizeSetupRedirect,
+} from "@/lib/setup-redirect";
+import { getWebState } from "@/server/actions.functions";
 import appCss from "../styles/app.css?url";
 
 export const Route = createRootRoute({
@@ -23,6 +29,17 @@ export const Route = createRootRoute({
     ],
     links: [{ rel: "stylesheet", href: appCss }],
   }),
+  beforeLoad: async ({ location }) => {
+    if (isSetupGuardExemptPath(location.pathname)) return;
+    const state = await getWebState({ data: {} });
+    if (!state.aiConfigured) {
+      throw redirect({
+        to: "/setup",
+        search: { redirect: sanitizeSetupRedirect(location.href) },
+        replace: true,
+      });
+    }
+  },
   component: RootComponent,
   errorComponent: RootErrorComponent,
 });
