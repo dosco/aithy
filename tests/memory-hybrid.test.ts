@@ -112,11 +112,13 @@ describe("hybrid memory retrieval", () => {
     expect(probeVecRowCount(store)).toBe(0);
     const result = await store.backfillEmbeddings();
     expect(result.done).toBe(3);
+    expect(result.indexed.map((m) => m.title)).toEqual(["a", "b", "c"]);
     expect(probeVecRowCount(store)).toBe(3);
 
     const second = await store.backfillEmbeddings();
     expect(second.done).toBe(0);
     expect(second.skipped).toBe(3);
+    expect(second.indexed).toEqual([]);
   });
 
   test("vec leg failure degrades to FTS-only without throwing", async () => {

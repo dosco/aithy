@@ -1,6 +1,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { SqliteMemoryStore } from "../src/memory/memory-store";
 
@@ -16,7 +17,9 @@ describe("SqliteMemoryStore", () => {
       kind: "fact",
       title: "user uses bun",
       body: "The user runs everything with bun, not node.",
-      tags: "runtime bun",
+      labels: ["tooling"],
+      frequency: "daily",
+      evidence: "User said they run everything with bun.",
       importance: 0.7,
     });
     expect(entry.id).toBeTruthy();
@@ -26,20 +29,26 @@ describe("SqliteMemoryStore", () => {
 
     const fetched = store.get(entry.id);
     expect(fetched?.title).toBe("user uses bun");
+    expect(fetched?.labels).toEqual(["tooling"]);
+    expect(fetched?.frequency).toBe("daily");
+    expect(fetched?.evidence).toBe("User said they run everything with bun.");
     expect(fetched?.recallCount).toBe(0);
+    expect(fetched?.retrievedCount).toBe(0);
   });
 
-  test("search returns FTS matches and bumps recall_count", async () => {
+  test("search returns FTS matches and bumps retrieval counts", async () => {
     const store = new SqliteMemoryStore(await tempDbPath());
-    store.upsert({ kind: "fact", title: "uses bun runtime", body: "User runs bun.", tags: "bun" });
-    store.upsert({ kind: "preference", title: "prefers tabs", body: "User prefers tabs over spaces.", tags: "style" });
+    store.upsert({ kind: "fact", title: "uses bun runtime", body: "User runs bun.", labels: ["tooling"] });
+    store.upsert({ kind: "preference", title: "prefers tabs", body: "User prefers tabs over spaces.", labels: ["workflow"] });
 
     const hits = await store.search(["bun"]);
     expect(hits.map((h) => h.title)).toEqual(["uses bun runtime"]);
     expect(hits[0].recallCount).toBe(0);
+    expect(hits[0].retrievedCount).toBe(0);
 
     const second = await store.search(["bun"]);
     expect(second[0].recallCount).toBe(1);
+    expect(second[0].retrievedCount).toBe(1);
   });
 
   test("search filters out excludeIds", async () => {
@@ -57,13 +66,46 @@ describe("SqliteMemoryStore", () => {
     expect(both).toEqual([]);
   });
 
-  test("search filters by kind", async () => {
+  test("search filters by kind and labels", async () => {
     const store = new SqliteMemoryStore(await tempDbPath());
-    store.upsert({ kind: "fact", title: "bun fact", body: "fact about bun" });
-    store.upsert({ kind: "preference", title: "bun preference", body: "prefers bun" });
+    store.upsert({ kind: "fact", title: "bun fact", body: "fact about bun", labels: ["tooling"] });
+    store.upsert({ kind: "preference", title: "bun preference", body: "prefers bun", labels: ["workflow"] });
 
     const facts = await store.search(["bun"], { kinds: ["fact"] });
     expect(facts.map((h) => h.kind)).toEqual(["fact"]);
+    const tooling = await store.search(["bun"], { labels: ["tooling"] });
+    expect(tooling.map((h) => h.labels)).toEqual([["tooling"]]);
+  });
+
+  test("upsert stores time-bounded metadata and computes inclusive duration", async () => {
+    const store = new SqliteMemoryStore(await tempDbPath());
+    const entry = store.upsert({
+      kind: "event",
+      title: "Tokyo trip",
+      body: "The user plans to visit Tokyo.",
+      labels: ["travel", "time_bound"],
+      validFrom: "2026-05-10",
+      validUntil: "2026-05-12",
+      durationDays: 99,
+      evidence: "User said the trip runs May 10 through May 12.",
+    });
+
+    expect(entry.validFrom).toBe("2026-05-10");
+    expect(entry.validUntil).toBe("2026-05-12");
+    expect(entry.durationDays).toBe(3);
+    expect(entry.evidence).toContain("May 10");
+  });
+
+  test("upsert rejects invalid calendar dates", async () => {
+    const store = new SqliteMemoryStore(await tempDbPath());
+    expect(() =>
+      store.upsert({
+        kind: "event",
+        title: "bad date",
+        body: "The user mentioned an impossible date.",
+        validUntil: "2026-02-31",
+      }),
+    ).toThrow("validUntil must be an ISO date string");
   });
 
   test("search sanitizes empty / operator-like queries", async () => {
@@ -80,13 +122,13 @@ describe("SqliteMemoryStore", () => {
       kind: "fact",
       title: "main repo",
       body: "Main repo is ~/src/old.",
-      tags: "repo path",
+      labels: ["project"],
     });
     const replacement = store.supersede(original.id, {
       kind: "fact",
       title: "main repo",
       body: "Main repo is ~/src/new.",
-      tags: "repo path",
+      labels: ["project"],
     });
 
     expect(store.get(original.id)?.supersededBy).toBe(replacement.id);
@@ -145,6 +187,28 @@ describe("SqliteMemoryStore", () => {
     expect(third.nextCursor).toBeNull();
   });
 
+  test("page can sort by retrieved count with a stable cursor", async () => {
+    const store = new SqliteMemoryStore(await tempDbPath());
+    store.upsert({ kind: "fact", title: "alpha", body: "alpha" });
+    await new Promise((r) => setTimeout(r, 2));
+    store.upsert({ kind: "fact", title: "bravo", body: "bravo" });
+    await new Promise((r) => setTimeout(r, 2));
+    store.upsert({ kind: "fact", title: "charlie", body: "charlie" });
+
+    await store.search(["alpha"]);
+    await store.search(["bravo"]);
+    await store.search(["bravo"]);
+
+    const first = store.page({ cursor: null, limit: 2, sort: "retrieved" });
+    expect(first.items.map((m) => `${m.title}:${m.retrievedCount}`)).toEqual([
+      "bravo:2", "alpha:1",
+    ]);
+
+    const second = store.page({ cursor: first.nextCursor, limit: 2, sort: "retrieved" });
+    expect(second.items.map((m) => `${m.title}:${m.retrievedCount}`)).toEqual(["charlie:0"]);
+    expect(second.nextCursor).toBeNull();
+  });
+
   test("page filters by query and kind together", async () => {
     const store = new SqliteMemoryStore(await tempDbPath());
     store.upsert({ kind: "fact", title: "alpha bun", body: "x" });
@@ -179,5 +243,81 @@ describe("SqliteMemoryStore", () => {
     expect(store.count()).toBe(0);
     expect(await store.search(["bun"])).toEqual([]);
     expect(store.mostRecent()).toBeNull();
+  });
+
+  test("deleteExpired physically deletes only rows with valid_until before today", async () => {
+    const store = new SqliteMemoryStore(await tempDbPath());
+    const expired = store.upsert({
+      kind: "event",
+      title: "old deadline",
+      body: "The user's old deadline passed.",
+      labels: ["deadline", "time_bound"],
+      validUntil: "2026-05-09",
+    });
+    const today = store.upsert({
+      kind: "event",
+      title: "today deadline",
+      body: "The user's deadline is today.",
+      labels: ["deadline", "time_bound"],
+      validUntil: "2026-05-10",
+    });
+    const future = store.upsert({
+      kind: "event",
+      title: "future deadline",
+      body: "The user's deadline is tomorrow.",
+      labels: ["deadline", "time_bound"],
+      validUntil: "2026-05-11",
+    });
+
+    expect(store.deleteExpired("2026-05-10")).toBe(1);
+    expect(store.get(expired.id)).toBeNull();
+    expect(store.get(today.id)?.id).toBe(today.id);
+    expect(store.get(future.id)?.id).toBe(future.id);
+    expect(await store.search(["old deadline"])).toEqual([]);
+  });
+
+  test("migration maps episode and legacy tags to event and controlled labels", async () => {
+    const dbPath = await tempDbPath();
+    const db = new Database(dbPath, { create: true });
+    db.exec(`
+      CREATE TABLE schema_migrations (
+        scope TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        applied_at TEXT NOT NULL,
+        PRIMARY KEY (scope, version)
+      );
+      INSERT INTO schema_migrations(scope, version, applied_at)
+      VALUES ('memory', 1, 'now'), ('memory', 2, 'now'), ('memory', 3, 'now'), ('memory', 4, 'now');
+      CREATE TABLE memories (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('fact', 'preference', 'episode', 'instruction')),
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        tags TEXT,
+        source TEXT,
+        importance REAL NOT NULL DEFAULT 0.5,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_recalled_at TEXT,
+        recall_count INTEGER NOT NULL DEFAULT 0,
+        retrieved_count INTEGER NOT NULL DEFAULT 0,
+        superseded_by TEXT
+      );
+      INSERT INTO memories (
+        id, kind, title, body, tags, source, importance, created_at, updated_at
+      ) VALUES (
+        'm1', 'episode', 'Tokyo trip', 'The user plans a Tokyo trip.', 'travel project misc', 'test', 0.6, '2026-01-01', '2026-01-01'
+      );
+    `);
+    db.close();
+
+    const store = new SqliteMemoryStore(dbPath);
+    const migrated = store.get("m1");
+
+    expect(migrated?.kind).toBe("event");
+    expect(migrated?.labels).toEqual(["project", "travel"]);
+    expect(migrated?.validUntil).toBeNull();
+    expect((await store.search(["travel"]))[0]?.id).toBe("m1");
+    store.close();
   });
 });

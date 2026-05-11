@@ -1,6 +1,7 @@
 import { Database } from "bun:sqlite";
 import type { Embedder } from "./embed";
 import { bodyHash, embedText, vecToBlob } from "./embed-text";
+import { labelsFromJson } from "./labels";
 import type { MemoryEntry } from "./types";
 
 interface MemoryRow {
@@ -8,12 +9,18 @@ interface MemoryRow {
   rowid: number;
   title: string;
   body: string;
-  tags: string | null;
+  labels: string;
+  validFrom?: string | null;
+  validUntil?: string | null;
+  durationDays?: number | null;
+  evidence?: string | null;
+  frequency?: string | null;
 }
 
 export interface BackfillResult {
   done: number;
   skipped: number;
+  indexed: Array<{ id: string; title: string; body: string }>;
 }
 
 const BACKFILL_BATCH_SIZE = 32;
@@ -60,7 +67,9 @@ export async function backfillEmbeddings(
 ): Promise<BackfillResult> {
   const rows = db
     .query(
-      `SELECT m.rowid AS rowid, m.id AS id, m.title AS title, m.body AS body, m.tags AS tags
+      `SELECT m.rowid AS rowid, m.id AS id, m.title AS title, m.body AS body, m.labels AS labels
+              , m.valid_from AS validFrom, m.valid_until AS validUntil, m.duration_days AS durationDays
+              , m.evidence AS evidence, m.frequency AS frequency
          FROM memories m
          WHERE m.superseded_by IS NULL`,
     )
@@ -69,7 +78,7 @@ export async function backfillEmbeddings(
   const stale: Array<MemoryRow & { computedHash: string }> = [];
   let skipped = 0;
   for (const row of rows) {
-    const computedHash = bodyHash(embedText(row));
+    const computedHash = bodyHash(embedText({ ...row, labels: labelsFromJson(row.labels) }));
     const meta = db
       .query(
         `SELECT body_hash AS bh, model_id AS mid, dim FROM memory_embed_meta WHERE memory_id = $id`,
@@ -88,9 +97,10 @@ export async function backfillEmbeddings(
   }
 
   let done = 0;
+  const indexed: BackfillResult["indexed"] = [];
   for (let i = 0; i < stale.length; i += BACKFILL_BATCH_SIZE) {
     const batch = stale.slice(i, i + BACKFILL_BATCH_SIZE);
-    const vectors = await embedder.embedMany(batch.map(embedText));
+    const vectors = await embedder.embedMany(batch.map((row) => embedText({ ...row, labels: labelsFromJson(row.labels) })));
     const now = new Date().toISOString();
     db.transaction(() => {
       for (let j = 0; j < batch.length; j++) {
@@ -98,13 +108,14 @@ export async function backfillEmbeddings(
       }
     })();
     done += batch.length;
+    indexed.push(...batch.map(({ id, title, body }) => ({ id, title, body })));
     await new Promise((r) => setTimeout(r, 0));
   }
 
   if (done > 0 || skipped > 0) {
     log(`memory: backfill done=${done} skipped=${skipped}`);
   }
-  return { done, skipped };
+  return { done, skipped, indexed };
 }
 
 /**

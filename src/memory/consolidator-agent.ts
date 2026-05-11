@@ -29,8 +29,8 @@ Look for:
 - Duplicates — multiple memories asserting the same fact. Pick the best phrasing, supersede the rest.
 - Contradictions — newer fact contradicts older. Supersede the older with the newer.
 - Fragmented preferences — multiple memories that say nearly the same thing in different words. Merge into one canonical version, supersede the others.
-- Episode roll-ups — many similar episodes about a single topic. Combine into one rolled-up episode, supersede the leaves.
-- Stale low-value rows — when an old episode-kind memory clearly served its purpose and isn't a stable fact, delete it.
+- Event roll-ups — many similar events about a single topic. Combine into one rolled-up event, supersede the leaves.
+- Stale low-value rows — when an old event memory clearly served its purpose and isn't a stable fact, delete it.
 
 Tools:
 - memory.write({...}) — write the canonical version when merging.
@@ -50,7 +50,11 @@ export interface ConsolidatorAgent {
 
 export function createConsolidatorAgent(deps: ConsolidatorAgentDeps): ConsolidatorAgent {
   const llm = createAiService(deps.config);
-  const tools = buildMemoryAgentTools({ memory: deps.memory });
+  const tools = buildMemoryAgentTools({
+    config: deps.config,
+    memory: deps.memory,
+    dedupeWrites: false,
+  });
   const program = ax(signature, {
     description,
     functions: tools,
@@ -67,9 +71,21 @@ export function createConsolidatorAgent(deps: ConsolidatorAgentDeps): Consolidat
   };
 }
 
-export function formatStoreForConsolidator(rows: readonly { id: string; title: string; body: string; kind: string; tags: string | null; importance: number }[]): string {
+export function formatStoreForConsolidator(rows: readonly {
+  id: string; title: string; body: string; kind: string; labels: readonly string[]; importance: number;
+  validFrom?: string | null; validUntil?: string | null; durationDays?: number | null; frequency?: string | null; evidence?: string | null;
+}[]): string {
   if (rows.length === 0) return "(empty store)";
-  return rows.map((m) => `${m.id} | ${m.kind} | ${m.importance.toFixed(2)} | ${m.title}\n  ${m.body.slice(0, 240).replace(/\n/g, " ")}`).join("\n\n");
+  return rows.map((m) => {
+    const meta = [
+      m.labels.length ? `labels: ${m.labels.join(", ")}` : "labels: none",
+      m.frequency ? `frequency: ${m.frequency}` : null,
+      m.validFrom || m.validUntil ? `valid: ${m.validFrom ?? "unknown"} to ${m.validUntil ?? "unknown"}` : null,
+      m.durationDays !== null && m.durationDays !== undefined ? `duration_days: ${m.durationDays}` : null,
+      m.evidence ? `evidence: ${m.evidence}` : null,
+    ].filter(Boolean).join(" | ");
+    return `${m.id} | ${m.kind} | ${m.importance.toFixed(2)} | ${meta} | ${m.title}\n  ${m.body.slice(0, 240).replace(/\n/g, " ")}`;
+  }).join("\n\n");
 }
 
 export { formatMemoryForRecall };

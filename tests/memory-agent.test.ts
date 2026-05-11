@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 import type { AppConfig } from "../src/config/env";
 import { createConsolidatorAgent } from "../src/memory/consolidator-agent";
 import { createMemoryAgent } from "../src/memory/memory-agent";
+import { buildMemoryAgentTools } from "../src/memory/agent-tools";
 import { SqliteMemoryStore } from "../src/memory/memory-store";
 
 describe("memory agents", () => {
@@ -15,6 +16,9 @@ describe("memory agents", () => {
 
     expect(program.executor).toBeUndefined();
     expect(generatorDescription(program)).toContain("The ONLY way to save a memory");
+    expect(generatorDescription(program)).toContain("dense, consolidated, self-contained");
+    expect(generatorDescription(program)).toContain("include an explicit frequency");
+    expect(generatorDescription(program)).toContain("validFrom, validUntil, durationDays, and evidence");
     memory.close();
   });
 
@@ -25,6 +29,105 @@ describe("memory agents", () => {
 
     expect(program.executor).toBeUndefined();
     expect(generatorDescription(program)).toContain("You are the memory consolidator");
+    memory.close();
+  });
+
+  test("write tool dedupes candidates through memory search", async () => {
+    const { config, memory } = await fixture();
+    const existing = memory.upsert({
+      kind: "fact",
+      title: "uses bun runtime",
+      body: "The user runs project commands with bun.",
+    });
+    const write = buildMemoryAgentTools({
+      config,
+      memory,
+      dedupeDecider: { isDuplicate: async (_candidate, matches) => matches.length > 0 },
+    }).find((tool) => tool.name === "write") as any;
+
+    const duplicate = await write.func({
+      kind: "fact",
+      title: "uses bun runtime",
+      body: "The user runs project commands with bun.",
+    });
+    const fresh = await write.func({
+      kind: "fact",
+      title: "uses sqlite",
+      body: "The project stores session history in sqlite.",
+    });
+
+    expect(duplicate).toEqual({ id: existing.id, deduped: true, expired: false });
+    expect(fresh.deduped).toBe(false);
+    expect(memory.count()).toBe(2);
+    expect(memory.get(existing.id)?.recallCount).toBe(0);
+    expect(memory.get(existing.id)?.retrievedCount).toBe(0);
+    memory.close();
+  });
+
+  test("write tool can bypass dedupe for consolidation", async () => {
+    const { config, memory } = await fixture();
+    memory.upsert({
+      kind: "fact",
+      title: "uses bun runtime",
+      body: "The user runs project commands with bun.",
+    });
+    let dedupeCalls = 0;
+    const write = buildMemoryAgentTools({
+      config,
+      memory,
+      dedupeWrites: false,
+      dedupeDecider: {
+        isDuplicate: async () => {
+          dedupeCalls += 1;
+          return true;
+        },
+      },
+    }).find((tool) => tool.name === "write") as any;
+
+    const result = await write.func({
+      kind: "fact",
+      title: "uses bun runtime",
+      body: "The user runs project commands with bun.",
+    });
+
+    expect(result.deduped).toBe(false);
+    expect(dedupeCalls).toBe(0);
+    expect(memory.count()).toBe(2);
+    memory.close();
+  });
+
+  test("write tool stores time-bounded metadata and reports expired skips", async () => {
+    const { config, memory } = await fixture();
+    const write = buildMemoryAgentTools({
+      config,
+      memory,
+      dedupeWrites: false,
+    }).find((tool) => tool.name === "write") as any;
+
+    const saved = await write.func({
+      kind: "event",
+      title: "future trip",
+      body: "The user will travel to Tokyo.",
+      labels: ["travel", "time_bound"],
+      validFrom: "2099-01-01",
+      validUntil: "2099-01-03",
+      durationDays: 200,
+      evidence: "The user said Tokyo from Jan 1 through Jan 3.",
+      frequency: "once",
+    });
+    const expired = await write.func({
+      kind: "event",
+      title: "past deadline",
+      body: "The user's deadline already passed.",
+      labels: ["deadline", "time_bound"],
+      validUntil: "2000-01-01",
+    });
+
+    expect(saved).toEqual({ id: expect.any(String), deduped: false, expired: false });
+    expect(memory.get(saved.id)?.durationDays).toBe(3);
+    expect(memory.get(saved.id)?.evidence).toContain("Tokyo");
+    expect(expired).toEqual({ id: "", deduped: false, expired: true });
+    expect(memory.count()).toBe(1);
     memory.close();
   });
 });

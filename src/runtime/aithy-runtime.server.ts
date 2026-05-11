@@ -14,8 +14,10 @@ import { SqliteMemoryStore } from "../memory/memory-store";
 import { SqliteMemoryRunsStore } from "../memory/memory-runs";
 import { MemoryQueue } from "../memory/memory-queue";
 import { MemoryConsolidateQueue } from "../memory/consolidate-queue";
+import { MemoryExpiryQueue } from "../memory/expiry-queue";
 import { RerankerService } from "../memory/rerank";
 import { assertVecExtensionReady, probeAndConfigureSqlite } from "../memory/vec-extension";
+import { memoryBackfillNotification } from "../memory/notification-copy";
 import { shutdownManager } from "bunqueue/client";
 import { SqliteNotificationStore } from "../notifications/notification-store";
 import type { NotificationCreate, NotificationEntry } from "../notifications/types";
@@ -59,6 +61,7 @@ export interface AithyRuntime {
   memoryRuns: SqliteMemoryRunsStore;
   memoryQueue: MemoryQueue;
   memoryConsolidate: MemoryConsolidateQueue;
+  memoryExpiry: MemoryExpiryQueue;
   skillPromote: SkillPromoteQueue;
   activeRuns: ActiveRunRegistry;
   dispatcher: AgentDispatcher;
@@ -104,6 +107,7 @@ class RuntimeImpl implements AithyRuntime {
     public memoryRuns: SqliteMemoryRunsStore,
     public memoryQueue: MemoryQueue,
     public memoryConsolidate: MemoryConsolidateQueue,
+    public memoryExpiry: MemoryExpiryQueue,
     public skillPromote: SkillPromoteQueue,
     public notifications: SqliteNotificationStore,
     public usage: SqliteUsageStore,
@@ -254,17 +258,10 @@ class RuntimeImpl implements AithyRuntime {
       onQueueError,
     });
 
-    const memoryConsolidate = new MemoryConsolidateQueue({
-      config,
-      memory,
-      runs: memoryRuns,
-      usage,
-      notify: pushNotification,
-      onQueueError,
-    });
-    void memoryConsolidate.schedule().catch((error) =>
-      events.emit({ type: "error", message: `[memory.consolidate] failed to schedule cron: ${describe(error)}` }),
-    );
+    const memoryConsolidate = new MemoryConsolidateQueue({ config, memory, runs: memoryRuns, usage, notify: pushNotification, onQueueError });
+    void memoryConsolidate.schedule().catch((error) => events.emit({ type: "error", message: `[memory.consolidate] failed to schedule cron: ${describe(error)}` }));
+    const memoryExpiry = new MemoryExpiryQueue({ config, memory, notify: pushNotification, onQueueError });
+    void memoryExpiry.schedule().catch((error) => events.emit({ type: "error", message: `[memory.expiry] failed to schedule cron: ${describe(error)}` }));
 
     const skillPromote = new SkillPromoteQueue({
       config,
@@ -304,11 +301,12 @@ class RuntimeImpl implements AithyRuntime {
         );
         const result = await memory.backfillEmbeddings();
         if (result.done > 0) {
+          const copy = memoryBackfillNotification(result.done, result.indexed);
           pushNotification({
             kind: "info",
-            title: `Memory: indexed ${result.done} memor${result.done === 1 ? "y" : "ies"}`,
-            body: null,
-            link: null,
+            title: copy.title,
+            body: copy.body,
+            link: "/memory",
           });
         }
       })
@@ -332,6 +330,7 @@ class RuntimeImpl implements AithyRuntime {
       memoryRuns,
       memoryQueue,
       memoryConsolidate,
+      memoryExpiry,
       skillPromote,
       notifications,
       usage,
@@ -460,6 +459,7 @@ class RuntimeImpl implements AithyRuntime {
       ["dispatcher", this.dispatcher.close.bind(this.dispatcher)],
       ["memoryQueue", this.memoryQueue.close.bind(this.memoryQueue)],
       ["memoryConsolidate", this.memoryConsolidate.close.bind(this.memoryConsolidate)],
+      ["memoryExpiry", this.memoryExpiry.close.bind(this.memoryExpiry)],
       ["skillPromote", this.skillPromote.close.bind(this.skillPromote)],
     ] as const;
     for (const [name, close] of queues) {

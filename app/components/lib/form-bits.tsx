@@ -5,9 +5,17 @@ import { cn } from "@/lib/utils";
 export const fieldClass =
   "h-10 w-full rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3 text-sm outline-none transition placeholder:text-[rgb(var(--muted-foreground))] focus:border-[rgb(var(--foreground))]";
 
-export function Field({ label, children }: { label: string; children: ReactNode }) {
+export function Field({
+  label,
+  children,
+  className,
+}: {
+  label: string;
+  children: ReactNode;
+  className?: string;
+}) {
   return (
-    <label className="grid gap-1.5">
+    <label className={cn("grid min-h-0 content-start gap-1.5", className)}>
       <span className="text-[10px] font-medium uppercase tracking-wider text-[rgb(var(--muted-foreground))]">
         {label}
       </span>

@@ -187,10 +187,11 @@ export class MemoryQueue {
       });
     }
     if (anyToolFired) {
+      const latest = afterCount > beforeCount ? this.deps.memory.mostRecent() : null;
       this.deps.notify?.({
         kind: "memory.written",
-        title: "Memory updated",
-        body: summary,
+        title: latest ? `Saved to memory: ${latest.title}` : "Memory updated",
+        body: latest ? latest.body : summary,
         link: "/memory",
       });
     }

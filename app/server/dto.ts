@@ -13,7 +13,7 @@ import type { StoredSettings } from "../../src/settings/types";
 import type { AithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import type { SoulProfile } from "../../src/soul/types";
 import type { SkillEntry } from "../../src/skills/skills-store";
-import type { MemoryEntry, MemoryKind } from "../../src/memory/types";
+import type { MemoryEntry, MemoryKind, MemoryLabel } from "../../src/memory/types";
 import type { MemoryRun, MemoryRunStatus, MemoryRunTrigger } from "../../src/memory/memory-runs";
 import type { NotificationEntry, NotificationKind } from "../../src/notifications/types";
 import type { UsageBucket, UsagePurpose } from "../../src/usage/types";
@@ -88,13 +88,19 @@ export interface MemoryDto {
   kind: MemoryKind;
   title: string;
   body: string;
-  tags: string | null;
+  labels: MemoryLabel[];
+  validFrom: string | null;
+  validUntil: string | null;
+  durationDays: number | null;
+  evidence: string | null;
+  frequency: string | null;
   source: string | null;
   importance: number;
   createdAt: string;
   updatedAt: string;
   lastRecalledAt: string | null;
   recallCount: number;
+  retrievedCount: number;
 }
 
 export interface UsageBucketDto {
@@ -133,8 +139,8 @@ export interface NotificationDto {
   createdAt: string;
 }
 
-export type SkillsCursor = { name: string; id: string };
-export type MemoriesCursor = { updatedAt: string; id: string };
+export type SkillsCursor = { name: string; id: string; retrievedCount?: number };
+export type MemoriesCursor = { updatedAt: string; id: string; retrievedCount?: number };
 
 export const SKILLS_PAGE_SIZE = 60;
 export const MEMORIES_PAGE_SIZE = 60;
@@ -219,13 +225,19 @@ export function memoryDto(entry: MemoryEntry): MemoryDto {
     kind: entry.kind,
     title: entry.title,
     body: entry.body,
-    tags: entry.tags,
+    labels: entry.labels,
+    validFrom: entry.validFrom,
+    validUntil: entry.validUntil,
+    durationDays: entry.durationDays,
+    evidence: entry.evidence,
+    frequency: entry.frequency,
     source: entry.source,
     importance: entry.importance,
     createdAt: entry.createdAt,
     updatedAt: entry.updatedAt,
     lastRecalledAt: entry.lastRecalledAt,
     recallCount: entry.recallCount,
+    retrievedCount: entry.retrievedCount,
   };
 }
 

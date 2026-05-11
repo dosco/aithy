@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
-import { MEMORY_KINDS } from "../../src/memory/types";
+import { MEMORY_KINDS, MEMORY_LABELS } from "../../src/memory/types";
 import { assertLoopbackRequest } from "../../src/settings/localhost";
 import { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import {
@@ -75,13 +75,19 @@ export const listSkillsPaged = createServerFn({ method: "GET" })
   });
 
 const memoryKindSchema = z.enum(MEMORY_KINDS as [string, ...string[]]);
+const memoryLabelSchema = z.enum(MEMORY_LABELS as [string, ...string[]]);
 
 const memoryUpsertInput = z.object({
   id: z.string().min(1).max(120).optional(),
   kind: memoryKindSchema,
   title: z.string().min(1).max(200),
   body: z.string().min(1).max(8_000),
-  tags: z.string().max(500).nullable().optional(),
+  labels: z.array(memoryLabelSchema).max(12).optional(),
+  validFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  validUntil: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
+  durationDays: z.number().int().nonnegative().nullable().optional(),
+  evidence: z.string().max(1_000).nullable().optional(),
+  frequency: z.string().max(200).nullable().optional(),
   importance: z.number().min(0).max(1).optional(),
 });
 
@@ -95,7 +101,12 @@ export const upsertMemory = createServerFn({ method: "POST" })
       kind: data.kind as never,
       title: data.title.trim(),
       body: data.body,
-      tags: data.tags?.trim() || null,
+      labels: data.labels as never,
+      validFrom: data.validFrom,
+      validUntil: data.validUntil,
+      durationDays: data.durationDays,
+      evidence: data.evidence,
+      frequency: data.frequency,
       importance: data.importance,
       source: "ui",
     });
@@ -119,10 +130,16 @@ export const deleteMemory = createServerFn({ method: "POST" })
   });
 
 const memoriesPageInput = z.object({
-  cursor: z.object({ updatedAt: z.string(), id: z.string() }).nullable().optional(),
+  cursor: z.object({
+    updatedAt: z.string(),
+    id: z.string(),
+    retrievedCount: z.number().optional(),
+  }).nullable().optional(),
   query: z.string().max(200).optional(),
   kind: memoryKindSchema.optional(),
+  labels: z.array(memoryLabelSchema).max(12).optional(),
   limit: z.number().int().positive().max(200).optional(),
+  sort: z.enum(["recent", "retrieved"]).optional(),
 });
 
 export const listMemoriesPaged = createServerFn({ method: "GET" })
@@ -135,12 +152,14 @@ export const listMemoriesPaged = createServerFn({ method: "GET" })
       limit,
       query: data.query,
       kind: data.kind as never,
+      labels: data.labels as never,
+      sort: data.sort,
     });
     return {
       items: result.items.map(memoryDto),
       nextCursor: result.nextCursor,
       total: data.cursor
         ? null
-        : runtime.memory.count({ query: data.query, kind: data.kind as never }),
+        : runtime.memory.count({ query: data.query, kind: data.kind as never, labels: data.labels as never }),
     };
   });

@@ -4,6 +4,7 @@ import type { AppConfig } from "../config/env";
 import { buildMemoryAgentTools } from "./agent-tools";
 import { formatMemoryForRecall } from "./format";
 import type { SqliteMemoryStore } from "./memory-store";
+import { MEMORY_LABELS } from "./types";
 
 export interface MemoryAgentDeps {
   config: AppConfig;
@@ -23,6 +24,8 @@ const description = `You are the memory triage agent. Given a conversation threa
 CRITICAL — how to actually persist:
 - The ONLY way to save a memory is to \`await memory.write({...})\`. Likewise \`memory.supersede\` and \`memory.delete\` are the only ways to change existing memories.
 - The \`summary\` output is a report of what you ACTUALLY did via tool calls. NEVER write a summary like "saved the fact" or "stored the preference" unless you successfully called the corresponding tool earlier in this run. Performative narration is a bug.
+- If \`memory.write\` returns \`deduped: true\`, an equivalent memory already existed and no new memory was written.
+- If \`memory.write\` returns \`expired: true\`, the candidate was already expired and no memory was written.
 - If you call no write/supersede/delete tools, your summary MUST be exactly "nothing to remember" (or a close paraphrase that makes it clear nothing was persisted).
 - Tool calls return \`{id}\` (or \`{deleted}\`). If you didn't see that return value, the write didn't happen — say so honestly.
 
@@ -30,17 +33,21 @@ WRITE (\`memory.write\`) only:
 - stable facts about the user, their environment, their preferences ("uses pnpm", "main repo is ~/src/foo").
 - project-specific conventions or constraints that will matter in future turns.
 - something the user explicitly asked you to remember (trigger='explicit').
-- complete episodes worth recalling (kind='episode', body under ~500 words / 4 KB).
+- time-bounded or episode-like information worth recalling (kind='event', body under ~500 words / 4 KB).
 
 DO NOT WRITE:
 - anything derivable from current code or git history.
 - transient state for the current conversation.
 - speculation; only confirmed facts.
 - duplicates — \`memories\` contains recent existing durable memories. If the fact is already present, do not write it again.
+- greetings, acknowledgments, pleasantries, and low-signal chat filler.
 
 Prefer \`memory.supersede\` over delete+write when correcting an existing fact.
 
-KIND: 'fact' | 'preference' | 'episode' | 'instruction'.
+KIND: 'fact' | 'preference' | 'instruction' | 'event'. Choose exactly one primary kind.
+LABELS: choose zero or more controlled retrieval facets: ${MEMORY_LABELS.map((label) => `'${label}'`).join(", ")}. Use topic labels for where the memory is useful, and trait labels like 'deadline', 'recurring', 'time_bound', and 'verbatim_detail' only when the fact actually has that shape. Do not invent labels.
+QUALITY: write dense, consolidated, self-contained sentences rather than atomic fragments. Attribute every fact to a named person or "the user"; resolve pronouns. Preserve verbatim details when exact wording matters, such as signs, paintings, book titles, pet behaviors, and similar details. For recurring activities, include an explicit frequency.
+TIME-BOUNDED: for travel plans, illness recovery, deadlines, new jobs, and other temporary events, use kind='event' and include validFrom, validUntil, durationDays, and evidence whenever the thread supports them. Dates must be ISO YYYY-MM-DD. validUntil is inclusive; memory.write will skip already-expired candidates and return expired=true.
 IMPORTANCE: 0..1, default 0.5; >0.7 only when the user emphasized.
 
 If the thread has nothing memory-worthy: call no tools and return summary "nothing to remember". That is the most common outcome — never invent a fact to justify a write, and never claim a write you didn't perform.
@@ -62,7 +69,7 @@ export function createMemoryAgent(deps: MemoryAgentDeps): MemoryAgent {
   // Triage runs against the primary model — the small/fast model hallucinates
   // tool calls (writes a confident summary without ever invoking memory.write).
   const llm = createAiService(deps.config);
-  const tools = buildMemoryAgentTools({ memory: deps.memory });
+  const tools = buildMemoryAgentTools({ config: deps.config, memory: deps.memory });
   const program = ax(memoryAgentSignature, {
     description,
     functions: tools,
