@@ -2,6 +2,10 @@ import { useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import {
+  ProfilePhotoInput,
+  type PhotoUploadPayload,
+} from "@/components/profile-photo-input";
+import {
   ApiKeyInput,
   Field,
   ModelCombobox,
@@ -9,8 +13,9 @@ import {
 } from "@/components/settings-form-bits";
 import { ThemeSync } from "@/components/theme-sync";
 import { Button } from "@/components/ui/button";
-import { saveSettings } from "@/server/actions.functions";
-import type { WebStateDto } from "@/server/dto";
+import { saveSettingsWithSetupGateRefresh, setCachedSetupGateState } from "@/lib/setup-gate";
+import { saveProfile, saveProfileImage } from "@/server/profile.functions";
+import type { ProfileImageDto, WebStateDto } from "@/server/dto";
 
 const ASCII_LOGO = `      ..:::::..
    .:+#########+:.
@@ -34,28 +39,47 @@ export function SetupPage({
   );
   const [model, setModel] = useState(initialState.config.aiModel || "");
   const [apiKey, setApiKey] = useState("");
+  const [userName, setUserName] = useState(initialState.profile.userName);
+  const [userLocation, setUserLocation] = useState(initialState.profile.userLocation);
+  const [userPhoto, setUserPhoto] = useState<ProfileImageDto | null>(initialState.profile.userPhoto);
+  const [pendingUserPhoto, setPendingUserPhoto] = useState<PhotoUploadPayload | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const needsModel = !initialState.aiConfigured;
   const needsKey = provider !== "ollama";
   const canSubmit =
-    !busy && model.trim().length > 0 && (!needsKey || apiKey.trim().length > 0);
+    !busy
+    && userName.trim().length > 0
+    && (!needsModel || (model.trim().length > 0 && (!needsKey || apiKey.trim().length > 0)));
 
   async function startChatting() {
     if (!canSubmit) return;
     setBusy(true);
     setError(null);
     try {
-      const result = await saveSettings({
+      await saveProfile({
         data: {
-          runtime: { aiProvider: provider, aiModel: model.trim() },
-          apiKey: needsKey ? apiKey.trim() : undefined,
+          userName: userName.trim(),
+          userLocation: userLocation.trim(),
         },
       });
-      if (!result.aiConfigured) {
-        setError("Saved settings, but Aithy still needs a model and API key.");
-        return;
+      if (pendingUserPhoto) await saveProfileImage({ data: { kind: "user", ...pendingUserPhoto } });
+      let aiConfigured = initialState.aiConfigured;
+      if (needsModel) {
+        const result = await saveSettingsWithSetupGateRefresh({
+          data: {
+            runtime: { aiProvider: provider, aiModel: model.trim() },
+            apiKey: needsKey ? apiKey.trim() : undefined,
+          },
+        });
+        aiConfigured = result.aiConfigured;
+        if (!aiConfigured) {
+          setError("Saved settings, but Aithy still needs a model and API key.");
+          return;
+        }
       }
+      setCachedSetupGateState({ aiConfigured, profileConfigured: true });
       await router.navigate({ href: redirectTo, replace: true });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save settings");
@@ -77,36 +101,64 @@ export function SetupPage({
         Welcome to Aithy
       </h1>
       <p className="mb-10 text-center text-sm text-[rgb(var(--muted-foreground))]">
-        One-time setup. Pick a model, drop in a key, and we&apos;re off.
+        One-time setup. Tell Aithy who it is helping, then connect a model.
       </p>
 
       <div className="grid w-full gap-4 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/40 p-6">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Provider">
-            <ProviderSelect value={provider} onChange={setProvider} />
-          </Field>
-          <Field label="Model">
-            <ModelCombobox
-              provider={provider}
-              value={model}
-              onChange={setModel}
-              placeholder="e.g. gpt-4.1"
+        <div className="grid gap-4">
+          <Field label="Your name">
+            <input
+              className="h-11 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5 text-sm outline-none transition placeholder:text-[rgb(var(--muted-foreground))] focus:border-[rgb(var(--foreground))]"
+              value={userName}
+              onChange={(event) => setUserName(event.target.value)}
+              placeholder="What should Aithy call you?"
             />
           </Field>
-        </div>
-        <Field label={needsKey ? "API key" : "API key (not required)"}>
-          <ApiKeyInput
-            value={apiKey}
-            onChange={setApiKey}
-            secret={null}
-            disabled={!needsKey}
-            fallback={
-              needsKey
-                ? "Stored with Bun.secrets when saved"
-                : "Local provider — no key needed"
-            }
+          <Field label="Location (optional)">
+            <input
+              className="h-11 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5 text-sm outline-none transition placeholder:text-[rgb(var(--muted-foreground))] focus:border-[rgb(var(--foreground))]"
+              value={userLocation}
+              onChange={(event) => setUserLocation(event.target.value)}
+              placeholder="City, region, or timezone"
+            />
+          </Field>
+          <ProfilePhotoInput
+            label="Your photo"
+            image={userPhoto}
+            fallback={initials(userName, "You")}
+            onUpload={(payload) => {
+              setPendingUserPhoto(payload);
+              setUserPhoto(previewImage(payload));
+            }}
           />
-        </Field>
+        </div>
+
+        {needsModel ? (
+          <>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <Field label="Provider">
+                <ProviderSelect value={provider} onChange={setProvider} />
+              </Field>
+              <Field label="Model">
+                <ModelCombobox
+                  provider={provider}
+                  value={model}
+                  onChange={setModel}
+                  placeholder="e.g. gpt-4.1"
+                />
+              </Field>
+            </div>
+            <Field label={needsKey ? "API key" : "API key (not required)"}>
+              <ApiKeyInput
+                value={apiKey}
+                onChange={setApiKey}
+                secret={null}
+                disabled={!needsKey}
+                fallback={needsKey ? "Stored in the encrypted secrets store" : "Local provider — no key needed"}
+              />
+            </Field>
+          </>
+        ) : null}
 
         {error ? (
           <p className="text-sm text-red-500" role="alert">
@@ -114,22 +166,32 @@ export function SetupPage({
           </p>
         ) : null}
 
-        <div className="flex items-center justify-between gap-3 pt-1">
-          <p className="text-xs text-[rgb(var(--muted-foreground))]">
-            State lives at{" "}
-            <code>~/.config/aithy/{initialState.config.botId}/</code>. Keys go
-            to <code>Bun.secrets</code>.
-          </p>
+        <div className="flex justify-end pt-1">
           <Button onClick={() => void startChatting()} disabled={!canSubmit}>
-            {busy ? "Testing…" : "Start chatting"}
+            {busy ? "Saving…" : "Start chatting"}
             <ArrowRight className="ml-1.5 h-4 w-4" />
           </Button>
         </div>
       </div>
 
       <p className="mt-6 text-center text-xs text-[rgb(var(--muted-foreground))]">
-        You can change any of this later in <strong>Settings → Model</strong>.
+        You can change any of this later in <strong>Settings</strong>.
       </p>
     </section>
   );
+}
+
+function previewImage(payload: PhotoUploadPayload): ProfileImageDto {
+  return {
+    mimeType: payload.mimeType,
+    width: 0,
+    height: 0,
+    updatedAt: "",
+    dataUrl: `data:${payload.mimeType};base64,${payload.base64}`,
+  };
+}
+
+function initials(value: string, fallback: string): string {
+  const letters = value.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
+  return letters || fallback;
 }

@@ -20,11 +20,15 @@ export interface UserChatJobData {
 export interface UserChatJobResult {
   conversationId: string;
   text: string;
+  createdAt: string;
+}
+
+export interface EnqueuedUserChatJob {
+  jobId: string;
+  conversationId: string;
 }
 
 interface PendingJob {
-  resolve: (value: UserChatJobResult) => void;
-  reject: (error: Error) => void;
   conversationId: string;
 }
 
@@ -36,6 +40,8 @@ interface AgentDispatcherOptions {
   ensureBotSandbox: () => Promise<void>;
   /** Pure processor: takes serializable job data, returns serializable result. */
   process: (data: UserChatJobData) => Promise<UserChatJobResult>;
+  onCompleted?: (data: UserChatJobData, result: UserChatJobResult) => void;
+  onFailed?: (data: UserChatJobData, error: Error) => void;
   onError?: QueueErrorReporter;
 }
 
@@ -60,30 +66,25 @@ export class AgentDispatcher {
     this.setConcurrency(opts.parallelAgents);
     this.app.worker.on("completed", (job, result) => {
       const pending = this.pending.get(job.id);
-      if (!pending) return;
-      this.pending.delete(job.id);
-      pending.resolve(result);
+      if (pending) this.pending.delete(job.id);
+      this.opts.onCompleted?.(job.data, result);
     });
     this.app.worker.on("failed", (job, error) => {
       const pending = this.pending.get(job.id);
-      if (!pending) return;
-      this.pending.delete(job.id);
-      pending.reject(error);
+      if (pending) this.pending.delete(job.id);
+      this.opts.onFailed?.(job.data, error);
     });
-    this.app.worker.on("cancelled", ({ jobId, reason }) => {
+    this.app.worker.on("cancelled", ({ jobId }) => {
       const pending = this.pending.get(jobId);
       if (!pending) return;
       this.pending.delete(jobId);
-      pending.reject(new Error(reason || "Cancelled"));
     });
   }
 
-  /** Enqueue a user-chat agent run. Resolves with the agent's reply. */
-  async enqueueUserChat(data: UserChatJobData): Promise<UserChatJobResult> {
+  /** Enqueue a user-chat agent run and return as soon as the queue accepts it. */
+  async enqueueUserChat(data: UserChatJobData): Promise<EnqueuedUserChatJob> {
     const jobId = `agents.user:${crypto.randomUUID()}`;
-    const result = new Promise<UserChatJobResult>((resolve, reject) => {
-      this.pending.set(jobId, { resolve, reject, conversationId: data.conversationId });
-    });
+    this.pending.set(jobId, { conversationId: data.conversationId });
     try {
       await this.app.queue.add("user-chat", data, {
         jobId,
@@ -94,7 +95,7 @@ export class AgentDispatcher {
       this.pending.delete(jobId);
       throw error;
     }
-    return result;
+    return { jobId, conversationId: data.conversationId };
   }
 
   /**
@@ -113,9 +114,8 @@ export class AgentDispatcher {
   }
 
   async close(): Promise<void> {
-    for (const [jobId, entry] of [...this.pending]) {
+    for (const [jobId] of [...this.pending]) {
       this.pending.delete(jobId);
-      entry.reject(new Error("Aithy is shutting down"));
     }
     await this.app.close();
   }

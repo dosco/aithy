@@ -148,6 +148,7 @@ export class SqliteSessionStateStore implements SessionStateStore {
   }
 
   appendMessages(conversationId: string, messages: BotMessage[]): void {
+    if (messages.length === 0) return;
     const insert = this.db.query(`
       INSERT INTO messages (
         session_id, role, content, thought, tool_name, tool_args, tool_result,
@@ -160,9 +161,37 @@ export class SqliteSessionStateStore implements SessionStateStore {
         $createdAt
       )
     `);
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let thoughtTokens = 0;
+    let totalTokens = 0;
+    let updatedAt = new Date().toISOString();
     for (const message of messages) {
       insert.run({ $sessionId: conversationId, ...messageToBindings(message) });
+      updatedAt = message.createdAt;
+      if (message.role === "assistant" && message.usage) {
+        inputTokens += message.usage.input;
+        outputTokens += message.usage.output;
+        thoughtTokens += message.usage.thought;
+        totalTokens += message.usage.total;
+      }
     }
+    this.db.query(`
+      UPDATE sessions
+      SET updated_at = $updatedAt,
+          input_tokens = input_tokens + $inputTokens,
+          output_tokens = output_tokens + $outputTokens,
+          thought_tokens = thought_tokens + $thoughtTokens,
+          total_tokens = total_tokens + $totalTokens
+      WHERE id = $sessionId
+    `).run({
+      $sessionId: conversationId,
+      $updatedAt: updatedAt,
+      $inputTokens: inputTokens,
+      $outputTokens: outputTokens,
+      $thoughtTokens: thoughtTokens,
+      $totalTokens: totalTokens,
+    });
   }
 
   messagesPage(conversationId: string, input: { beforeId?: number | null; limit: number }): MessagePage {

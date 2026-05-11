@@ -8,8 +8,10 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { GitBranch } from "lucide-react";
 import { AsciiSplash } from "@/components/ascii-splash";
 import { Markdown } from "@/components/markdown";
+import type { SessionSummaryDto } from "@/server/dto";
 import type {
   SerializableBotMessage,
   WebLiveEvent,
@@ -28,6 +30,7 @@ type TimelineEntry =
   | { kind: "assistant"; key: string; content: string; usage?: Usage }
   | { kind: "thought"; key: string; content: string }
   | { kind: "tool"; key: string; toolName: string; toolArgs: unknown; usage?: Usage }
+  | { kind: "sub-session"; key: string; session: SessionSummaryDto }
   | { kind: "activity"; key: string; label: string }
   | { kind: "sandbox-status"; key: string; label: string }
   | { kind: "typing"; key: string };
@@ -40,6 +43,7 @@ const VIRTUALIZE_AFTER_ITEMS = 60;
 
 export function ChatTimeline({
   messages,
+  subSessions,
   activities,
   details,
   sending,
@@ -48,8 +52,10 @@ export function ChatTimeline({
   hasMoreBefore,
   loadingMore,
   onLoadMore,
+  onOpenSession,
 }: {
   messages: ChatMessageItem[];
+  subSessions: SessionSummaryDto[];
   activities: ActivityEvent[];
   details: boolean;
   sending: boolean;
@@ -58,6 +64,7 @@ export function ChatTimeline({
   hasMoreBefore: boolean;
   loadingMore: boolean;
   onLoadMore: () => Promise<boolean>;
+  onOpenSession: (session: SessionSummaryDto) => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   const wasNearBottomRef = useRef(true);
@@ -65,8 +72,8 @@ export function ChatTimeline({
   const [viewport, setViewport] = useState(() => currentViewport());
   const [heightVersion, setHeightVersion] = useState(0);
   const timeline = useMemo(
-    () => buildTimeline(messages, activities, details, sending, sandboxStatus),
-    [messages, activities, details, sending, sandboxStatus],
+    () => buildTimeline(messages, subSessions, activities, details, sending, sandboxStatus),
+    [messages, subSessions, activities, details, sending, sandboxStatus],
   );
 
   useEffect(() => {
@@ -148,7 +155,7 @@ export function ChatTimeline({
               ? <TypingIndicator />
               : item.kind === "sandbox-status"
                 ? <SandboxStatus label={item.label} />
-                : <TimelineItem item={item} />}
+                : <TimelineItem item={item} onOpenSession={onOpenSession} />}
           </MeasuredRow>
         ))}
       </AnimatePresence>
@@ -173,6 +180,7 @@ export function countDebugItems(
 
 function buildTimeline(
   messages: ChatMessageItem[],
+  subSessions: SessionSummaryDto[],
   activities: ActivityEvent[],
   details: boolean,
   sending: boolean,
@@ -215,6 +223,16 @@ function buildTimeline(
         },
       });
     }
+  });
+  subSessions.forEach((session) => {
+    entries.push({
+      at: session.createdAt,
+      entry: {
+        kind: "sub-session",
+        key: `sub-session-${session.conversationId}`,
+        session,
+      },
+    });
   });
   if (details) {
     activities.forEach((event) => {
@@ -283,7 +301,13 @@ function MeasuredRow({
   return <div ref={ref}>{children}</div>;
 }
 
-function TimelineItem({ item }: { item: Exclude<TimelineEntry, { kind: "typing" }> }) {
+function TimelineItem({
+  item,
+  onOpenSession,
+}: {
+  item: Exclude<TimelineEntry, { kind: "typing" }>;
+  onOpenSession: (session: SessionSummaryDto) => void;
+}) {
   const reduce = useReducedMotion();
   const motionProps = reduce
     ? {}
@@ -336,6 +360,34 @@ function TimelineItem({ item }: { item: Exclude<TimelineEntry, { kind: "typing" 
           {JSON.stringify(item.toolArgs, null, 2)}
         </div>
         {item.usage ? <UsageLine usage={item.usage} /> : null}
+      </motion.div>
+    );
+  }
+  if (item.kind === "sub-session") {
+    return (
+      <motion.div
+        {...motionProps}
+        className="app-chat-bubble-frame flex w-fit max-w-[min(72%,46rem)] items-center gap-3 rounded-[20px] border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3 py-2 shadow-sm"
+      >
+        <button
+          type="button"
+          onClick={() => onOpenSession(item.session)}
+          aria-label={`Open sub-session ${item.session.name}`}
+          title="Open sub-session"
+          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] transition hover:scale-105 focus:outline-none focus:ring-2 focus:ring-[rgb(var(--accent))] focus:ring-offset-2 focus:ring-offset-[rgb(var(--background))]"
+        >
+          <GitBranch className="h-5 w-5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => onOpenSession(item.session)}
+          className="min-w-0 text-left"
+        >
+          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[rgb(var(--muted-foreground))]">
+            sub-session
+          </div>
+          <div className="truncate text-sm font-medium">{item.session.name}</div>
+        </button>
       </motion.div>
     );
   }

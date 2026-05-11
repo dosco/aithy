@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, CornerDownRight, Trash2 } from "lucide-react";
+import { ArrowLeft, ExternalLink, Trash2, X } from "lucide-react";
 import { ChatComposer, type SelectedSkill } from "@/components/chat-composer";
+import { appendUnique, prependUnique } from "@/components/chat-message-state";
 import {
   ChatTimeline,
   countDebugItems,
@@ -9,19 +10,16 @@ import {
 } from "@/components/chat-timeline";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useChatUi } from "@/components/chat-ui-context";
+import { Markdown } from "@/components/markdown";
 import { ThemeSync } from "@/components/theme-sync";
 import {
-  getChildSessions,
   deleteSession,
   sendChatMessage,
   stopChatMessage,
 } from "@/server/actions.functions";
 import { getSessionMessages } from "@/server/session-messages.functions";
 import type { SessionSummaryDto, WebStateDto } from "@/server/dto";
-import type {
-  SerializableBotMessage,
-  WebLiveEvent,
-} from "../../src/web/live-events";
+import type { WebLiveEvent } from "../../src/web/live-events";
 
 type ActivityEvent = Extract<WebLiveEvent, { type: "activity" }>;
 
@@ -29,7 +27,9 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
   const navigate = useNavigate();
   const location = useLocation();
   const routeSessionId = useMemo(() => sessionIdFromPath(location.pathname), [location.pathname]);
-  const resolvedInitialSessionId = initialState.activeSessionId ?? routeSessionId;
+  // For /chat/:id the URL is the source of truth; only fall back to the
+  // loader's activeSessionId on the bare /chat route.
+  const resolvedInitialSessionId = routeSessionId ?? initialState.activeSessionId;
   const initialPage = useMemo(
     () => initialState.messagePage ?? {
       items: initialState.messages.map((message, index) => ({
@@ -63,10 +63,22 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
   const [sending, setSending] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const [children, setChildren] = useState<SessionSummaryDto[]>([]);
+  const [previewSessionId, setPreviewSessionId] = useState<string | null>(null);
+  const activeSessionRef = useRef<string | null>(activeSessionId);
+  activeSessionRef.current = activeSessionId;
   const activeSession = useMemo(
     () => sessions.find((s) => s.conversationId === activeSessionId),
     [sessions, activeSessionId],
+  );
+  const childSessions = useMemo(
+    () => activeSessionId
+      ? sessions.filter((session) => session.parentSessionId === activeSessionId)
+      : [],
+    [sessions, activeSessionId],
+  );
+  const previewSession = useMemo(
+    () => sessions.find((session) => session.conversationId === previewSessionId) ?? null,
+    [sessions, previewSessionId],
   );
 
   useEffect(() => {
@@ -77,36 +89,8 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
     setLoadingMore(false);
     setActivities([]);
     setSandboxStatus(null);
+    setPreviewSessionId(null);
   }, [resolvedInitialSessionId, initialPage]);
-
-  useEffect(() => {
-    if (!activeSessionId || messages.length > 0) return;
-    let cancelled = false;
-    void getSessionMessages({ data: { conversationId: activeSessionId, limit: 10 } })
-      .then((page) => {
-        if (cancelled) return;
-        setMessages(page.items);
-        setOldestMessageId(page.oldestId);
-        setHasMoreBefore(page.hasMoreBefore);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSessionId, messages.length]);
-
-  useEffect(() => {
-    if (!activeSessionId) {
-      setChildren([]);
-      return;
-    }
-    let cancelled = false;
-    void getChildSessions({ data: { parentSessionId: activeSessionId } }).then((rows) => {
-      if (!cancelled) setChildren(rows);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [activeSessionId]);
   const { details } = useChatUi();
 
   useEffect(() => {
@@ -114,7 +98,7 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
     source.onmessage = (message) => {
       const event = JSON.parse(message.data) as WebLiveEvent | { type: "connected" };
       if (event.type === "sessions") setSessions(event.sessions);
-      if ("conversationId" in event && event.conversationId === activeSessionId) {
+      if ("conversationId" in event && event.conversationId === activeSessionRef.current) {
         if (event.type === "message") {
           setMessages((current) =>
             appendUnique(current, { id: event.id, message: event.message }));
@@ -126,7 +110,7 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
       }
     };
     return () => source.close();
-  }, [activeSessionId]);
+  }, []);
 
   const debugCount = useMemo(() => countDebugItems(messages, activities), [messages, activities]);
 
@@ -158,18 +142,28 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
     const wasDraft = !activeSessionId;
     const conversationId = activeSessionId ?? crypto.randomUUID();
     if (wasDraft) setActiveSessionId(conversationId);
-    const skillIds = selectedSkills.map((skill) => skill.id);
-    const result = await sendChatMessage({ data: { conversationId, text, skillIds } });
-    if (!text.startsWith("/")) setSelectedSkills([]);
-    setMessages((current) =>
-      appendUnique(current, { id: `reply-${result.reply.createdAt}`, message: result.reply }));
-    if (result.activeSessionId !== conversationId) {
-      setActiveSessionId(result.activeSessionId);
-      await navigate({ to: "/chat/$sessionId", params: { sessionId: result.activeSessionId } });
-    } else if (wasDraft) {
-      await navigate({ to: "/chat/$sessionId", params: { sessionId: conversationId } });
+    const createdAt = new Date().toISOString();
+    const isCommand = text.startsWith("/");
+    if (!isCommand) {
+      setMessages((current) =>
+        appendUnique(current, {
+          id: `optimistic-user-${createdAt}`,
+          message: { role: "user", content: text, createdAt },
+        }));
     }
-    setSending(false);
+    const skillIds = selectedSkills.map((skill) => skill.id);
+    try {
+      const result = await sendChatMessage({ data: { conversationId, text, createdAt, skillIds } });
+      if (!isCommand) setSelectedSkills([]);
+      if (result.activeSessionId !== conversationId) {
+        setActiveSessionId(result.activeSessionId);
+        await navigate({ to: "/chat/$sessionId", params: { sessionId: result.activeSessionId } });
+      } else if (wasDraft) {
+        await navigate({ to: "/chat/$sessionId", params: { sessionId: conversationId } });
+      }
+    } finally {
+      setSending(false);
+    }
   }
 
   async function removeActiveSession() {
@@ -215,9 +209,6 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
           ) : null}
         </div>
         <div className="flex items-center gap-2">
-          {children.length > 0 ? (
-            <SubSessionStrip entries={children} />
-          ) : null}
           {activeSessionId ? (
             <button
               type="button"
@@ -247,6 +238,8 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
           hasMoreBefore={hasMoreBefore}
           loadingMore={loadingMore}
           onLoadMore={loadMoreMessages}
+          subSessions={childSessions}
+          onOpenSession={(session) => setPreviewSessionId(session.conversationId)}
         />
       </div>
 
@@ -272,37 +265,12 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
         onConfirm={() => void removeActiveSession()}
       />
 
+      <SubSessionDrawer
+        session={previewSession}
+        onClose={() => setPreviewSessionId(null)}
+      />
     </section>
   );
-}
-
-function appendUnique(
-  messages: ChatMessageItem[],
-  next: ChatMessageItem,
-): ChatMessageItem[] {
-  const exists = messages.some(({ message }) =>
-    message.role === next.message.role
-    && message.createdAt === next.message.createdAt
-    && contentOf(message) === contentOf(next.message)
-  );
-  return exists ? messages : [...messages, next];
-}
-
-function prependUnique(
-  messages: ChatMessageItem[],
-  previous: ChatMessageItem[],
-): ChatMessageItem[] {
-  const currentIds = new Set(messages.map((message) => message.id));
-  return [
-    ...previous.filter((message) => !currentIds.has(message.id)),
-    ...messages,
-  ];
-}
-
-function contentOf(message: SerializableBotMessage): string {
-  if (message.role === "user") return message.content;
-  if (message.kind === "text") return message.content;
-  return `${message.toolName}:${JSON.stringify(message.toolArgs)}`;
 }
 
 function nextSandboxStatus(
@@ -332,41 +300,120 @@ function sessionIdFromPath(pathname: string): string | null {
   return match ? decodeURIComponent(match[1]) : null;
 }
 
-function SubSessionStrip({ entries }: { entries: SessionSummaryDto[] }) {
-  const [open, setOpen] = useState(false);
+function SubSessionDrawer({
+  session,
+  onClose,
+}: {
+  session: SessionSummaryDto | null;
+  onClose: () => void;
+}) {
+  const [messages, setMessages] = useState<ChatMessageItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!session) {
+      setMessages([]);
+      setError(null);
+      return;
+    }
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    void getSessionMessages({
+      data: { conversationId: session.conversationId, beforeId: null, limit: 30 },
+    }).then((page) => {
+      if (!cancelled) setMessages(page.items);
+    }).catch((err: unknown) => {
+      if (!cancelled) setError(err instanceof Error ? err.message : "Could not load session");
+    }).finally(() => {
+      if (!cancelled) setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [session]);
+
+  if (!session) return null;
+
   return (
-    <div className="relative">
+    <div className="fixed inset-0 z-50 flex justify-end bg-black/20" role="dialog" aria-modal="true">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-1.5 rounded-full border border-[rgb(var(--border))] px-3 py-1 text-xs text-[rgb(var(--muted-foreground))] transition hover:text-[rgb(var(--foreground))]"
-        aria-expanded={open}
-        aria-haspopup="true"
-      >
-        <CornerDownRight className="h-3 w-3" />
-        {entries.length} sub-session{entries.length === 1 ? "" : "s"}
-      </button>
-      {open ? (
-        <div className="absolute right-0 z-20 mt-1 w-72 overflow-hidden rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] shadow-lg">
-          <ul className="grid divide-y divide-[rgb(var(--border))]">
-            {entries.map((entry) => (
-              <li key={entry.conversationId}>
-                <Link
-                  to="/chat/$sessionId"
-                  params={{ sessionId: entry.conversationId }}
-                  onClick={() => setOpen(false)}
-                  className="block px-3 py-2 text-xs transition hover:bg-[rgb(var(--muted))]/40"
-                >
-                  <div className="truncate font-medium">{entry.name}</div>
-                  <div className="truncate text-[rgb(var(--muted-foreground))]">
-                    {entry.conversationId}
-                  </div>
-                </Link>
-              </li>
-            ))}
-          </ul>
+        className="absolute inset-0 cursor-default"
+        aria-label="Close sub-session"
+        onClick={onClose}
+      />
+      <aside className="relative flex h-full w-full max-w-xl flex-col border-l border-[rgb(var(--border))] bg-[rgb(var(--panel))] shadow-2xl">
+        <header className="flex items-start justify-between gap-4 border-b border-[rgb(var(--border))] px-5 py-4">
+          <div className="min-w-0">
+            <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[rgb(var(--muted-foreground))]">
+              sub-session
+            </div>
+            <h2 className="mt-1 truncate text-xl font-normal">{session.name}</h2>
+          </div>
+          <div className="flex shrink-0 items-center gap-2">
+            <Link
+              to="/chat/$sessionId"
+              params={{ sessionId: session.conversationId }}
+              onClick={onClose}
+              aria-label="Open full session"
+              title="Open full session"
+              className="grid h-9 w-9 place-items-center rounded-full border border-[rgb(var(--border))] text-[rgb(var(--muted-foreground))] transition hover:text-[rgb(var(--foreground))]"
+            >
+              <ExternalLink className="h-4 w-4" />
+            </Link>
+            <button
+              type="button"
+              onClick={onClose}
+              aria-label="Close sub-session"
+              className="grid h-9 w-9 place-items-center rounded-full border border-[rgb(var(--border))] text-[rgb(var(--muted-foreground))] transition hover:text-[rgb(var(--foreground))]"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+        </header>
+        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
+          {loading ? (
+            <div className="font-mono text-xs uppercase tracking-[0.18em] text-[rgb(var(--muted-foreground))]">
+              Loading session
+            </div>
+          ) : error ? (
+            <div className="text-sm text-red-600 dark:text-red-300">{error}</div>
+          ) : messages.length === 0 ? (
+            <div className="text-sm text-[rgb(var(--muted-foreground))]">No messages yet.</div>
+          ) : (
+            <div className="flex flex-col gap-3">
+              {messages.map((item) => (
+                <PreviewMessage key={item.id} item={item} />
+              ))}
+            </div>
+          )}
         </div>
-      ) : null}
+      </aside>
+    </div>
+  );
+}
+
+function PreviewMessage({ item }: { item: ChatMessageItem }) {
+  const { message } = item;
+  if (message.role === "user") {
+    return (
+      <div className="ml-auto max-w-[88%] rounded-2xl rounded-br-md bg-[rgb(var(--accent))] px-4 py-2 text-sm leading-relaxed text-[rgb(var(--accent-foreground))]">
+        <Markdown text={message.content} />
+      </div>
+    );
+  }
+  if (message.kind === "text") {
+    return (
+      <div className="max-w-[88%] rounded-2xl rounded-bl-md bg-[rgb(var(--bubble-bot))] px-4 py-2 text-sm leading-relaxed">
+        <Markdown text={message.content} />
+      </div>
+    );
+  }
+  return (
+    <div className="max-w-[88%] rounded-2xl rounded-bl-md bg-[rgb(var(--muted))] px-4 py-2 font-mono text-xs text-[rgb(var(--muted-foreground))]">
+      tool · {message.toolName}
     </div>
   );
 }

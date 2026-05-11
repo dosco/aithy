@@ -36,6 +36,7 @@ describe("SqliteSkillsStore", () => {
     const pdf = all[0];
     expect(pdf.allowed_tools).toBe("Bash(docling:*) Read");
     expect(pdf.tags).toBe("pdf docling document");
+    expect(pdf.retrieved_count).toBe(0);
     expect(pdf.body).toContain("#### PDF Tool");
     expect(pdf.body).toContain("##### Examples");
     expect(pdf.body).not.toMatch(/^#{1,3}\s/m);
@@ -79,6 +80,45 @@ describe("SqliteSkillsStore", () => {
     expect(all[0].name).toBe("alpha-renamed");
     expect(all[0].description).toBe("second");
     expect(all[0].allowed_tools).toBe("Read");
+  });
+
+  test("tracks skill retrieval and preserves counts across edits", async () => {
+    const store = new SqliteSkillsStore(await tempDbPath());
+    store.upsert({
+      id: "alpha",
+      name: "alpha",
+      description: "",
+      body: "",
+      allowedTools: null,
+      tags: null,
+    });
+    store.upsert({
+      id: "bravo",
+      name: "bravo",
+      description: "",
+      body: "",
+      allowedTools: null,
+      tags: null,
+    });
+
+    store.incrementRetrieved(["bravo", "missing", "bravo"]);
+    store.incrementRetrieved(["alpha"]);
+
+    expect(store.get("bravo")?.retrieved_count).toBe(1);
+    expect(store.topRetrieved(2).map((s) => s.id)).toEqual(["alpha", "bravo"]);
+
+    store.incrementRetrieved(["bravo"]);
+    expect(store.topRetrieved(2).map((s) => s.id)).toEqual(["bravo", "alpha"]);
+
+    store.upsert({
+      id: "bravo",
+      name: "bravo-renamed",
+      description: "updated",
+      body: "",
+      allowedTools: null,
+      tags: null,
+    });
+    expect(store.get("bravo")?.retrieved_count).toBe(2);
   });
 
   test("getByIds returns matching skills in requested order", async () => {
@@ -185,6 +225,25 @@ describe("SqliteSkillsStore", () => {
     const filtered = store.page({ cursor: null, limit: 10, query: "lph" });
     expect(filtered.items.map((s) => s.name)).toEqual(["alpha"]);
     expect(store.count({ query: "lph" })).toBe(1);
+  });
+
+  test("page can sort by retrieval count with a stable cursor", async () => {
+    const store = new SqliteSkillsStore(await tempDbPath());
+    for (const id of ["alpha", "bravo", "charlie", "delta"])
+      store.upsert({ id, name: id, description: "", body: "", allowedTools: null, tags: null });
+    store.incrementRetrieved(["charlie"]);
+    store.incrementRetrieved(["bravo"]);
+    store.incrementRetrieved(["bravo"]);
+
+    const first = store.page({ cursor: null, limit: 2, sort: "retrieved" });
+    expect(first.items.map((s) => `${s.id}:${s.retrieved_count}`)).toEqual(["bravo:2", "charlie:1"]);
+    expect(first.nextCursor).toEqual({ name: "charlie", id: "charlie", retrievedCount: 1 });
+
+    const second = store.page({ cursor: first.nextCursor, limit: 2, sort: "retrieved" });
+    expect(second.items.map((s) => `${s.id}:${s.retrieved_count}`)).toEqual([
+      "alpha:0", "delta:0",
+    ]);
+    expect(second.nextCursor).toBeNull();
   });
 
   test("countDistinctTools counts unique whitespace-separated tools", async () => {

@@ -2,7 +2,7 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getWebState, openSession } from "@/server/actions.functions";
+import { getWebState } from "@/server/actions.functions";
 import type { SessionSummaryDto } from "@/server/dto";
 import { cn } from "@/lib/utils";
 import type { WebLiveEvent } from "../../src/web/live-events";
@@ -60,15 +60,14 @@ export function SessionRail() {
     closeTimer.current = setTimeout(() => setOpen(false), 400);
   }
 
-  async function pick(id: string) {
+  function pick(id: string) {
     setOpen(false);
-    await openSession({ data: { conversationId: id } });
-    await navigate({ to: "/chat/$sessionId", params: { sessionId: id } });
+    void navigate({ to: "/chat/$sessionId", params: { sessionId: id } });
   }
 
-  async function startNew() {
+  function startNew() {
     setOpen(false);
-    await navigate({ to: "/chat" });
+    void navigate({ to: "/chat" });
   }
 
   const groups = useMemo(() => groupSessions(sessions), [sessions]);
@@ -113,7 +112,7 @@ export function SessionRail() {
               </p>
               <button
                 type="button"
-                onClick={() => void startNew()}
+                onClick={startNew}
                 aria-label="New session"
                 className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] transition hover:opacity-90"
               >
@@ -142,7 +141,7 @@ export function SessionRail() {
                               <motion.button
                                 key={session.conversationId}
                                 type="button"
-                                onClick={() => void pick(session.conversationId)}
+                                onClick={() => pick(session.conversationId)}
                                 whileTap={reduce ? undefined : { scale: 0.98 }}
                                 className={cn(
                                   "relative flex w-full shrink-0 cursor-pointer items-start justify-between gap-2 rounded-[10px] px-3 py-2 text-left transition-colors",

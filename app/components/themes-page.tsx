@@ -10,7 +10,7 @@ import {
   themeNames,
   themePreviews,
 } from "@/lib/themes";
-import { saveSettings } from "@/server/actions.functions";
+import { saveSettingsWithSetupGateRefresh } from "@/lib/setup-gate";
 import type { WebStateDto } from "@/server/dto";
 import type { LayoutName, ThemeName } from "../../src/settings/types";
 
@@ -20,12 +20,12 @@ export function ThemesPage({ initialState }: { initialState: WebStateDto }) {
 
   async function pick(name: ThemeName) {
     setTheme(name);
-    await saveSettings({ data: { ui: { theme: name, layout } } });
+    await saveSettingsWithSetupGateRefresh({ data: { ui: { theme: name, layout } } });
   }
 
   async function pickLayout(name: LayoutName) {
     setLayout(name);
-    await saveSettings({ data: { ui: { theme, layout: name } } });
+    await saveSettingsWithSetupGateRefresh({ data: { ui: { theme, layout: name } } });
   }
 
   return (

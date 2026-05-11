@@ -1,3 +1,4 @@
+import type { Database } from "bun:sqlite";
 import type { SessionNameSource } from "./types";
 
 export interface SessionRow {
@@ -39,6 +40,7 @@ export interface SkillRow {
   content: string;
   allowed_tools: string | null;
   tags: string | null;
+  retrieved_count: number;
   updated_at: string;
 }
 
@@ -191,4 +193,34 @@ export const sessionMigrations = [
       ALTER TABLE sessions ADD COLUMN parent_message_id INTEGER;
     `,
   },
+  {
+    version: 4,
+    precondition: hasSkillTable(),
+    sql: `
+      ALTER TABLE skills ADD COLUMN used_count INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
+  {
+    version: 5,
+    precondition: hasSkillColumn("used_count"),
+    sql: `
+      ALTER TABLE skills RENAME COLUMN used_count TO retrieved_count;
+    `,
+  },
 ];
+
+function hasSkillColumn(name: string): (db: Database) => boolean {
+  return (db) => {
+    const rows = db.query("PRAGMA table_info(skills)").all() as Array<{ name: string }>;
+    return rows.some((row) => row.name === name);
+  };
+}
+
+function hasSkillTable(): (db: Database) => boolean {
+  return (db) => {
+    const row = db
+      .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'skills'")
+      .get() as { name: string } | undefined;
+    return Boolean(row);
+  };
+}

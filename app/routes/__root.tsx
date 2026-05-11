@@ -6,10 +6,8 @@ import {
   Outlet,
   redirect,
   Scripts,
-  useLocation,
 } from "@tanstack/react-router";
 import type { ErrorComponentProps } from "@tanstack/react-router";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { TriangleAlert } from "lucide-react";
 import { AppShell } from "@/components/shell";
 import { Button } from "@/components/ui/button";
@@ -17,7 +15,7 @@ import {
   isSetupGuardExemptPath,
   sanitizeSetupRedirect,
 } from "@/lib/setup-redirect";
-import { getWebState } from "@/server/actions.functions";
+import { readSetupGateState } from "@/lib/setup-gate";
 import appCss from "../styles/app.css?url";
 
 export const Route = createRootRoute({
@@ -31,8 +29,8 @@ export const Route = createRootRoute({
   }),
   beforeLoad: async ({ location }) => {
     if (isSetupGuardExemptPath(location.pathname)) return;
-    const state = await getWebState({ data: {} });
-    if (!state.aiConfigured) {
+    const state = await readSetupGateState();
+    if (!state.aiConfigured || !state.profileConfigured) {
       throw redirect({
         to: "/setup",
         search: { redirect: sanitizeSetupRedirect(location.href) },
@@ -48,27 +46,9 @@ function RootComponent() {
   return (
     <RootDocument>
       <AppShell>
-        <RouteTransitions />
+        <Outlet />
       </AppShell>
     </RootDocument>
-  );
-}
-
-function RouteTransitions() {
-  const location = useLocation();
-  const reduce = useReducedMotion();
-  return (
-    <AnimatePresence mode="wait" initial={false}>
-      <motion.div
-        key={location.pathname}
-        initial={reduce ? false : { opacity: 0, y: 6 }}
-        animate={{ opacity: 1, y: 0 }}
-        exit={reduce ? undefined : { opacity: 0, y: -4 }}
-        transition={{ duration: 0.18, ease: "easeOut" }}
-      >
-        <Outlet />
-      </motion.div>
-    </AnimatePresence>
   );
 }
 

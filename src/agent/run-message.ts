@@ -16,6 +16,7 @@ import type { SqliteUsageStore } from "../usage/usage-store";
 import { captureProgramUsage } from "../usage/capture";
 import type { SandboxProvider } from "../sandbox/provider";
 import type { SessionManager } from "../session/session-manager";
+import type { UserProfile } from "../profile/types";
 import type { SoulProfile } from "../soul/types";
 import type {
   AssistantTextMessage,
@@ -41,6 +42,7 @@ export interface RunMessageDeps {
   sandbox: SandboxProvider;
   sessions: SessionManager;
   soul?: SoulProfile;
+  profile?: UserProfile;
   memory?: SqliteMemoryStore;
   memoryQueue?: MemoryQueue;
   usage?: SqliteUsageStore;
@@ -49,6 +51,7 @@ export interface RunMessageDeps {
   agentFactory?: typeof createAithyAgent;
   activeRuns?: ActiveRunRegistry;
   notify?: (input: NotificationCreate) => void;
+  userMessagePersisted?: boolean;
 }
 
 export async function runMessage(
@@ -93,10 +96,11 @@ export async function runMessage(
     : undefined;
   const { program, llm } = agentFactory({
     config: deps.config,
-    tools: createAgentTools(toolContext, deps.config.sandboxProvider),
+    tools: createAgentTools(toolContext, deps.config),
     events: deps.events,
     conversationId: message.conversationId,
     soul: deps.soul,
+    profile: deps.profile,
     onSkillsSearch,
     onMemoriesSearch,
     onFunctionCall: (call) => {
@@ -116,18 +120,20 @@ export async function runMessage(
     const input = {
       userRequest: message.text,
       channelContext: toChannelContext(message),
-      conversationHistory: conversationHistoryForAgent(session),
+      conversationHistory: conversationHistoryForAgent(
+        session,
+        deps.userMessagePersisted ? message : undefined,
+      ),
     };
     const options = deps.skills?.length ? { skills: deps.skills } : undefined;
     const result = options
       ? await program.forward(llm, input, options)
       : await program.forward(llm, input);
     const agentResponse = String(result.agentResponse ?? "");
-    deps.sessions.appendMessages(message.conversationId, [
-      userMessage(message),
-      ...toolCallMessages,
-      assistantTextMessage(agentResponse),
-    ]);
+    deps.sessions.appendMessages(
+      message.conversationId,
+      turnMessages(message, toolCallMessages, assistantTextMessage(agentResponse), deps),
+    );
     if (deps.usage) {
       captureProgramUsage(program, {
         store: deps.usage,
@@ -151,11 +157,10 @@ export async function runMessage(
   } catch (error) {
     if (error instanceof AxAIServiceAbortedError) {
       const stoppedText = "[stopped]";
-      deps.sessions.appendMessages(message.conversationId, [
-        userMessage(message),
-        ...toolCallMessages,
-        assistantTextMessage(stoppedText),
-      ]);
+      deps.sessions.appendMessages(
+        message.conversationId,
+        turnMessages(message, toolCallMessages, assistantTextMessage(stoppedText), deps),
+      );
       deps.events.emit({
         type: "agent.completed",
         conversationId: message.conversationId,
@@ -174,11 +179,10 @@ export async function runMessage(
         conversationId: message.conversationId,
         question,
       });
-      deps.sessions.appendMessages(message.conversationId, [
-        userMessage(message),
-        ...toolCallMessages,
-        assistantTextMessage(question),
-      ]);
+      deps.sessions.appendMessages(
+        message.conversationId,
+        turnMessages(message, toolCallMessages, assistantTextMessage(question), deps),
+      );
       return {
         channelId: message.channelId,
         conversationId: message.conversationId,
@@ -186,18 +190,22 @@ export async function runMessage(
       };
     }
     const errorText = error instanceof Error ? error.message : "Unknown agent error";
-    deps.sessions.appendMessages(message.conversationId, [
-      userMessage(message),
-      ...toolCallMessages,
-      assistantTextMessage(`Error: ${errorText}`),
-    ]);
+    const reply = `Error: ${errorText}`;
+    deps.sessions.appendMessages(
+      message.conversationId,
+      turnMessages(message, toolCallMessages, assistantTextMessage(reply), deps),
+    );
     deps.events.emit({
       type: "error",
       conversationId: message.conversationId,
       message: errorText,
       cause: error,
     });
-    throw error;
+    return {
+      channelId: message.channelId,
+      conversationId: message.conversationId,
+      text: reply,
+    };
   } finally {
     deps.activeRuns?.clear(message.conversationId);
     if (deps.config.traceEnabled) {
@@ -236,13 +244,23 @@ interface AgentHistoryEntry {
   createdAt: string;
 }
 
-function conversationHistoryForAgent(session: BotSession): string | undefined {
+function conversationHistoryForAgent(
+  session: BotSession,
+  currentMessage?: ChannelMessage,
+): string | undefined {
   const lines: string[] = [];
   for (const message of session.messages) {
+    if (currentMessage && isCurrentUserMessage(message, currentMessage)) continue;
     const entry = historyEntryFor(message);
     if (entry) lines.push(`[${entry.createdAt}] ${entry.role}: ${entry.content}`);
   }
   return lines.length > 0 ? lines.join("\n") : undefined;
+}
+
+function isCurrentUserMessage(message: BotMessage, current: ChannelMessage): boolean {
+  return message.role === "user"
+    && message.content === trimHistoryText(current.text)
+    && message.createdAt === current.createdAt.toISOString();
 }
 
 function historyEntryFor(message: BotMessage): AgentHistoryEntry | undefined {
@@ -310,6 +328,19 @@ function assistantTextMessage(text: string): AssistantTextMessage {
     content: trimHistoryText(text),
     createdAt: new Date().toISOString(),
   };
+}
+
+function turnMessages(
+  message: ChannelMessage,
+  toolCallMessages: AssistantToolCallMessage[],
+  assistant: AssistantTextMessage,
+  deps: RunMessageDeps,
+): BotMessage[] {
+  return [
+    ...(deps.userMessagePersisted ? [] : [userMessage(message)]),
+    ...toolCallMessages,
+    assistant,
+  ];
 }
 
 function trimHistoryText(text: string): string {

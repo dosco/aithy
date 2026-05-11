@@ -33,6 +33,7 @@ export function ChatComposer({
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [skillQuery, setSkillQuery] = useState("");
   const [skillResults, setSkillResults] = useState<SkillDto[]>([]);
+  const [skillResultsTitle, setSkillResultsTitle] = useState("Top retrieved skills");
   const trimmed = input.trim();
   const commandQuery = trimmed.startsWith("/") && !trimmed.includes(" ") ? trimmed : "";
   const commands = useMemo(() => visibleWebSlashCommands(commandQuery), [commandQuery]);
@@ -48,8 +49,24 @@ export function ChatComposer({
   useEffect(() => {
     if (!skillsOpen) return;
     let cancelled = false;
-    void listSkillsPaged({ data: { cursor: null, query: skillQuery, limit: 10 } }).then((result) => {
-      if (!cancelled) setSkillResults(result.items);
+    const query = skillQuery.trim();
+    const input = query
+      ? { cursor: null, query, limit: 10 }
+      : { cursor: null, limit: 10, sort: "retrieved" as const };
+    void listSkillsPaged({ data: input }).then(async (result) => {
+      if (cancelled) return;
+      if (query && result.items.length === 0) {
+        const fallback = await listSkillsPaged({
+          data: { cursor: null, limit: 10, sort: "retrieved" },
+        });
+        if (!cancelled) {
+          setSkillResults(fallback.items);
+          setSkillResultsTitle("No match. Top retrieved skills");
+        }
+        return;
+      }
+      setSkillResultsTitle(query ? "Matching skills" : "Top retrieved skills");
+      setSkillResults(result.items);
     });
     return () => {
       cancelled = true;
@@ -129,30 +146,42 @@ export function ChatComposer({
             <div className="grid max-h-64 gap-1 overflow-y-auto">
               {skillResults.length === 0 ? (
                 <div className="px-2 py-3 text-sm text-[rgb(var(--muted-foreground))]">
-                  No matching skills.
+                  No skills yet.
                 </div>
               ) : (
-                skillResults.map((skill) => {
-                  const selected = selectedSkills.some((entry) => entry.id === skill.id);
-                  return (
-                    <button
-                      key={skill.id}
-                      type="button"
-                      onClick={() => toggleSkill(skill)}
-                      className={cn(
-                        "grid gap-0.5 rounded-xl px-3 py-2 text-left text-sm transition",
-                        selected ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]" : "hover:bg-[rgb(var(--muted))]/50",
-                      )}
-                    >
-                      <span className="font-medium">{skill.name}</span>
-                      {skill.description ? (
-                        <span className={cn("truncate text-xs", !selected && "text-[rgb(var(--muted-foreground))]")}>
-                          {skill.description}
+                <>
+                  <div className="px-2 pb-1 pt-2 text-[11px] font-medium text-[rgb(var(--muted-foreground))]">
+                    {skillResultsTitle}
+                  </div>
+                  {skillResults.map((skill) => {
+                    const selected = selectedSkills.some((entry) => entry.id === skill.id);
+                    return (
+                      <button
+                        key={skill.id}
+                        type="button"
+                        onClick={() => toggleSkill(skill)}
+                        className={cn(
+                          "grid gap-0.5 rounded-xl px-3 py-2 text-left text-sm transition",
+                          selected ? "bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]" : "hover:bg-[rgb(var(--muted))]/50",
+                        )}
+                      >
+                        <span className="flex min-w-0 items-center justify-between gap-3">
+                          <span className="truncate font-medium">{skill.name}</span>
+                          {skill.retrievedCount > 0 ? (
+                            <span className={cn("shrink-0 text-[11px]", !selected && "text-[rgb(var(--muted-foreground))]")}>
+                              retrieved {skill.retrievedCount}x
+                            </span>
+                          ) : null}
                         </span>
-                      ) : null}
-                    </button>
-                  );
-                })
+                        {skill.description ? (
+                          <span className={cn("truncate text-xs", !selected && "text-[rgb(var(--muted-foreground))]")}>
+                            {skill.description}
+                          </span>
+                        ) : null}
+                      </button>
+                    );
+                  })}
+                </>
               )}
             </div>
           </div>

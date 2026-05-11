@@ -1,5 +1,5 @@
 import { createContext, useCallback, useContext, useState, type ReactNode } from "react";
-import { saveSettings } from "@/server/actions.functions";
+import { saveSettingsWithSetupGateRefresh } from "@/lib/setup-gate";
 import type { UiPreferences } from "../../src/settings/types";
 
 interface ChatUiState {
@@ -24,7 +24,7 @@ export function ChatUiProvider({ children }: { children: ReactNode }) {
   const setDetails = useCallback((value: boolean) => {
     setDetailsState(value);
     cacheDetailsDefault(value);
-    void saveSettings({ data: { ui: { detailsDefault: value } } }).catch(() => {});
+    void saveSettingsWithSetupGateRefresh({ data: { ui: { detailsDefault: value } } }).catch(() => {});
   }, []);
   return <ChatUiContext.Provider value={{ details, setDetails }}>{children}</ChatUiContext.Provider>;
 }

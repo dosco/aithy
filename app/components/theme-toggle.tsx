@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
-import { saveSettings } from "@/server/actions.functions";
+import { saveSettingsWithSetupGateRefresh } from "@/lib/setup-gate";
 
 export function ThemeToggle() {
   const [dark, setDark] = useState(false);
@@ -20,7 +20,7 @@ export function ThemeToggle() {
         JSON.stringify({ ...stored, colorMode: next ? "dark" : "light" }),
       );
     } catch {}
-    await saveSettings({ data: { ui: { colorMode: next ? "dark" : "light" } } });
+    await saveSettingsWithSetupGateRefresh({ data: { ui: { colorMode: next ? "dark" : "light" } } });
   }
 
   return (

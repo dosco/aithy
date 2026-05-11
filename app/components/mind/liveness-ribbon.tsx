@@ -60,35 +60,34 @@ export function LivenessRibbon({ initialRuns }: { initialRuns: MemoryRunDto[] })
     recent?.summary ?? recent?.error ?? (status === "running" ? "running…" : null);
 
   return (
-    <div className="mb-6">
-      <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-[13px] text-[rgb(var(--muted-foreground))]">
+    <div className="mb-5 max-w-3xl">
+      <div className="flex items-start gap-2 text-[13px] text-[rgb(var(--muted-foreground))]">
         <span className={cn("h-2 w-2 shrink-0 rounded-full", STATUS_DOT[status])} />
-        <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-[rgb(var(--foreground))]/70">
-          {STATUS_LABEL[status]}
-        </span>
-        {recent ? (
-          <>
-            <span aria-hidden className="opacity-50">·</span>
-            <span className="truncate">
-              last {relativeTime(recent.startedAt)}
-              {summary ? <>: <span className="italic">&ldquo;{summary}&rdquo;</span></> : null}
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+            <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-[rgb(var(--foreground))]/70">
+              {STATUS_LABEL[status]}
             </span>
-          </>
-        ) : (
-          <>
             <span aria-hidden className="opacity-50">·</span>
-            <span>no triage runs yet.</span>
-          </>
-        )}
-        {runs.length > 1 ? (
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            className="ml-auto rounded-full font-mono text-[10px] uppercase tracking-[0.2em] text-[rgb(var(--muted-foreground))] hover:text-[rgb(var(--foreground))]"
-          >
-            {open ? "hide history" : `${runs.length} runs ↓`}
-          </button>
-        ) : null}
+            {recent ? (
+              <span className="min-w-0 max-w-3xl">
+                last {relativeTime(recent.startedAt)}
+                {summary ? <>: <span className="italic">&ldquo;{summary}&rdquo;</span></> : null}
+              </span>
+            ) : (
+              <span>no triage runs yet.</span>
+            )}
+            {runs.length > 1 ? (
+              <button
+                type="button"
+                onClick={() => setOpen((v) => !v)}
+                className="rounded-full px-2 text-xs font-medium text-[rgb(var(--muted-foreground))] transition hover:bg-[rgb(var(--muted))]/60 hover:text-[rgb(var(--foreground))]"
+              >
+                {open ? "Hide history" : `${runs.length} runs`}
+              </button>
+            ) : null}
+          </div>
+        </div>
       </div>
       {open ? <RunHistory runs={runs} /> : null}
     </div>
@@ -103,17 +102,17 @@ const RUN_DOT: Record<MemoryRunDto["status"], string> = {
 
 function RunHistory({ runs }: { runs: MemoryRunDto[] }) {
   return (
-    <ul className="mt-3 grid gap-1 border-l border-[rgb(var(--border))] pl-3">
+    <ul className="mt-3 grid max-w-3xl gap-1.5 border-l border-[rgb(var(--border))] pl-3">
       {runs.slice(0, 12).map((run) => {
         const summary =
           run.summary ?? run.error ?? (run.status === "running" ? "running…" : "—");
         const inner = (
-          <div className="flex items-baseline gap-2 text-[12px] text-[rgb(var(--muted-foreground))]">
-            <span className={cn("inline-block h-1.5 w-1.5 shrink-0 rounded-full self-center", RUN_DOT[run.status])} />
-            <span className="font-mono text-[10px] uppercase tracking-wider opacity-70 shrink-0">
+          <div className="grid grid-cols-[auto_auto_minmax(0,1fr)] items-start gap-x-2 text-[12px] leading-5 text-[rgb(var(--muted-foreground))]">
+            <span className={cn("mt-2 inline-block h-1.5 w-1.5 shrink-0 rounded-full", RUN_DOT[run.status])} />
+            <span className="shrink-0 whitespace-nowrap font-mono text-[10px] uppercase tracking-wider opacity-70">
               {relativeTime(run.startedAt)}
             </span>
-            <span className="min-w-0 flex-1 truncate" title={run.error ?? undefined}>
+            <span className="min-w-0 whitespace-normal break-words" title={run.error ?? undefined}>
               {summary}
             </span>
           </div>

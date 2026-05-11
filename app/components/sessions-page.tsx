@@ -5,18 +5,17 @@ import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PageFrame } from "@/components/page-frame";
 import { ThemeSync } from "@/components/theme-sync";
 import { Button } from "@/components/ui/button";
-import { deleteSession, openSession } from "@/server/actions.functions";
-import type { WebStateDto } from "@/server/dto";
+import { deleteSession } from "@/server/actions.functions";
+import type { SessionsPageStateDto } from "@/server/dto";
 
-export function SessionsPage({ initialState }: { initialState: WebStateDto }) {
+export function SessionsPage({ initialState }: { initialState: SessionsPageStateDto }) {
   const navigate = useNavigate();
   const [sessions, setSessions] = useState(initialState.sessions);
   const [pendingDelete, setPendingDelete] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 
-  async function open(id: string) {
-    await openSession({ data: { conversationId: id } });
-    await navigate({ to: "/chat/$sessionId", params: { sessionId: id } });
+  function open(id: string) {
+    void navigate({ to: "/chat/$sessionId", params: { sessionId: id } });
   }
 
   async function remove(id: string) {
@@ -50,7 +49,7 @@ export function SessionsPage({ initialState }: { initialState: WebStateDto }) {
           {sessions.map((session) => (
             <div
               key={session.conversationId}
-              onClick={() => void open(session.conversationId)}
+              onClick={() => open(session.conversationId)}
               className="app-session-card group flex cursor-pointer flex-col gap-3 rounded-[20px] border border-[rgb(var(--border))] bg-[rgb(var(--panel)/0.6)] p-4 transition hover:-translate-y-0.5 hover:bg-[rgb(var(--panel)/0.9)]"
             >
               <div className="flex items-start justify-between gap-3">

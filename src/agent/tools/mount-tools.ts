@@ -75,28 +75,68 @@ export function createMountTools(ctx: ToolContext) {
     fn("getPath")
       .namespace("sandbox")
       .description(
-        "Look up the sandbox path for a host path that has been added as a global mount. Returns an empty string if the path (or its parent) is not in the global mount list. Files copied via sandbox.mount are not tracked here — re-call sandbox.mount to copy again or use bash 'ls /workspace/' to find them."
+        "Look up the sandbox path for a host file or directory. Directories and files under mounted folders resolve to /mounts/<name>. Files copied into the workspace by sandbox.mount resolve to /workspace/<filename> or /workspace/<base>-<hash><ext> when that copied file exists. Returns an empty string if the host path is not available in the sandbox."
       )
       .arg("hostPath", f.string("Absolute host path"))
-      .returnsField("path", f.string("Sandbox path under /mounts, or empty string if not mounted"))
+      .returnsField("path", f.string("Sandbox path under /mounts or /workspace, or empty string if unavailable"))
       .handler(async ({ hostPath }) => {
-        // Use the live sandbox mount list (filters out paths missing on disk)
-        // so we don't tell the agent about a mount the sandbox doesn't have.
-        const mounts = ctx.sessions.mountsForSandbox();
-        const exact = mounts.find((m) => m.hostPath === hostPath);
-        if (exact) {
-          return { path: `/mounts/${exact.mountName}` };
-        }
-        const parent = mounts
-          .map((m) => ({ mount: m, rel: path.relative(m.hostPath, hostPath) }))
-          .find(({ rel }) => rel && !rel.startsWith("..") && !path.isAbsolute(rel));
-        if (parent) {
-          return { path: `/mounts/${parent.mount.mountName}/${parent.rel}` };
-        }
-        return { path: "" };
+        const path = await resolveSandboxPathForHostPath({
+          hostPath,
+          mounts: ctx.sessions.mountsForSandbox(),
+          workspacePath: ctx.workspacePath,
+        });
+        return { path };
       })
       .build(),
   ];
+}
+
+export async function resolveSandboxPathForHostPath(input: {
+  hostPath: string;
+  mounts: Array<{ hostPath: string; mountName: string }>;
+  workspacePath: string;
+}): Promise<string> {
+  let resolved: string;
+  let info: Awaited<ReturnType<typeof stat>>;
+  try {
+    resolved = await realpath(input.hostPath);
+    info = await stat(resolved);
+  } catch {
+    return "";
+  }
+
+  const mountedPath = sandboxPathForMountedHostPath(input.mounts, resolved);
+  if (mountedPath) return mountedPath;
+  if (!info.isFile()) return "";
+
+  return sandboxPathForWorkspaceFile(input.workspacePath, resolved);
+}
+
+function sandboxPathForMountedHostPath(
+  mounts: Array<{ hostPath: string; mountName: string }>,
+  hostPath: string,
+): string {
+  const exact = mounts.find((m) => m.hostPath === hostPath);
+  if (exact) return `/mounts/${exact.mountName}`;
+
+  const parent = mounts
+    .map((m) => ({ mount: m, rel: path.relative(m.hostPath, hostPath) }))
+    .find(({ rel }) => rel && !rel.startsWith("..") && !path.isAbsolute(rel));
+  if (!parent) return "";
+
+  return `/mounts/${parent.mount.mountName}/${parent.rel}`;
+}
+
+async function sandboxPathForWorkspaceFile(
+  workspaceDir: string,
+  resolvedSource: string,
+): Promise<string> {
+  const directName = path.basename(resolvedSource);
+  const hashedName = hashedWorkspaceName(resolvedSource);
+
+  if (await exists(path.join(workspaceDir, hashedName))) return `/workspace/${hashedName}`;
+  if (await exists(path.join(workspaceDir, directName))) return `/workspace/${directName}`;
+  return "";
 }
 
 interface WorkspacePlacement {
@@ -109,19 +149,24 @@ async function pickWorkspaceName(
   resolvedSource: string,
 ): Promise<WorkspacePlacement> {
   const fileName = path.basename(resolvedSource);
-  const ext = path.extname(fileName);
-  const base = ext ? fileName.slice(0, -ext.length) : fileName;
   const direct = path.join(workspaceDir, fileName);
   const directExists = await exists(direct);
   const directSameSource = directExists && (await sameInode(direct, resolvedSource));
   if (!directExists) return { fileName, alreadyExisted: false };
   if (directSameSource) return { fileName, alreadyExisted: true };
-  const suffix = createHash("sha256").update(resolvedSource).digest("hex").slice(0, 8);
-  const suffixedName = `${base}-${suffix}${ext}`;
+  const suffixedName = hashedWorkspaceName(resolvedSource);
   const suffixed = path.join(workspaceDir, suffixedName);
   const suffixedExists = await exists(suffixed);
   const suffixedSameSource = suffixedExists && (await sameInode(suffixed, resolvedSource));
   return { fileName: suffixedName, alreadyExisted: suffixedSameSource };
+}
+
+function hashedWorkspaceName(resolvedSource: string): string {
+  const fileName = path.basename(resolvedSource);
+  const ext = path.extname(fileName);
+  const base = ext ? fileName.slice(0, -ext.length) : fileName;
+  const suffix = createHash("sha256").update(resolvedSource).digest("hex").slice(0, 8);
+  return `${base}-${suffix}${ext}`;
 }
 
 async function cowCopy(src: string, dest: string): Promise<void> {

@@ -7,10 +7,22 @@ export interface DetectedPattern {
   count: number;
   firstSeenAt: string;
   lastSeenAt: string;
+  sourceSessionId: string;
+  sourceMessageId: number;
+  examples: DetectedPatternExample[];
+}
+
+export interface DetectedPatternExample {
+  sessionId: string;
+  messageId: number;
+  toolArgs: unknown;
+  toolResult: unknown;
+  createdAt: string;
 }
 
 const RECENT_WINDOW_MS = 7 * 86_400_000;
 const MIN_OCCURRENCES = 3;
+const MAX_EXAMPLES = 5;
 
 /**
  * Scan recent assistant tool-call messages for repeated patterns. Two calls
@@ -23,26 +35,42 @@ export function detectRepeatPatterns(db: Database): DetectedPattern[] {
   const sinceIso = new Date(Date.now() - RECENT_WINDOW_MS).toISOString();
   const rows = db
     .query(
-      `SELECT tool_name, tool_args, created_at
+      `SELECT id, session_id, tool_name, tool_args, tool_result, created_at
        FROM messages
        WHERE role = 'assistant' AND tool_name IS NOT NULL AND created_at >= $since`,
     )
     .all({ $since: sinceIso }) as Array<{
+      id: number;
+      session_id: string;
       tool_name: string;
       tool_args: string | null;
+      tool_result: string | null;
       created_at: string;
     }>;
 
   const buckets = new Map<string, DetectedPattern>();
   for (const row of rows) {
     const args = parseArgs(row.tool_args);
+    const result = parseJson(row.tool_result);
     const sig = patternSignature(row.tool_name, args);
     const preview = previewArgs(row.tool_name, args);
+    const example = {
+      sessionId: row.session_id,
+      messageId: row.id,
+      toolArgs: args,
+      toolResult: result,
+      createdAt: row.created_at,
+    };
     const existing = buckets.get(sig);
     if (existing) {
       existing.count += 1;
       if (row.created_at < existing.firstSeenAt) existing.firstSeenAt = row.created_at;
-      if (row.created_at > existing.lastSeenAt) existing.lastSeenAt = row.created_at;
+      if (row.created_at > existing.lastSeenAt) {
+        existing.lastSeenAt = row.created_at;
+        existing.sourceSessionId = row.session_id;
+        existing.sourceMessageId = row.id;
+      }
+      addExample(existing.examples, example);
     } else {
       buckets.set(sig, {
         signature: sig,
@@ -51,6 +79,9 @@ export function detectRepeatPatterns(db: Database): DetectedPattern[] {
         count: 1,
         firstSeenAt: row.created_at,
         lastSeenAt: row.created_at,
+        sourceSessionId: row.session_id,
+        sourceMessageId: row.id,
+        examples: [example],
       });
     }
   }
@@ -60,12 +91,16 @@ export function detectRepeatPatterns(db: Database): DetectedPattern[] {
 }
 
 function parseArgs(raw: string | null): Record<string, unknown> {
+  const parsed = parseJson(raw);
+  return typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)
+    ? (parsed as Record<string, unknown>)
+    : {};
+}
+
+function parseJson(raw: string | null): unknown {
   if (!raw) return {};
   try {
-    const parsed = JSON.parse(raw);
-    return typeof parsed === "object" && parsed !== null
-      ? (parsed as Record<string, unknown>)
-      : {};
+    return JSON.parse(raw);
   } catch {
     return {};
   }
@@ -93,4 +128,13 @@ function previewArgs(toolName: string, args: Record<string, unknown>): string {
 function extractExtension(filepath: string): string {
   const dot = filepath.lastIndexOf(".");
   return dot >= 0 ? filepath.slice(dot) : "";
+}
+
+function addExample(
+  examples: DetectedPatternExample[],
+  example: DetectedPatternExample,
+): void {
+  examples.push(example);
+  examples.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  if (examples.length > MAX_EXAMPLES) examples.length = MAX_EXAMPLES;
 }

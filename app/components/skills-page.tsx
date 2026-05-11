@@ -38,6 +38,7 @@ export function SkillsPage({ initialState }: { initialState: WebStateDto }) {
         data: {
           cursor,
           query: queryArg || undefined,
+          sort: "retrieved",
         },
       });
       if (cursor === null && res.total !== null) {

@@ -42,11 +42,8 @@ describe("web settings", () => {
     expect(loaded.ui.detailsDefault).toBe(true);
   });
 
-  test("merges persisted runtime settings into env config", () => {
-    const base = loadConfig({
-      AITHY_AI_MODEL: "gpt-test",
-      OPENAI_API_KEY: "env-key",
-    });
+  test("merges persisted runtime settings into base config", () => {
+    const base = loadConfig({});
     const next = applyRuntimeSettings(base, {
       aiProvider: "openai",
       aiModel: "gpt-next",
@@ -55,16 +52,13 @@ describe("web settings", () => {
     });
 
     expect(next.aiModel).toBe("gpt-next");
-    expect(next.aiApiKey).toBe("env-key");
+    expect(next.aiApiKey).toBeUndefined();
     expect(next.sandboxProvider).toBe("disabled");
     expect(runtimeSandboxChanged(base, next)).toBe(true);
   });
 
-  test("clear model settings override env fallback", () => {
-    const base = loadConfig({
-      AITHY_AI_MODEL: "gpt-test",
-      OPENAI_API_KEY: "env-key",
-    });
+  test("clear model settings remove persisted model", () => {
+    const base = { ...loadConfig({}), aiModel: "gpt-test" };
     const next = applyRuntimeSettings(base, {
       aiProvider: "openai",
       aiModel: null,
@@ -73,11 +67,8 @@ describe("web settings", () => {
     expect(next.aiModel).toBeUndefined();
   });
 
-  test("clear api key settings override env fallback", () => {
-    const base = loadConfig({
-      AITHY_AI_MODEL: "gpt-test",
-      OPENAI_API_KEY: "env-key",
-    });
+  test("clear api key settings remove stored key", () => {
+    const base = { ...loadConfig({}), aiApiKey: "stored-key" };
     const next = applyRuntimeSettings(base, {
       aiApiKey: null,
     }, null);
@@ -98,7 +89,7 @@ describe("web settings", () => {
         aiApiKey: undefined,
       },
     });
-    const base = loadConfig({ AITHY_AI_MODEL: "gpt-test" });
+    const base = loadConfig({});
     const next = applyRuntimeSettings(base, saved.runtime, "sk-test");
 
     expect(next.aiApiKey).toBe("sk-test");

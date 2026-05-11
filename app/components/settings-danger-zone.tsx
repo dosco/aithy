@@ -9,6 +9,7 @@ import {
   resetMemories,
   resetSystemOptions,
 } from "@/server/actions.functions";
+import { setCachedSetupGateState } from "@/lib/setup-gate";
 import type { WebStateDto } from "@/server/dto";
 
 type DangerAction = "sessions" | "memories" | "system";
@@ -29,6 +30,10 @@ export function SettingsDangerZone({ onSystemReset }: { onSystemReset: (state: W
         setDangerSaved("Memories reset");
       } else {
         const state = await resetSystemOptions({ data: { confirmation: CONFIRM_TEXT } });
+        setCachedSetupGateState({
+          aiConfigured: state.aiConfigured,
+          profileConfigured: Boolean(state.profile.userName.trim()),
+        });
         onSystemReset(state);
         setDangerSaved("System reset");
       }

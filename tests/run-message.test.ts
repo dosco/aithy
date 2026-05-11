@@ -76,6 +76,44 @@ describe("runMessage", () => {
     ]);
   });
 
+  test("uses a pre-persisted web user turn without duplicating it in history", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "aithy-run-"));
+    const dbPath = path.join(root, "state.db");
+    const sessions = sessionsFor(root, dbPath);
+    const message = textMessage("m1", "queued turn");
+    sessions.ensureLogicalSession(message.conversationId);
+    sessions.appendMessages(message.conversationId, [{
+      role: "user",
+      content: message.text,
+      createdAt: message.createdAt.toISOString(),
+    }]);
+    const seenInputs: any[] = [];
+
+    const reply = await runMessage(message, {
+      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      events: new EventBus(),
+      sandbox: new MockSandboxProvider(),
+      sessions,
+      userMessagePersisted: true,
+      agentFactory: () => ({
+        llm: {},
+        program: {
+          forward: async (_llm: unknown, input: any) => {
+            seenInputs.push(input);
+            return { agentResponse: "queued reply" };
+          },
+        },
+      }),
+    });
+
+    expect(reply.text).toBe("queued reply");
+    expect(seenInputs[0].conversationHistory).toBeUndefined();
+    expect(sessions.getTranscript("conversation")).toMatchObject([
+      { role: "user", content: "queued turn" },
+      { role: "assistant", content: "queued reply" },
+    ]);
+  });
+
   test("returns the clarification question without retaining agent state", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "aithy-run-"));
     const dbPath = path.join(root, "state.db");

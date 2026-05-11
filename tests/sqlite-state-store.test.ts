@@ -51,7 +51,7 @@ describe("SqliteSessionStateStore", () => {
     const loaded = reopened.loadSession("conversation");
     expect(loaded?.name).toBe("Saved");
     expect(loaded?.source).toBe("cli");
-    expect(loaded?.tokenTotals).toEqual({ input: 0, output: 0, thought: 0, total: 0 });
+    expect(loaded?.tokenTotals).toEqual({ input: 18, output: 4, thought: 5, total: 27 });
     expect(loaded?.messages).toMatchObject([
       { role: "user", content: "remember sqlite" },
       {
@@ -80,6 +80,8 @@ describe("SqliteSessionStateStore", () => {
       { scope: "session", version: 1 },
       { scope: "session", version: 2 },
       { scope: "session", version: 3 },
+      { scope: "session", version: 4 },
+      { scope: "session", version: 5 },
     ]);
     expect(new Database(dbPath).query(`
       SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'messages'

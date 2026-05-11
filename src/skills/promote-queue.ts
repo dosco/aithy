@@ -1,11 +1,15 @@
 import { Database } from "bun:sqlite";
 import type { AppConfig } from "../config/env";
+import { captureProgramUsage } from "../usage/capture";
+import type { SqliteUsageStore } from "../usage/usage-store";
 import {
   createEmbeddedQueueWorker,
   type EmbeddedQueueWorker,
   type QueueErrorReporter,
 } from "../queue/embedded";
+import { createSkillPromotionDrafter, draftMessage, type SkillPromotionDrafter } from "./promote-drafter";
 import { detectRepeatPatterns, type DetectedPattern } from "./promote-detector";
+import type { SqliteSkillPromotionStore } from "./promote-store";
 import type { SqliteSkillsStore } from "./skills-store";
 
 const CRON_PATTERN = "0 4 * * *"; // 04:00 daily, after the memory consolidator
@@ -17,6 +21,17 @@ interface JobData {
 export interface SkillPromoteQueueDeps {
   config: AppConfig;
   skills: SqliteSkillsStore;
+  promotions: SqliteSkillPromotionStore;
+  postToSubSession: (input: {
+    parentSessionId: string;
+    parentMessageId?: number | null;
+    text: string;
+    name?: string;
+    source?: string;
+    notify?: boolean;
+  }) => { sessionId: string; messageId: number | null };
+  drafter?: SkillPromotionDrafter;
+  usage?: SqliteUsageStore;
   notify: (input: {
     kind: "skill.suggested";
     title: string;
@@ -30,9 +45,8 @@ export interface SkillPromoteQueueDeps {
  * Owns the daily skill-promotion cron. Detects tool-call patterns the user
  * runs repeatedly and surfaces a "save this as a skill?" notification.
  *
- * v1 doesn't ask via sub-session — the round-trip mechanic for sub-session
- * replies isn't built yet. The notification deep-links to /skills where the
- * user can manually capture the pattern.
+ * v2 drafts a candidate skill with the LLM, posts it into a sub-session, and
+ * lets the user accept or dismiss by replying in that sub-session.
  */
 export class SkillPromoteQueue {
   private readonly app: EmbeddedQueueWorker<JobData, { suggested: number }>;
@@ -84,18 +98,57 @@ export class SkillPromoteQueue {
     }
 
     const existing = new Set(this.deps.skills.getAll().map((s) => s.id));
+    const drafter = this.deps.drafter ?? createSkillPromotionDrafter(this.deps.config);
     let suggested = 0;
     for (const pattern of patterns) {
-      // Skip patterns that already look like an existing skill (by id slug).
+      if (this.deps.promotions.hasSignature(pattern.signature)) continue;
       const candidateId = slugFromPattern(pattern);
       if (existing.has(candidateId)) continue;
 
+      const draft = await drafter.forward({
+        pattern,
+        existingSkills: this.deps.skills.getAll(),
+      });
+      if (existing.has(draft.id)) continue;
+      if (this.deps.usage) {
+        captureProgramUsage(drafter.program, {
+          store: this.deps.usage,
+          purpose: "skill.promote",
+          sessionId: pattern.sourceSessionId,
+          runId: pattern.signature,
+        });
+      }
+      const sub = this.deps.postToSubSession({
+        parentSessionId: pattern.sourceSessionId,
+        parentMessageId: pattern.sourceMessageId,
+        text: draftMessage({
+          count: pattern.count,
+          argsPreview: pattern.argsPreview,
+          draft,
+        }),
+        name: `Skill suggestion: ${draft.name}`,
+        source: "skill.promote",
+        notify: false,
+      });
+      this.deps.promotions.createPending({
+        signature: pattern.signature,
+        subSessionId: sub.sessionId,
+        sourceSessionId: pattern.sourceSessionId,
+        sourceMessageId: pattern.sourceMessageId,
+        toolName: pattern.toolName,
+        argsPreview: pattern.argsPreview,
+        count: pattern.count,
+        firstSeenAt: pattern.firstSeenAt,
+        lastSeenAt: pattern.lastSeenAt,
+        draft,
+      });
       this.deps.notify({
         kind: "skill.suggested",
-        title: `Save "${pattern.argsPreview}" as a skill?`,
-        body: `You've used this pattern ${pattern.count} times in the last week. Click to capture it on the skills page.`,
-        link: "/skills",
+        title: `Save "${draft.name}" as a skill?`,
+        body: `You've used ${pattern.argsPreview} ${pattern.count} times in the last week. Open the suggestion and reply save or dismiss.`,
+        link: `/chat/${sub.sessionId}`,
       });
+      existing.add(draft.id);
       suggested += 1;
       // Don't drown the user — at most three suggestions per pass.
       if (suggested >= 3) break;

@@ -15,7 +15,7 @@ export function isAiConfigured(config: AppConfig): boolean {
 export function assertStartupConfig(config: AppConfig): void {
   if (isAiConfigured(config)) return;
   const missing: string[] = [];
-  if (!config.aiModel) missing.push("AITHY_AI_MODEL");
+  if (!config.aiModel) missing.push("model");
   if (requiresApiKey(config.aiProvider) && !config.aiApiKey) {
     missing.push("provider API key");
   }

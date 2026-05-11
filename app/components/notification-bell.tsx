@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import * as Popover from "@radix-ui/react-popover";
-import { Bell, Check } from "lucide-react";
+import { Bell, Check, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   listNotifications,
@@ -12,17 +12,6 @@ import type { NotificationDto } from "@/server/dto";
 import type { WebLiveEvent } from "../../src/web/live-events";
 
 type IncomingNotification = Extract<WebLiveEvent, { type: "notification" }>["notification"];
-
-const KIND_TINT: Record<string, string> = {
-  "memory.written": "text-emerald-600 dark:text-emerald-400",
-  "memory.consolidated": "text-violet-600 dark:text-violet-400",
-  "memory.failed": "text-red-600 dark:text-red-400",
-  "session.message": "text-sky-600 dark:text-sky-400",
-  "session.clarification": "text-amber-600 dark:text-amber-400",
-  "skill.suggested": "text-violet-600 dark:text-violet-400",
-  "task.failed": "text-red-600 dark:text-red-400",
-  "info": "text-[rgb(var(--muted-foreground))]",
-};
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
@@ -88,44 +77,43 @@ export function NotificationBell() {
           align="end"
           sideOffset={10}
           collisionPadding={12}
-          className="z-40 flex max-h-96 w-80 flex-col overflow-hidden rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] shadow-xl outline-none"
+          className="z-40 flex max-h-96 w-[22rem] flex-col overflow-hidden rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] p-2 shadow-xl outline-none"
         >
-          <div className="flex items-center justify-between border-b border-[rgb(var(--border))] px-3 py-2">
+          <div className="flex items-center gap-2 px-2 pb-2">
+            <div className="min-w-0 flex-1">
+              <div className="text-sm font-medium">Notifications</div>
+              <div className="text-[11px] text-[rgb(var(--muted-foreground))]">
+                {unread > 0 ? `${unread} unread` : "All caught up"}
+              </div>
+            </div>
             <Link
               to="/notifications"
               onClick={() => setOpen(false)}
-              className="font-mono text-[10px] uppercase tracking-[0.2em] text-[rgb(var(--muted-foreground))] transition hover:text-[rgb(var(--foreground))]"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[rgb(var(--muted-foreground))] transition hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
+              title="View all notifications"
             >
-              Notifications
+              <ChevronRight className="h-4 w-4" />
             </Link>
             {unread > 0 ? (
               <button
                 type="button"
                 onClick={() => void clearAll()}
-                className="inline-flex items-center gap-1 text-[10px] text-[rgb(var(--muted-foreground))] transition hover:text-[rgb(var(--foreground))]"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[rgb(var(--muted-foreground))] transition hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
+                title="Mark all read"
               >
-                <Check className="h-3 w-3" /> mark all read
+                <Check className="h-4 w-4" />
               </button>
             ) : null}
           </div>
-          <ul className="flex-1 overflow-y-auto">
+          <ul className="flex flex-1 flex-col gap-1 overflow-y-auto">
             {items.length === 0 ? (
-              <li className="px-4 py-8 text-center text-xs text-[rgb(var(--muted-foreground))]">
-                nothing yet.
+              <li className="px-4 py-7 text-center text-sm text-[rgb(var(--muted-foreground))]">
+                Nothing new right now.
               </li>
             ) : (
               items.map((n) => <NotificationRow key={n.id} item={n} onActivate={activate} />)
             )}
           </ul>
-          <div className="border-t border-[rgb(var(--border))] px-3 py-2">
-            <Link
-              to="/notifications"
-              onClick={() => setOpen(false)}
-              className="flex w-full items-center justify-center rounded-full border border-[rgb(var(--border))] px-3 py-1.5 text-[10px] text-[rgb(var(--muted-foreground))] transition hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
-            >
-              More
-            </Link>
-          </div>
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
@@ -139,33 +127,41 @@ function NotificationRow({
   item: NotificationDto;
   onActivate: (item: NotificationDto) => void;
 }) {
-  const tint = KIND_TINT[item.kind] ?? KIND_TINT.info;
   const inner = (
-    <div className="grid gap-0.5 px-3 py-2.5">
-      <div className="flex items-start justify-between gap-2">
-        <span className={cn("font-mono text-[10px] uppercase tracking-wide", tint)}>
-          {item.kind}
-        </span>
-        <span className="shrink-0 text-[10px] text-[rgb(var(--muted-foreground))]">
-          {relativeTime(item.createdAt)}
-        </span>
-      </div>
-      <div
+    <div className="flex gap-3 px-3 py-2.5">
+      <span
         className={cn(
-          "text-sm",
-          item.read ? "text-[rgb(var(--muted-foreground))]" : "font-medium",
+          "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full",
+          item.read ? "bg-[rgb(var(--border))]" : "bg-[rgb(var(--accent))]",
         )}
-      >
-        {item.title}
+      />
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start justify-between gap-3">
+          <div
+            className={cn(
+              "min-w-0 truncate text-sm",
+              item.read ? "text-[rgb(var(--foreground))]" : "font-medium",
+            )}
+          >
+            {item.title}
+          </div>
+          <span className="shrink-0 text-[10px] text-[rgb(var(--muted-foreground))]">
+            {relativeTime(item.createdAt)}
+          </span>
+        </div>
+        {item.body ? (
+          <div className="mt-0.5 line-clamp-2 text-xs leading-5 text-[rgb(var(--muted-foreground))]">
+            {item.body}
+          </div>
+        ) : null}
       </div>
-      {item.body ? (
-        <div className="line-clamp-2 text-xs text-[rgb(var(--muted-foreground))]">{item.body}</div>
-      ) : null}
     </div>
   );
   const className = cn(
-    "block w-full border-b border-[rgb(var(--border))] text-left transition last:border-b-0",
-    item.read ? "" : "bg-[rgb(var(--muted))]/30 hover:bg-[rgb(var(--muted))]/50",
+    "block w-full rounded-xl text-left transition",
+    item.read
+      ? "hover:bg-[rgb(var(--muted))]/50"
+      : "bg-[rgb(var(--muted))]/45 hover:bg-[rgb(var(--muted))]/70",
   );
   if (item.link) {
     return (

@@ -26,13 +26,27 @@ describe("loadConfig", () => {
     expect(config.sandboxProvider).toBe("disabled");
   });
 
-  test("parses AI models", () => {
+  test("ignores AI model and provider env vars", () => {
     const config = loadConfig({
-      AITHY_AI_PROVIDER: "openai",
+      AITHY_AI_PROVIDER: "anthropic",
       AITHY_AI_MODEL: "gpt-4.1-mini",
+      AITHY_AI_API_KEY: "sk-test",
+      OPENAI_API_KEY: "sk-openai",
     });
     expect(config.aiProvider).toBe("openai");
-    expect(config.aiModel).toBe("gpt-4.1-mini");
+    expect(config.aiModel).toBeUndefined();
+    expect(config.aiApiKey).toBeUndefined();
+  });
+
+  test("ignores fast AI env vars", () => {
+    const config = loadConfig({
+      AITHY_FAST_AI_PROVIDER: "openai",
+      AITHY_FAST_AI_MODEL: "gpt-4.1-nano",
+      AITHY_FAST_AI_API_KEY: "sk-fast",
+    });
+    expect(config.fastAiProvider).toBeUndefined();
+    expect(config.fastAiModel).toBeUndefined();
+    expect(config.fastAiApiKey).toBeUndefined();
   });
 
   test("parses Microsandbox resource overrides", () => {
@@ -65,17 +79,19 @@ describe("loadConfig", () => {
   });
 
   test("rejects startup without explicit AI model and credentials", () => {
-    expect(() => assertStartupConfig(loadConfig({}))).toThrow(/AITHY_AI_MODEL/);
-    expect(() => assertStartupConfig(loadConfig({
-      AITHY_AI_MODEL: "gpt-test",
-    }))).toThrow(/provider API key/);
+    expect(() => assertStartupConfig(loadConfig({}))).toThrow(/model/);
+    expect(() => assertStartupConfig({
+      ...loadConfig({}),
+      aiModel: "gpt-test",
+    })).toThrow(/provider API key/);
   });
 
   test("accepts startup with model and provider credentials", () => {
-    const config = loadConfig({
-      AITHY_AI_MODEL: "gpt-test",
-      OPENAI_API_KEY: "sk-test",
-    });
+    const config = {
+      ...loadConfig({}),
+      aiModel: "gpt-test",
+      aiApiKey: "sk-test",
+    };
     expect(() => assertStartupConfig(config)).not.toThrow();
   });
 });

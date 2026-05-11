@@ -52,9 +52,10 @@ export const deleteSkill = createServerFn({ method: "POST" })
   });
 
 const skillsPageInput = z.object({
-  cursor: z.object({ name: z.string(), id: z.string() }).nullable().optional(),
+  cursor: z.object({ name: z.string(), id: z.string(), retrievedCount: z.number().optional() }).nullable().optional(),
   query: z.string().max(200).optional(),
   limit: z.number().int().positive().max(200).optional(),
+  sort: z.enum(["name", "retrieved"]).optional(),
 });
 
 export const listSkillsPaged = createServerFn({ method: "GET" })
@@ -66,6 +67,7 @@ export const listSkillsPaged = createServerFn({ method: "GET" })
       cursor: data.cursor ?? null,
       limit,
       query: data.query,
+      sort: data.sort,
     });
     return {
       items: result.items.map(skillDto),

@@ -36,30 +36,16 @@ export interface AppConfig {
   globalMounts: GlobalMount[];
 }
 
-const keyByProvider: Record<string, string[]> = {
-  openai: ["OPENAI_APIKEY", "OPENAI_API_KEY"],
-  anthropic: ["ANTHROPIC_API_KEY", "ANTHROPIC_APIKEY"],
-  "google-gemini": ["GOOGLE_API_KEY", "GEMINI_API_KEY"],
-  groq: ["GROQ_API_KEY"],
-  mistral: ["MISTRAL_API_KEY"],
-  deepseek: ["DEEPSEEK_API_KEY"],
-  ollama: [],
-};
-
 export function loadConfig(
   env = process.env,
   overrides: Partial<Pick<AppConfig, "traceEnabled">> = {},
 ): AppConfig {
-  const aiProvider = env.AITHY_AI_PROVIDER ?? "openai";
-  const aiApiKey = readApiKey(aiProvider, env);
   const sandboxProvider = parseSandboxProvider(env.AITHY_SANDBOX_PROVIDER);
   const botId = parseBotId(env.AITHY_BOT_ID);
   const stateDir = expandHome(env.AITHY_STATE_DIR ?? "~/.config/aithy");
 
   return {
-    aiProvider,
-    aiApiKey,
-    aiModel: env.AITHY_AI_MODEL,
+    aiProvider: "openai",
     sandboxProvider,
     sandboxImage: env.AITHY_SANDBOX_IMAGE ?? "python:3.11-slim",
     sandboxCpus: parsePositiveInt(env.AITHY_SANDBOX_CPUS, 1),
@@ -86,22 +72,6 @@ export function loadConfig(
     tracesDir: path.join(stateDir, botId, "traces"),
     globalMounts: [],
   };
-}
-
-function readApiKey(
-  provider: string,
-  env: NodeJS.ProcessEnv,
-): string | undefined {
-  if (env.AITHY_AI_APIKEY) return env.AITHY_AI_APIKEY;
-  if (env.AITHY_AI_API_KEY) return env.AITHY_AI_API_KEY;
-
-  const names = keyByProvider[provider] ?? [
-    `${provider.toUpperCase()}_API_KEY`,
-  ];
-  for (const name of names) {
-    if (env[name]) return env[name];
-  }
-  return undefined;
 }
 
 function parseSandboxProvider(value?: string): SandboxProviderKind {

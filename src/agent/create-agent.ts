@@ -7,6 +7,8 @@ import {
 } from "@ax-llm/ax";
 import type { AppConfig } from "../config/env";
 import type { EventBus } from "../events/bus";
+import { combineResponderDescription } from "../profile/service";
+import type { UserProfile } from "../profile/types";
 import type { SoulProfile } from "../soul/types";
 import { createAiService, createFastAiService } from "./ai-service";
 import { aithySignature } from "./signatures";
@@ -36,6 +38,7 @@ export interface CreateAithyAgentOptions {
   events: EventBus;
   conversationId: string;
   soul?: SoulProfile;
+  profile?: UserProfile;
   onSkillsSearch?: AxAgentSkillsSearchFn;
   onMemoriesSearch?: AxAgentMemoriesSearchFn;
   onFunctionCall?: AgentFunctionCallHandler;
@@ -53,7 +56,7 @@ Resolving referential userRequests:
 When the transcript exceeds its budget, the oldest entries are dropped first, so do not assume the transcript starts at the beginning of the conversation. Durable cross-session memory is available — use it for anything that must survive future truncation, and do not rely on history as durable memory.`;
 
 const durableMemoryDescription = `Durable memory:
-- \`inputs.memories\` is auto-populated with relevant prior facts and preferences. Read it before answering questions that might depend on user/project context not in the current conversation.
+- \`inputs.memories\` is auto-populated with relevant prior facts, preferences, instructions, and events. Read it before answering questions that might depend on user/project context not in the current conversation.
 - Call \`recall([...])\` with extra topic queries when you need more than what's already loaded — additional matches accumulate into \`inputs.memories\`.
 - The memory triage agent runs after each of your turns. You do NOT decide what to persist. Use \`memory.remember(hint)\` ONLY when the user explicitly asks you to remember something ("remember that…", "save this…"); it queues the request for triage. The user does not need to be told a queue exists — just acknowledge naturally.
 
@@ -94,6 +97,7 @@ export function createAithyAgent({
   events,
   conversationId,
   soul,
+  profile,
   onSkillsSearch,
   onMemoriesSearch,
   onFunctionCall,
@@ -102,7 +106,7 @@ export function createAithyAgent({
   const fastLlm = createFastAiService(config);
 
   const responderOptions: Record<string, unknown> = {
-    description: soul?.responderDescription,
+    description: combineResponderDescription(soul?.responderDescription, profile),
   };
   if (fastLlm) responderOptions.ai = fastLlm;
 

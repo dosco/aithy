@@ -3,10 +3,8 @@ import { mkdir } from "node:fs/promises";
 import { SESSION_SWEEP_INTERVAL_MS } from "../config/limits";
 import { ActiveRunRegistry } from "../agent/active-runs";
 import { AgentDispatcher, type UserChatJobData, type UserChatJobResult } from "../agent/dispatcher";
-import { runMessage } from "../agent/run-message";
-import type { ChannelMessage } from "../channel/types";
-import { formatSkillContent } from "../skills/skills-store";
-import { loadConfig, type AppConfig } from "../config/env";
+import { processUserChatJob } from "./process-user-chat-job";
+import type { AppConfig } from "../config/env";
 import { assertStartupConfig } from "../config/validate";
 import { EventBus } from "../events/bus";
 import { EmbedService } from "../memory/embed";
@@ -29,20 +27,22 @@ import { SqliteSessionStateStore } from "../session/sqlite-state-store";
 import { seedSkillsIfEmpty } from "../skills/seed";
 import { SqliteSkillsStore } from "../skills/skills-store";
 import { SkillPromoteQueue } from "../skills/promote-queue";
+import { SqliteSkillPromotionStore } from "../skills/promote-store";
 import { loadOrSeedSoul, saveSoul } from "../soul/service";
 import { SqliteSoulStore } from "../soul/sqlite-soul-store";
 import type { SoulFields, SoulProfile } from "../soul/types";
+import { SqliteProfileStore } from "../profile/sqlite-profile-store";
+import type { ProfileImageKind, StoredProfileImage, UserProfile, UserProfileFields } from "../profile/types";
 import { LiveEventHub } from "../web/live-events";
-import {
-  applyRuntimeSettings,
-  globalMountsChanged,
-  runtimeSandboxChanged,
-} from "../settings/resolve";
-import { readProviderApiKey } from "../settings/secrets";
+import { globalMountsChanged, runtimeSandboxChanged } from "../settings/resolve";
 import { SqliteSettingsStore } from "../settings/store";
 import type { SettingsPatch, StoredSettings } from "../settings/types";
 import { clearManagedProviderSecrets, removeSqliteFiles } from "./reset-files";
 import { describe, registerSignalHandlers } from "./signals";
+import { postToSubSession } from "./post-sub-session";
+import { publishUserChatFailure, publishUserChatReply } from "./user-chat-live-events";
+import { assertSupportedBunVersion } from "./bun-version";
+import { loadBaseConfig, resolveEffectiveConfig, type RuntimeSecretOverrides } from "./resolve-effective-config";
 
 export interface AithyRuntime {
   config: AppConfig;
@@ -52,6 +52,7 @@ export interface AithyRuntime {
   sessions: SessionManager;
   soul: SoulProfile;
   soulStore: SqliteSoulStore;
+  profile?: UserProfile;
   settings: SqliteSettingsStore;
   skills: SqliteSkillsStore;
   memory: SqliteMemoryStore;
@@ -63,11 +64,15 @@ export interface AithyRuntime {
   memoryConsolidate: MemoryConsolidateQueue;
   memoryExpiry: MemoryExpiryQueue;
   skillPromote: SkillPromoteQueue;
+  skillPromotions: SqliteSkillPromotionStore;
   activeRuns: ActiveRunRegistry;
   dispatcher: AgentDispatcher;
   assertReady(): void;
   updateSettings(patch: SettingsPatch, secrets?: RuntimeSecretOverrides): Promise<StoredSettings>;
   updateSoul(fields: SoulFields): SoulProfile;
+  updateProfile(fields: UserProfileFields): UserProfile;
+  updateProfileImage(kind: ProfileImageKind, image: StoredProfileImage): UserProfile;
+  clearProfileImage(kind: ProfileImageKind): UserProfile;
   shutdown(): Promise<void>;
   isShuttingDown(): boolean;
   isResetting(): boolean;
@@ -101,6 +106,8 @@ class RuntimeImpl implements AithyRuntime {
     public sessions: SessionManager,
     public soul: SoulProfile,
     public soulStore: SqliteSoulStore,
+    public profile: UserProfile | undefined,
+    public profileStore: SqliteProfileStore,
     public settings: SqliteSettingsStore,
     public skills: SqliteSkillsStore,
     public memory: SqliteMemoryStore,
@@ -109,6 +116,7 @@ class RuntimeImpl implements AithyRuntime {
     public memoryConsolidate: MemoryConsolidateQueue,
     public memoryExpiry: MemoryExpiryQueue,
     public skillPromote: SkillPromoteQueue,
+    public skillPromotions: SqliteSkillPromotionStore,
     public notifications: SqliteNotificationStore,
     public usage: SqliteUsageStore,
     public activeRuns: ActiveRunRegistry,
@@ -131,13 +139,11 @@ class RuntimeImpl implements AithyRuntime {
       },
     });
     return entry;
+
   }
-
-
   static async create(): Promise<RuntimeImpl> {
-    const baseConfig = loadConfig(process.env, {
-      traceEnabled: process.argv.includes("--trace"),
-    });
+    assertSupportedBunVersion();
+    const baseConfig = loadBaseConfig();
 
     const vecState = probeAndConfigureSqlite();
     assertVecExtensionReady(vecState);
@@ -147,6 +153,7 @@ class RuntimeImpl implements AithyRuntime {
 
     const skills = new SqliteSkillsStore(config.stateDbPath);
     seedSkillsIfEmpty(skills);
+    const skillPromotions = new SqliteSkillPromotionStore(config.stateDbPath);
 
     const stateRoot = path.dirname(config.stateDbPath);
     const embedder = new EmbedService({
@@ -169,6 +176,8 @@ class RuntimeImpl implements AithyRuntime {
 
     const soulStore = new SqliteSoulStore(config.stateDbPath);
     const soul = loadOrSeedSoul(soulStore);
+    const profileStore = new SqliteProfileStore(config.stateDbPath);
+    const profile = profileStore.loadProfile();
 
     const events = new EventBus();
     const live = new LiveEventHub();
@@ -215,36 +224,8 @@ class RuntimeImpl implements AithyRuntime {
       return entry;
     };
 
-    const postToSubSession = (input: {
-      parentSessionId: string;
-      parentMessageId?: number | null;
-      text: string;
-      name?: string;
-    }) => {
-      const sub = sessions.createSubSession({
-        parentSessionId: input.parentSessionId,
-        parentMessageId: input.parentMessageId ?? null,
-        name: input.name ?? "Sub-session",
-      });
-      sessions.appendMessages(sub.conversationId, [
-        {
-          role: "assistant",
-          kind: "text",
-          content: input.text,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
-      pushNotification({
-        kind: "session.message",
-        title: input.name ?? "New message in a sub-session",
-        body: input.text.slice(0, 200),
-        link: `/chat/${sub.conversationId}`,
-      });
-      return {
-        sessionId: sub.conversationId,
-        messageId: sessions.lastMessageId(sub.conversationId),
-      };
-    };
+    const postSubSession = (input: Parameters<typeof postToSubSession>[3]) =>
+      postToSubSession(sessions, live, pushNotification, input);
 
     const onQueueError = (message: string, error: Error) => events.emit({ type: "error" as const, message, cause: error });
     const memoryQueue = new MemoryQueue({
@@ -252,7 +233,7 @@ class RuntimeImpl implements AithyRuntime {
       memory,
       sessions,
       runs: memoryRuns,
-      postFailureToSubSession: postToSubSession,
+      postFailureToSubSession: postSubSession,
       notify: pushNotification,
       usage,
       onQueueError,
@@ -266,6 +247,9 @@ class RuntimeImpl implements AithyRuntime {
     const skillPromote = new SkillPromoteQueue({
       config,
       skills,
+      promotions: skillPromotions,
+      postToSubSession: postSubSession,
+      usage,
       notify: pushNotification,
       onQueueError,
     });
@@ -278,6 +262,8 @@ class RuntimeImpl implements AithyRuntime {
       parallelAgents: config.parallelAgents,
       ensureBotSandbox: () => sessions.ensureBotSandbox(),
       onError: onQueueError,
+      onCompleted: (_data, result) => { if (runtimeRef) publishUserChatReply(runtimeRef, result); },
+      onFailed: (data, error) => { if (runtimeRef) publishUserChatFailure(runtimeRef, data, error); },
       process: async (data: UserChatJobData): Promise<UserChatJobResult> => {
         if (!runtimeRef) throw new Error("runtime not yet initialized");
         return processUserChatJob(runtimeRef, data);
@@ -324,6 +310,8 @@ class RuntimeImpl implements AithyRuntime {
       sessions,
       soul,
       soulStore,
+      profile,
+      profileStore,
       settings,
       skills,
       memory,
@@ -332,6 +320,7 @@ class RuntimeImpl implements AithyRuntime {
       memoryConsolidate,
       memoryExpiry,
       skillPromote,
+      skillPromotions,
       notifications,
       usage,
       activeRuns,
@@ -350,11 +339,7 @@ class RuntimeImpl implements AithyRuntime {
 
   async updateSettings(patch: SettingsPatch, secrets?: RuntimeSecretOverrides): Promise<StoredSettings> {
     const nextSettings = this.settings.save(patch);
-    const nextConfig = await resolveEffectiveConfig(
-      loadConfig(process.env, { traceEnabled: process.argv.includes("--trace") }),
-      nextSettings,
-      secrets,
-    );
+    const nextConfig = await resolveEffectiveConfig(loadBaseConfig(), nextSettings, secrets);
     if (runtimeSandboxChanged(this.config, nextConfig)) {
       this.sandbox = createSandboxProvider(nextConfig);
       await this.sessions.replaceSandboxProvider(this.sandbox);
@@ -375,6 +360,21 @@ class RuntimeImpl implements AithyRuntime {
   updateSoul(fields: SoulFields): SoulProfile {
     this.soul = saveSoul(this.soulStore, fields);
     return this.soul;
+  }
+
+  updateProfile(fields: UserProfileFields): UserProfile {
+    this.profile = this.profileStore.saveProfile(fields);
+    return this.profile;
+  }
+
+  updateProfileImage(kind: ProfileImageKind, image: StoredProfileImage): UserProfile {
+    this.profile = this.profileStore.saveImage(kind, image);
+    return this.profile;
+  }
+
+  clearProfileImage(kind: ProfileImageKind): UserProfile {
+    this.profile = this.profileStore.clearImage(kind);
+    return this.profile;
   }
 
   isShuttingDown(): boolean {
@@ -475,10 +475,10 @@ class RuntimeImpl implements AithyRuntime {
   }
 
   private closeStores(): void {
-    this.sessions.closeState();
-    this.soulStore.close();
+    this.sessions.closeState(); this.soulStore.close(); this.profileStore.close();
     this.settings.close();
     this.skills.close();
+    this.skillPromotions.close();
     this.memory.close();
     this.memoryRuns.close();
     this.notifications.close();
@@ -495,56 +495,3 @@ async function doResetAithyRuntimeSystem(): Promise<AithyRuntime> {
   await removeSqliteFiles(path.join(path.dirname(impl.config.stateDbPath), "bunqueue.db"));
   return getAithyRuntime();
 }
-async function processUserChatJob(
-  runtime: RuntimeImpl,
-  data: UserChatJobData,
-): Promise<UserChatJobResult> {
-  const message: ChannelMessage = {
-    id: crypto.randomUUID(),
-    channelId: "web",
-    conversationId: data.conversationId,
-    senderId: "local-user",
-    text: data.text,
-    createdAt: new Date(data.createdAt),
-  };
-  const skills = runtime.skills
-    .getByIds([...data.skillIds])
-    .map((skill) => ({ name: skill.name, content: formatSkillContent(skill) }));
-  const reply = await runMessage(message, {
-    config: runtime.config,
-    events: runtime.events,
-    sandbox: runtime.sandbox,
-    sessions: runtime.sessions,
-    soul: runtime.soul,
-    memory: runtime.memory,
-    memoryQueue: runtime.memoryQueue,
-    usage: runtime.usage,
-    activeRuns: runtime.activeRuns,
-    notify: (input) => runtime.notify(input),
-    skills,
-    skillsSearch: (queries) =>
-      runtime.skills
-        .search(queries)
-        .map((s) => ({ name: s.name, content: formatSkillContent(s) })),
-  });
-  return { conversationId: reply.conversationId, text: reply.text };
-}
-
-async function resolveEffectiveConfig(
-  baseConfig: AppConfig,
-  settings: StoredSettings,
-  secrets: RuntimeSecretOverrides = {},
-): Promise<AppConfig> {
-  const provider = settings.runtime.aiProvider?.trim() || baseConfig.aiProvider;
-  const apiKey =
-    settings.runtime.aiApiKey === null
-      ? null
-      : baseConfig.aiApiKey ?? secrets.apiKey ?? await readProviderApiKey(provider, baseConfig.botId);
-  const fastProvider = settings.runtime.fastAiProvider?.trim();
-  const fastApiKey = fastProvider
-    ? (fastProvider === provider ? apiKey : secrets.fastApiKey ?? await readProviderApiKey(fastProvider, baseConfig.botId))
-    : undefined;
-  return applyRuntimeSettings(baseConfig, settings.runtime, apiKey, fastApiKey);
-}
-
-type RuntimeSecretOverrides = { apiKey?: string; fastApiKey?: string };

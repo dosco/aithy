@@ -21,7 +21,7 @@ export function KindFilterRow({
 }) {
   const items: Array<MemoryKind | "all"> = ["all", ...MEMORY_KINDS];
   return (
-    <div className="flex flex-wrap items-center gap-1">
+    <div className="flex flex-wrap items-center gap-1 rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/60 p-1">
       {items.map((kind) => {
         const active = value === kind;
         const tint = kind === "all" ? "" : KIND_TINT_TEXT[kind];
@@ -32,7 +32,7 @@ export function KindFilterRow({
             type="button"
             onClick={() => onChange(kind)}
             className={cn(
-              "group inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.18em] transition",
+              "group inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition",
               active
                 ? "bg-[rgb(var(--foreground))] text-[rgb(var(--background))]"
                 : "text-[rgb(var(--muted-foreground))] hover:text-[rgb(var(--foreground))]",
@@ -81,8 +81,8 @@ export function MemoryLattice({
   return (
     <LayoutGroup id="memory-lattice">
       <ul
-        className="grid grid-flow-row-dense grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3"
-        style={{ gridAutoRows: "minmax(92px, auto)" }}
+        className="grid grid-flow-row-dense grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
+        style={{ gridAutoRows: "84px" }}
       >
         <AnimatePresence initial={false} mode="popLayout">
           {openId === NEW_MEMORY_ID ? (
@@ -118,7 +118,7 @@ function EmptyLattice({ onStartNew }: { onStartNew: () => void }) {
       <button
         type="button"
         onClick={onStartNew}
-        className="group flex flex-col items-center gap-3 rounded-3xl border border-dashed border-[rgb(var(--border))] px-12 py-10 text-center transition hover:border-[rgb(var(--foreground))]/40"
+        className="group flex flex-col items-center gap-3 rounded-2xl border border-dashed border-[rgb(var(--border))] px-10 py-8 text-center transition hover:border-[rgb(var(--foreground))]/40"
       >
         <pre
           aria-hidden

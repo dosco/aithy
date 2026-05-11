@@ -31,10 +31,10 @@ function NotificationsPage() {
             <li key={item.id} className="border-b border-[rgb(var(--border))] py-4 last:border-b-0">
               <div className="flex items-start justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-[rgb(var(--muted-foreground))]">
-                    {item.kind}
+                  <p className="text-xs text-[rgb(var(--muted-foreground))]">
+                    {notificationLabel(item.kind)}
                   </p>
-                  <h2 className="mt-1 text-lg font-medium">
+                  <h2 className="mt-1 text-base font-medium">
                     {item.title}
                   </h2>
                   {item.body ? (
@@ -53,4 +53,27 @@ function NotificationsPage() {
       </ul>
     </PageFrame>
   );
+}
+
+function notificationLabel(kind: string): string {
+  switch (kind) {
+    case "memory.written":
+      return "Memory";
+    case "memory.consolidated":
+      return "Memory cleanup";
+    case "memory.failed":
+      return "Memory needs attention";
+    case "session.message":
+      return "Conversation";
+    case "session.clarification":
+      return "Question";
+    case "skill.suggested":
+      return "Skill suggestion";
+    case "task.failed":
+      return "Task needs attention";
+    case "mount.added":
+      return "Files";
+    default:
+      return "Update";
+  }
 }

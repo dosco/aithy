@@ -10,7 +10,7 @@ export const Route = createFileRoute("/setup")({
   loaderDeps: ({ search: { redirect } }) => ({ redirect }),
   loader: async ({ deps }) => {
     const state = await getWebState({ data: {} });
-    if (state.aiConfigured) {
+    if (state.aiConfigured && state.profile.userName.trim()) {
       throw redirect({ href: deps.redirect, replace: true });
     }
     return state;

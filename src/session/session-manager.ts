@@ -1,27 +1,22 @@
-import {
-  DEFAULT_IDLE_PARK_MS,
-  DEFAULT_SESSION_TTL_MS,
-  MAX_CONVERSATION_HISTORY_MESSAGES,
-} from "../config/limits";
+import { DEFAULT_IDLE_PARK_MS, DEFAULT_SESSION_TTL_MS, MAX_CONVERSATION_HISTORY_MESSAGES } from "../config/limits";
 import type { ActiveRunRegistry } from "../agent/active-runs";
 import type { GlobalMount } from "../config/env";
 import type { EventBus } from "../events/bus";
-import { existsSync } from "node:fs";
 import type { SandboxProvider, SessionMount } from "../sandbox/provider";
 import { defaultSessionName, generateSessionName, sessionIdFromName } from "./session-names";
 import { deleteEverySession, deleteSessionTree } from "./delete-sessions";
 import { computeMountName, summaryFromSession } from "./session-summary";
 export { computeMountName } from "./session-summary";
+import {
+  mountsForSandbox as globalMountsForSandbox,
+  prepareGlobalMountAdd,
+  scheduleMountsRefresh,
+  type AddGlobalMountResult,
+} from "./global-mounts";
 import type { MessagePage, SessionStateStore } from "./state-store";
 import type { BotMessage, BotSession, BotSessionSummary, SessionNameSource, SessionTokenTotals } from "./types";
 
 const ZERO_TOKENS: SessionTokenTotals = { input: 0, output: 0, thought: 0, total: 0 };
-
-export interface AddGlobalMountResult {
-  alreadyExisted: boolean;
-  mount: SessionMount;
-  sandboxPath: string;
-}
 
 type SandboxState = "idle" | "starting" | "live" | "parking" | "parked" | "resuming";
 
@@ -48,7 +43,6 @@ export class SessionManager {
       state?: SessionStateStore;
       source?: string;
       activeRuns?: ActiveRunRegistry;
-      /** Persist new globalMounts back to settings storage. Owned by runtime. */
       persistGlobalMounts?: (mounts: GlobalMount[]) => void;
       globalMounts?: GlobalMount[];
     }
@@ -59,12 +53,6 @@ export class SessionManager {
     this.globalMounts = options.globalMounts ?? [];
   }
 
-  /**
-   * Single-flight gate: ensure the bot's sandbox VM is `live`. Concurrent
-   * callers share the same in-flight promise — no duplicate createSession or
-   * resume. Workers and message handlers should await this before doing any
-   * sandbox-touching work.
-   */
   async ensureBotSandbox(): Promise<void> {
     if (this.sandboxState === "live" && this.sandboxId) return;
     if (this.sandboxReady) return this.sandboxReady;
@@ -102,13 +90,11 @@ export class SessionManager {
         this.sandboxState = "live";
         this.options.events.emit({ type: "sandbox.created", conversationId: this.botId, sessionId: this.sandboxId });
       } catch (error) {
-        // Resume failed — leave it parked so the next call retries from there.
         this.sandboxState = "parked";
         throw error;
       }
       return;
     }
-    // States starting/resuming/live are handled above — defensive fallback.
     if (!this.sandboxId) throw new Error(`Sandbox in unexpected state: ${this.sandboxState}`);
   }
 
@@ -165,6 +151,7 @@ export class SessionManager {
       nameSource?: SessionNameSource;
       parentSessionId?: string | null;
       parentMessageId?: number | null;
+      source?: string;
     } = {},
   ): BotSessionSummary {
     const active = this.sessions.get(conversationId);
@@ -179,7 +166,7 @@ export class SessionManager {
       conversationId,
       name: options.name ?? defaultSessionName(),
       nameSource: options.nameSource ?? "generated",
-      source: this.source,
+      source: options.source ?? this.source,
       model: null,
       systemPrompt: null,
       parentSessionId: options.parentSessionId ?? null,
@@ -216,6 +203,7 @@ export class SessionManager {
       name: input.name,
       parentSessionId: input.parentSessionId,
       parentMessageId: input.parentMessageId ?? null,
+      source: input.source,
     });
   }
 
@@ -300,7 +288,12 @@ export class SessionManager {
 
   appendMessages(conversationId: string, messages: BotMessage[]): void {
     const session = this.sessions.get(conversationId);
-    if (!session) return;
+    if (!session) {
+      if (this.options.state?.getSummary(conversationId)) {
+        this.options.state.appendMessages(conversationId, messages);
+      }
+      return;
+    }
     session.messages.push(...messages);
     if (session.messages.length > MAX_CONVERSATION_HISTORY_MESSAGES) {
       session.messages.splice(
@@ -335,46 +328,21 @@ export class SessionManager {
   }
 
   mountsForSandbox(): SessionMount[] {
-    const out: SessionMount[] = [];
-    const seen = new Set<string>();
-    for (const m of this.globalMounts) {
-      if (seen.has(m.hostPath)) continue;
-      seen.add(m.hostPath);
-      if (!existsSync(m.hostPath)) continue;
-      out.push({ hostPath: m.hostPath, mountName: computeMountName(m.hostPath) });
-    }
-    return out;
+    return globalMountsForSandbox(this.globalMounts);
   }
 
   async addGlobalMount(
     hostPath: string,
     callerConversationId?: string,
   ): Promise<AddGlobalMountResult> {
-    const mountName = computeMountName(hostPath);
-    const sandboxPath = `/mounts/${mountName}`;
-    const existing = this.globalMounts.find((m) => m.hostPath === hostPath);
-    if (existing) {
-      return {
-        alreadyExisted: true,
-        mount: { hostPath, mountName },
-        sandboxPath,
-      };
-    }
-    const next = [...this.globalMounts, { hostPath }];
-    this.globalMounts = next;
-    this.options.persistGlobalMounts?.(next);
+    const prepared = prepareGlobalMountAdd(this.globalMounts, hostPath);
+    if (!prepared.next) return prepared.result;
+    this.globalMounts = prepared.next;
+    this.options.persistGlobalMounts?.(prepared.next);
     await this.scheduleMountsRefresh(callerConversationId);
-    return {
-      alreadyExisted: false,
-      mount: { hostPath, mountName },
-      sandboxPath,
-    };
+    return prepared.result;
   }
 
-  /**
-   * Recreate the bot's single sandbox VM with the latest mount set. Bot-level
-   * — there's only one VM, so one recreate covers every conversation.
-   */
   async refreshMounts(conversationId?: string): Promise<void> {
     if (this.sandboxState !== "live" || !this.sandboxId) return;
     this.options.events.emit({
@@ -400,34 +368,15 @@ export class SessionManager {
     void this.scheduleMountsRefresh(undefined);
   }
 
-  private async scheduleMountsRefresh(
-    callerConversationId?: string,
-  ): Promise<void> {
-    const activeRuns = this.options.activeRuns;
-    // With a single shared VM, defer the refresh if any conversation is
-    // mid-run; recreating a VM under a live agent would yank its tools.
-    const someoneIsRunning = activeRuns
-      ? [...this.sessions.keys()].some((id) => id !== callerConversationId && activeRuns.isActive(id))
-      : false;
-    if (someoneIsRunning && activeRuns) {
-      this.options.events.emit({
-        type: "sandbox.mountsRefreshPending",
-        conversationId: callerConversationId ?? this.botId,
-      });
-      const pendingFor = [...this.sessions.keys()].filter(
-        (id) => id !== callerConversationId && activeRuns.isActive(id),
-      );
-      const refresh = () => this.refreshMounts(callerConversationId);
-      let pending = pendingFor.length;
-      for (const id of pendingFor) {
-        activeRuns.onIdle(id, () => {
-          pending -= 1;
-          if (pending === 0) void refresh();
-        });
-      }
-      return;
-    }
-    await this.refreshMounts(callerConversationId);
+  private scheduleMountsRefresh(callerConversationId?: string): Promise<void> {
+    return scheduleMountsRefresh({
+      activeRuns: this.options.activeRuns,
+      sessions: this.sessions,
+      events: this.options.events,
+      botId: this.botId,
+      callerConversationId,
+      refresh: (id) => this.refreshMounts(id),
+    });
   }
 
   async clear(conversationId: string): Promise<void> {
@@ -459,11 +408,6 @@ export class SessionManager {
     return deleteEverySession(this.deleteContext());
   }
 
-  /**
-   * Sweep expired sessions and park the bot VM when every live conversation
-   * has been idle past `idleParkMs`. With one shared VM, parking is a
-   * bot-level decision — any conversation activity resumes it.
-   */
   async sweepExpired(now = new Date()): Promise<void> {
     const idleMs = this.options.idleParkMs ?? DEFAULT_IDLE_PARK_MS;
     for (const [conversationId, session] of [...this.sessions]) {
@@ -491,7 +435,6 @@ export class SessionManager {
       this.sandboxState = "parked";
       for (const session of this.sessions.values()) session.state = "parked";
     } catch (error) {
-      // Leave state in inconsistent state to surface failure on next ensure.
       this.sandboxState = "live";
       throw error;
     }
@@ -501,9 +444,7 @@ export class SessionManager {
     if (this.sandboxId && (this.sandboxState === "live" || this.sandboxState === "parked")) {
       try {
         await this.options.sandbox.destroy(this.sandboxId);
-      } catch {
-        // Swallow — best-effort handoff.
-      }
+      } catch {}
     }
     this.sessions.clear();
     this.sandboxId = null;
@@ -520,10 +461,6 @@ export class SessionManager {
     this.options.idleParkMs = idleParkMs;
   }
 
-  /**
-   * Drop the in-memory BotSession for this conversation. The shared bot VM is
-   * NOT torn down — other conversations may still be using it.
-   */
   async destroy(conversationId: string): Promise<void> {
     const session = this.sessions.get(conversationId);
     if (!session) return;
@@ -539,13 +476,10 @@ export class SessionManager {
     this.options.state?.close?.();
   }
 
-  /** Park the bot VM during shutdown. */
   async parkAll(): Promise<void> {
     try {
       await this.parkBot();
-    } catch {
-      // Best-effort during shutdown.
-    }
+    } catch {}
   }
 
   private nextExpiry(): Date {

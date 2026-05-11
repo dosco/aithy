@@ -276,6 +276,47 @@ body {
   letter-spacing: 0;
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 140ms;
+    animation-timing-function: ease-out;
+  }
+
+  ::view-transition-old(root) {
+    animation-name: app-view-fade-out;
+  }
+
+  ::view-transition-new(root) {
+    animation-name: app-view-fade-in;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none;
+  }
+}
+
+@keyframes app-view-fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes app-view-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 html[data-layout="work"] body {
   background:
     linear-gradient(rgb(var(--border) / 0.08) 1px, transparent 1px),

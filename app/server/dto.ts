@@ -1,4 +1,3 @@
-import { loadConfig } from "../../src/config/env";
 import type { AppConfig } from "../../src/config/env";
 import { isAiConfigured } from "../../src/config/validate";
 import type { BotSessionSummary } from "../../src/session/types";
@@ -12,6 +11,7 @@ import { readProviderApiKey } from "../../src/settings/secrets";
 import type { StoredSettings } from "../../src/settings/types";
 import type { AithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import type { SoulProfile } from "../../src/soul/types";
+import type { ProfileImage, UserProfile } from "../../src/profile/types";
 import type { SkillEntry } from "../../src/skills/skills-store";
 import type { MemoryEntry, MemoryKind, MemoryLabel } from "../../src/memory/types";
 import type { MemoryRun, MemoryRunStatus, MemoryRunTrigger } from "../../src/memory/memory-runs";
@@ -46,7 +46,7 @@ export interface ConfigDto {
 export interface SecretStatusDto {
   provider: string;
   configured: boolean;
-  source: "env" | "bun.secrets" | null;
+  source: "bun.secrets" | null;
 }
 
 export interface SoulDto {
@@ -60,6 +60,22 @@ export interface SoulDto {
   updatedAt: string;
 }
 
+export interface ProfileImageDto {
+  mimeType: string;
+  width: number;
+  height: number;
+  updatedAt: string;
+  dataUrl: string;
+}
+
+export interface ProfileDto {
+  userName: string;
+  userLocation: string;
+  updatedAt: string;
+  userPhoto: ProfileImageDto | null;
+  agentPhoto: ProfileImageDto | null;
+}
+
 export interface SkillDto {
   id: string;
   name: string;
@@ -67,6 +83,7 @@ export interface SkillDto {
   body: string;
   allowedTools: string | null;
   tags: string | null;
+  retrievedCount: number;
   updatedAt: string;
 }
 
@@ -155,6 +172,7 @@ export interface WebStateDto {
   secret: SecretStatusDto;
   fastSecret: SecretStatusDto | null;
   soul: SoulDto;
+  profile: ProfileDto;
   skills: SkillDto[];
   skillsCount: number;
   skillsToolUniverse: number;
@@ -167,6 +185,18 @@ export interface WebStateDto {
   notifications: NotificationDto[];
   unreadNotifications: number;
   aiConfigured: boolean;
+}
+
+export interface SetupGateStateDto {
+  aiConfigured: boolean;
+  profileConfigured: boolean;
+}
+
+export interface SessionsPageStateDto {
+  sessions: SessionSummaryDto[];
+  settings: {
+    ui: StoredSettings["ui"];
+  };
 }
 
 export function sessionDto(session: BotSessionSummary): SessionSummaryDto {
@@ -204,6 +234,26 @@ export function soulDto(soul: SoulProfile): SoulDto {
     negativeBehavior: soul.negativeBehavior,
     responderDescription: soul.responderDescription,
     updatedAt: soul.updatedAt,
+  };
+}
+
+export function profileDto(profile: UserProfile | undefined): ProfileDto {
+  return {
+    userName: profile?.userName ?? "",
+    userLocation: profile?.userLocation ?? "",
+    updatedAt: profile?.updatedAt ?? "",
+    userPhoto: profile?.userPhoto ? profileImageDto(profile.userPhoto) : null,
+    agentPhoto: profile?.agentPhoto ? profileImageDto(profile.agentPhoto) : null,
+  };
+}
+
+export function profileImageDto(image: ProfileImage): ProfileImageDto {
+  return {
+    mimeType: image.mimeType,
+    width: image.width,
+    height: image.height,
+    updatedAt: image.updatedAt,
+    dataUrl: `data:${image.mimeType};base64,${Buffer.from(image.bytes).toString("base64")}`,
   };
 }
 
@@ -249,6 +299,7 @@ export function skillDto(skill: SkillEntry): SkillDto {
     body: skill.body,
     allowedTools: skill.allowed_tools,
     tags: skill.tags,
+    retrievedCount: skill.retrieved_count,
     updatedAt: skill.updated_at,
   };
 }
@@ -258,7 +309,7 @@ export async function webStateDto(
   activeSessionId: string | null,
 ): Promise<WebStateDto> {
   const settings = runtime.settings.load();
-  const skillsPage = runtime.skills.page({ cursor: null, limit: SKILLS_PAGE_SIZE });
+  const skillsPage = runtime.skills.page({ cursor: null, limit: SKILLS_PAGE_SIZE, sort: "retrieved" });
   const memoriesPage = runtime.memory.page({ cursor: null, limit: MEMORIES_PAGE_SIZE });
   const mostRecent = runtime.memory.mostRecent();
   const messagePage = activeSessionId ? initialSessionMessagePage(runtime, activeSessionId) : emptyMessagePageDto();
@@ -276,6 +327,7 @@ export async function webStateDto(
         : await secretStatusForProvider(runtime.config.fastAiProvider, runtime.config.botId)
       : null,
     soul: soulDto(runtime.soul),
+    profile: profileDto(runtime.profile),
     skills: skillsPage.items.map(skillDto),
     skillsCount: runtime.skills.count(),
     skillsToolUniverse: runtime.skills.countDistinctTools(),
@@ -288,6 +340,20 @@ export async function webStateDto(
     notifications: runtime.notifications.recent(50).map(notificationDto),
     unreadNotifications: runtime.notifications.unreadCount(),
     aiConfigured: isAiConfigured(runtime.config),
+  };
+}
+
+export function setupGateStateDto(runtime: AithyRuntime): SetupGateStateDto {
+  return {
+    aiConfigured: isAiConfigured(runtime.config),
+    profileConfigured: Boolean(runtime.profile?.userName.trim()),
+  };
+}
+
+export function sessionsPageStateDto(runtime: AithyRuntime): SessionsPageStateDto {
+  return {
+    sessions: runtime.sessions.listSessions().map(sessionDto),
+    settings: { ui: runtime.settings.load().ui },
   };
 }
 
@@ -344,13 +410,6 @@ export async function secretStatusForProvider(
   provider: string,
   botId: string,
 ): Promise<SecretStatusDto> {
-  const envConfig = loadConfig({
-    ...process.env,
-    AITHY_AI_PROVIDER: provider,
-  });
-  if (envConfig.aiApiKey) {
-    return { provider, configured: true, source: "env" };
-  }
   const secret = await readProviderApiKey(provider, botId);
   return {
     provider,

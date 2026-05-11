@@ -13,11 +13,9 @@ import {
   writeProviderApiKey,
 } from "../../src/settings/secrets";
 import { isAiConfigured } from "../../src/config/validate";
-import {
-  getAithyRuntime,
-  resetAithyRuntimeSystem,
-} from "../../src/runtime/aithy-runtime.server";
+import { getAithyRuntime, resetAithyRuntimeSystem } from "../../src/runtime/aithy-runtime.server";
 import { generateSessionName } from "../../src/session/session-names";
+import type { UserMessage } from "../../src/session/types";
 import { messageEvent, userMessageEvent } from "../../src/web/live-events";
 import {
   webStateDto,
@@ -31,6 +29,7 @@ import {
   usageBucketDto,
 } from "./dto";
 import { assertPrimaryAiSettings } from "./ai-settings-test";
+import { tryHandleSkillPromotionReply } from "./skill-promotion-replies";
 
 const sessionInput = z.object({
   conversationId: z.string().min(1).optional(),
@@ -39,6 +38,7 @@ const sessionInput = z.object({
 const sendInput = z.object({
   conversationId: z.string().min(1),
   text: z.string().min(1),
+  createdAt: z.string().datetime(),
   skillIds: z.array(z.string().min(1)).max(20).optional(),
 });
 
@@ -103,27 +103,6 @@ export const getWebState = createServerFn({ method: "GET" })
     return webStateDto(runtime, activeSessionId);
   });
 
-export const createSession = createServerFn({ method: "POST" })
-  .handler(async () => {
-    assertLoopbackRequest(getRequest());
-    const runtime = await getAithyRuntime();
-    const id = crypto.randomUUID();
-    const summary = runtime.sessions.ensureLogicalSession(id);
-    runtime.settings.save({ ui: { lastActiveSessionId: id } });
-    publishSessions(runtime);
-    return sessionDto(summary);
-  });
-
-export const openSession = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ conversationId: z.string().min(1) }))
-  .handler(async ({ data }) => {
-    assertLoopbackRequest(getRequest());
-    const runtime = await getAithyRuntime();
-    runtime.sessions.ensureLogicalSession(data.conversationId);
-    runtime.settings.save({ ui: { lastActiveSessionId: data.conversationId } });
-    return webStateDto(runtime, data.conversationId);
-  });
-
 export const sendChatMessage = createServerFn({ method: "POST" })
   .inputValidator(sendInput)
   .handler(async ({ data }) => {
@@ -135,10 +114,11 @@ export const sendChatMessage = createServerFn({ method: "POST" })
           ? "Aithy is resetting. Try again in a moment."
           : "Aithy is shutting down. Try again after restart.",
       );
-      return { reply: bot, activeSessionId: data.conversationId };
+      runtime.live.publish(messageEvent(data.conversationId, bot));
+      return { activeSessionId: data.conversationId, queued: false };
     }
     const text = data.text.trim();
-    const user = userMessage(data.conversationId, text);
+    const user = userMessage(data.conversationId, text, new Date(data.createdAt));
     runtime.sessions.ensureLogicalSession(data.conversationId, {
       name: generateSessionName(text),
       nameSource: "generated",
@@ -158,30 +138,34 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       runtime.live.publish(messageEvent(result.reply.conversationId, reply));
       publishSessions(runtime);
       return {
-        reply,
         activeSessionId: result.activeConversationId ?? data.conversationId,
+        queued: false,
       };
     }
 
+    const promotionReply = tryHandleSkillPromotionReply({ runtime, user, publishSessions });
+    if (promotionReply) return { activeSessionId: data.conversationId, queued: false };
+
     try {
-      runtime.assertReady();
+      runtime.sessions.appendMessages(data.conversationId, [persistedUserMessage(user)]);
       runtime.live.publish(userMessageEvent(data.conversationId, user.text, user.createdAt));
-      const reply = await runtime.dispatcher.enqueueUserChat({
+      publishSessions(runtime);
+      runtime.assertReady();
+      await runtime.dispatcher.enqueueUserChat({
         conversationId: data.conversationId,
         text: user.text,
         createdAt: user.createdAt.toISOString(),
         skillIds: data.skillIds ?? [],
       });
-      const bot = assistantMessage(reply.text);
-      runtime.live.publish(messageEvent(reply.conversationId, bot));
-      publishSessions(runtime);
-      return { reply: bot, activeSessionId: data.conversationId };
+      return { activeSessionId: data.conversationId, queued: true };
     } catch (error) {
       const bot = assistantMessage(
         error instanceof Error ? `Error: ${error.message}` : "Unknown error",
       );
+      runtime.sessions.appendMessages(data.conversationId, [bot]);
       runtime.live.publish(messageEvent(data.conversationId, bot));
-      return { reply: bot, activeSessionId: data.conversationId };
+      publishSessions(runtime);
+      return { activeSessionId: data.conversationId, queued: false };
     }
   });
 
@@ -454,10 +438,7 @@ function selectSession(
   requested?: string,
 ): string | null {
   if (!requested) return null;
-  const id = requested;
-  runtime.sessions.ensureLogicalSession(id);
-  runtime.settings.save({ ui: { lastActiveSessionId: id } });
-  return id;
+  return runtime.sessions.getSummary(requested) ? requested : null;
 }
 
 function publishSessions(runtime: Awaited<ReturnType<typeof getAithyRuntime>>): void {
@@ -469,14 +450,14 @@ function publishSessions(runtime: Awaited<ReturnType<typeof getAithyRuntime>>): 
   });
 }
 
-function userMessage(conversationId: string, text: string): ChannelMessage {
+function userMessage(conversationId: string, text: string, createdAt = new Date()): ChannelMessage {
   return {
     id: crypto.randomUUID(),
     channelId: "web",
     conversationId,
     senderId: "local-user",
     text,
-    createdAt: new Date(),
+    createdAt,
   };
 }
 
@@ -493,5 +474,13 @@ function assistantMessage(text: string) {
     kind: "text" as const,
     content: text,
     createdAt: new Date().toISOString(),
+  };
+}
+
+function persistedUserMessage(message: ChannelMessage): UserMessage {
+  return {
+    role: "user",
+    content: message.text,
+    createdAt: message.createdAt.toISOString(),
   };
 }

@@ -11,6 +11,7 @@ export interface SkillEntry {
   allowed_tools: string | null;
   tags: string | null;
   body: string;
+  retrieved_count: number;
   updated_at: string;
 }
 
@@ -66,6 +67,7 @@ export class SqliteSkillsStore {
       body: shiftHeadingsToAtLeastH4(skill.body),
       allowed_tools: skill.allowedTools,
       tags: skill.tags,
+      retrieved_count: this.get(skill.id)?.retrieved_count ?? 0,
       updated_at: updatedAt,
     };
   }
@@ -100,10 +102,21 @@ export class SqliteSkillsStore {
   getAll(): SkillEntry[] {
     const rows = this.db
       .query(
-        "SELECT id, name, description, allowed_tools, tags, content, updated_at FROM skills ORDER BY name",
+        "SELECT id, name, description, allowed_tools, tags, content, retrieved_count, updated_at FROM skills ORDER BY name",
       )
       .all() as SkillRow[];
     return rows.map(rowToEntry);
+  }
+
+  get(id: string): SkillEntry | null {
+    const row = this.db
+      .query(
+        `SELECT id, name, description, allowed_tools, tags, content, retrieved_count, updated_at
+         FROM skills
+         WHERE id = $id`,
+      )
+      .get({ $id: id }) as SkillRow | undefined;
+    return row ? rowToEntry(row) : null;
   }
 
   getByIds(ids: readonly string[]): SkillEntry[] {
@@ -111,7 +124,7 @@ export class SqliteSkillsStore {
     if (uniqueIds.length === 0) return [];
     const rows = this.db
       .query(
-        `SELECT id, name, description, allowed_tools, tags, content, updated_at
+        `SELECT id, name, description, allowed_tools, tags, content, retrieved_count, updated_at
          FROM skills
          WHERE id IN (${uniqueIds.map(() => "?").join(", ")})`,
       )
@@ -124,26 +137,57 @@ export class SqliteSkillsStore {
   }
 
   page(opts: {
-    cursor: { name: string; id: string } | null;
+    cursor: { name: string; id: string; retrievedCount?: number } | null;
     limit: number;
     query?: string;
-  }): { items: SkillEntry[]; nextCursor: { name: string; id: string } | null } {
+    sort?: "name" | "retrieved";
+  }): { items: SkillEntry[]; nextCursor: { name: string; id: string; retrievedCount?: number } | null } {
     const limit = Math.max(1, opts.limit);
-    const where = buildSkillsWhere({ query: opts.query, cursor: opts.cursor });
+    const sort = opts.sort ?? "name";
+    const where = buildSkillsWhere({ query: opts.query, cursor: opts.cursor, sort });
+    const orderBy = sort === "retrieved"
+      ? "retrieved_count DESC, name ASC, id ASC"
+      : "name ASC, id ASC";
     const rows = this.db
       .query(
-        `SELECT id, name, description, allowed_tools, tags, content, updated_at
+        `SELECT id, name, description, allowed_tools, tags, content, retrieved_count, updated_at
          FROM skills
          ${where.sql}
-         ORDER BY name ASC, id ASC
+         ORDER BY ${orderBy}
          LIMIT $__limit`,
       )
       .all({ ...where.params, $__limit: limit + 1 } as never) as SkillRow[];
     const more = rows.length > limit;
     const items = (more ? rows.slice(0, limit) : rows).map(rowToEntry);
     const last = items[items.length - 1];
-    const nextCursor = more && last ? { name: last.name, id: last.id } : null;
+    const nextCursor = more && last
+      ? { name: last.name, id: last.id, ...(sort === "retrieved" ? { retrievedCount: last.retrieved_count } : {}) }
+      : null;
     return { items, nextCursor };
+  }
+
+  topRetrieved(limit: number): SkillEntry[] {
+    const rows = this.db
+      .query(
+        `SELECT id, name, description, allowed_tools, tags, content, retrieved_count, updated_at
+         FROM skills
+         ORDER BY retrieved_count DESC, name ASC, id ASC
+         LIMIT $limit`,
+      )
+      .all({ $limit: Math.max(1, limit) }) as SkillRow[];
+    return rows.map(rowToEntry);
+  }
+
+  incrementRetrieved(ids: readonly string[]): void {
+    const uniqueIds = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
+    if (uniqueIds.length === 0) return;
+    this.db
+      .query(
+        `UPDATE skills
+         SET retrieved_count = retrieved_count + 1
+         WHERE id IN (${uniqueIds.map(() => "?").join(", ")})`,
+      )
+      .run(...uniqueIds);
   }
 
   search(queries: readonly string[], perQueryLimit = 3): SkillEntry[] {
@@ -158,7 +202,7 @@ export class SqliteSkillsStore {
     const rows = this.db
       .query(
         `
-          SELECT s.id, s.name, s.description, s.allowed_tools, s.tags, s.content, s.updated_at
+          SELECT s.id, s.name, s.description, s.allowed_tools, s.tags, s.content, s.retrieved_count, s.updated_at
           FROM skills_fts f
           JOIN skills s ON s.rowid = f.rowid
           WHERE skills_fts MATCH $match
@@ -186,6 +230,7 @@ function rowToEntry(row: SkillRow): SkillEntry {
     allowed_tools: row.allowed_tools,
     tags: row.tags,
     body: shiftHeadingsToAtLeastH4(row.content),
+    retrieved_count: row.retrieved_count,
     updated_at: row.updated_at,
   };
 }
@@ -210,7 +255,8 @@ function quoteForFts5(raw: string): string {
 
 function buildSkillsWhere(opts: {
   query?: string;
-  cursor: { name: string; id: string } | null;
+  cursor: { name: string; id: string; retrievedCount?: number } | null;
+  sort?: "name" | "retrieved";
 }): { sql: string; params: Record<string, SQLQueryBindings> } {
   const clauses: string[] = [];
   const params: Record<string, SQLQueryBindings> = {};
@@ -222,11 +268,18 @@ function buildSkillsWhere(opts: {
     params.$__q = `%${trimmed.toLowerCase()}%`;
   }
   if (opts.cursor) {
-    clauses.push(
-      "(name > $__cur_name OR (name = $__cur_name AND id > $__cur_id))",
-    );
     params.$__cur_name = opts.cursor.name;
     params.$__cur_id = opts.cursor.id;
+    if (opts.sort === "retrieved") {
+      clauses.push(
+        "(retrieved_count < $__cur_retrieved OR (retrieved_count = $__cur_retrieved AND (name > $__cur_name OR (name = $__cur_name AND id > $__cur_id))))",
+      );
+      params.$__cur_retrieved = opts.cursor.retrievedCount ?? 0;
+    } else {
+      clauses.push(
+        "(name > $__cur_name OR (name = $__cur_name AND id > $__cur_id))",
+      );
+    }
   }
   if (clauses.length === 0) return { sql: "", params };
   return { sql: `WHERE ${clauses.join(" AND ")}`, params };

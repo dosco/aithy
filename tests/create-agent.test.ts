@@ -34,6 +34,11 @@ describe("createAithyAgent", () => {
         responderDescription: "Speak with warm precision.",
         updatedAt: "2026-05-02T12:00:00.000Z",
       },
+      profile: {
+        userName: "Violet",
+        userLocation: "Vancouver",
+        updatedAt: "2026-05-02T12:00:00.000Z",
+      },
       tools: [],
       events: new EventBus(),
       conversationId: "probe",
@@ -43,6 +48,9 @@ describe("createAithyAgent", () => {
     expect(typeof created.program.getState).toBe("function");
     expect(executorDescription(created.program)).toContain("Bun Shell");
     expect(responderDescription(created.program)).toContain("Speak with warm precision.");
+    expect(responderDescription(created.program)).toContain("## User Profile Context");
+    expect(responderDescription(created.program)).toContain("Name: Violet");
+    expect(responderDescription(created.program)).toContain("Location: Vancouver");
   });
 
   test("uses a local Bun Shell actor prompt for disabled sandbox mode", () => {
