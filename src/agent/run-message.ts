@@ -33,6 +33,7 @@ import { createAithyAgent, type AxAgentMemoriesSearchFn } from "./create-agent";
 import { isTrivialUserTurn } from "./triage-filter";
 import type { ToolContext } from "./tool-context";
 import { createAgentTools } from "./tools";
+import type { CapabilityBroker } from "../security/capability-broker";
 import type { TurnTraceChatLog } from "./trace-writer";
 import { appendChatLogToTraces } from "./trace-writer";
 
@@ -52,6 +53,7 @@ export interface RunMessageDeps {
   activeRuns?: ActiveRunRegistry;
   notify?: (input: NotificationCreate) => void;
   userMessagePersisted?: boolean;
+  capabilities?: CapabilityBroker;
 }
 
 export async function runMessage(
@@ -77,6 +79,7 @@ export async function runMessage(
       ? (req) => memoryQueue.enqueueExplicit(req.sessionId, req.hint)
       : undefined,
     notify: deps.notify,
+    capabilities: deps.capabilities,
   };
   const toolCallMessages: AssistantToolCallMessage[] = [];
   const agentFactory = deps.agentFactory ?? createAithyAgent;

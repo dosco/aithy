@@ -1,5 +1,11 @@
 import type { BotEvent } from "../events/types";
+import type {
+  RuntimeLogEventPayload,
+  RuntimeQueueStatus,
+  RuntimeServiceStatus,
+} from "../runtime/protocol/types";
 import type { BotMessage, BotSessionSummary } from "../session/types";
+import type { SetupStatusInput, SetupStatusTone } from "../setup/status";
 
 export type JsonValue =
   | string
@@ -51,27 +57,37 @@ export type WebLiveEvent =
       id: string;
       conversationId: string;
       createdAt: string;
+      streamId?: string;
       label: string;
       detail?: unknown;
       tone?: "neutral" | "danger" | "success";
     }
+  | ({
+      type: "setup-status";
+      id: string;
+      createdAt: string;
+      streamId?: string;
+    } & SetupStatusInput & { tone?: SetupStatusTone })
   | {
       type: "message";
       id: string;
       conversationId: string;
       createdAt: string;
+      streamId?: string;
       message: SerializableBotMessage;
     }
   | {
       type: "sessions";
       id: string;
       createdAt: string;
+      streamId?: string;
       sessions: SerializableSessionSummary[];
     }
   | {
       type: "notification";
       id: string;
       createdAt: string;
+      streamId?: string;
       notification: {
         id: number;
         kind: string;
@@ -80,25 +96,55 @@ export type WebLiveEvent =
         link: string | null;
         createdAt: string;
       };
+    }
+  | ({
+      type: "log";
+      id: string;
+      createdAt: string;
+      streamId?: string;
+    } & RuntimeLogEventPayload)
+  | ({
+      type: "service-status";
+      id: string;
+      createdAt: string;
+      streamId?: string;
+    } & RuntimeServiceStatus)
+  | {
+      type: "queue-status";
+      id: string;
+      createdAt: string;
+      streamId?: string;
+      queue: RuntimeQueueStatus;
     };
 
 type Listener = (event: WebLiveEvent) => void;
 
 export class LiveEventHub {
   private readonly listeners = new Set<Listener>();
+  private readonly setupStatuses = new Map<string, WebLiveEvent & { type: "setup-status" }>();
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
+    for (const event of this.setupStatuses.values()) listener(event);
     return () => this.listeners.delete(listener);
   }
 
   publish(event: WebLiveEvent): void {
+    if (event.type === "setup-status") this.rememberSetupStatus(event);
     for (const listener of this.listeners) listener(event);
   }
 
   publishBotEvent(event: BotEvent): void {
     const converted = liveEventFromBotEvent(event);
     if (converted) this.publish(converted);
+  }
+
+  private rememberSetupStatus(event: WebLiveEvent & { type: "setup-status" }): void {
+    if (event.active || event.tone === "danger") {
+      this.setupStatuses.set(event.key, event);
+    } else {
+      this.setupStatuses.delete(event.key);
+    }
   }
 }
 
@@ -150,6 +196,9 @@ export function serializableSession(
 }
 
 function liveEventFromBotEvent(event: BotEvent): WebLiveEvent | undefined {
+  if (event.type === "setup.status") {
+    return setupStatus(event.status);
+  }
   if (!("conversationId" in event) || !event.conversationId) return undefined;
   if (event.type === "agent.started") {
     return activity(event.conversationId, `agent started: ${event.provider} / ${event.model}`);
@@ -164,13 +213,13 @@ function liveEventFromBotEvent(event: BotEvent): WebLiveEvent | undefined {
     return activity(event.conversationId, "agent completed", undefined, "success");
   }
   if (event.type === "sandbox.starting") {
-    return activity(event.conversationId, "starting sandbox...");
+    return setupStatus({ key: "sandbox", label: "starting sandbox", active: true });
   }
   if (event.type === "sandbox.resuming") {
-    return activity(event.conversationId, "resuming sandbox...");
+    return setupStatus({ key: "sandbox", label: "resuming sandbox", active: true });
   }
   if (event.type === "sandbox.created") {
-    return activity(event.conversationId, `sandbox ready: ${event.sessionId}`);
+    return setupStatus({ key: "sandbox", label: "sandbox ready", active: false, tone: "success", progress: 1 });
   }
   if (event.type === "sandbox.exec") {
     return activity(event.conversationId, `$ ${event.command}`, { command: event.command });
@@ -182,15 +231,25 @@ function liveEventFromBotEvent(event: BotEvent): WebLiveEvent | undefined {
     return activity(event.conversationId, "mounts updating after current run", undefined, "neutral");
   }
   if (event.type === "sandbox.mountsRefreshing") {
-    return activity(event.conversationId, "refreshing sandbox mounts...");
+    return setupStatus({ key: "sandbox", label: "refreshing sandbox mounts", active: true });
   }
   if (event.type === "sandbox.mountsRefreshed") {
-    return activity(event.conversationId, `mounts refreshed: ${event.sessionId}`, undefined, "success");
+    return setupStatus({ key: "sandbox", label: "sandbox mounts refreshed", active: false, tone: "success", progress: 1 });
   }
   if (event.type === "error") {
     return activity(event.conversationId, event.message, event.cause, "danger");
   }
   return undefined;
+}
+
+function setupStatus(status: SetupStatusInput): WebLiveEvent {
+  return {
+    type: "setup-status",
+    id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    tone: "neutral",
+    ...status,
+  };
 }
 
 function toJsonValue(value: unknown): JsonValue {

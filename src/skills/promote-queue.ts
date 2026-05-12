@@ -90,6 +90,7 @@ export class SkillPromoteQueue {
 
   private async process(_data: JobData): Promise<{ suggested: number }> {
     const db = new Database(this.deps.config.stateDbPath, { readonly: true });
+    db.exec("PRAGMA busy_timeout = 10000;");
     let patterns: DetectedPattern[] = [];
     try {
       patterns = detectRepeatPatterns(db);

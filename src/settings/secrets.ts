@@ -5,11 +5,15 @@ export interface SecretStore {
 }
 
 const legacyAithySecretService = "com.aithy.local";
+const SECRET_TIMEOUT_MS = 15_000;
 
 export const BunSecretStore: SecretStore = {
-  get: (options) => Bun.secrets.get(options),
-  set: (options) => Bun.secrets.set(options),
-  delete: (options) => Bun.secrets.delete(options),
+  get: (options) =>
+    withSecretTimeout(Bun.secrets.get(options), `Reading ${options.name} from secure storage`),
+  set: (options) =>
+    withSecretTimeout(Bun.secrets.set(options), `Saving ${options.name} to secure storage`),
+  delete: (options) =>
+    withSecretTimeout(Bun.secrets.delete(options), `Deleting ${options.name} from secure storage`),
 };
 
 export function apiKeySecretName(provider: string): string {
@@ -34,10 +38,10 @@ export async function readProviderApiKey(
   secrets: SecretStore = BunSecretStore,
 ): Promise<string | undefined> {
   const name = apiKeySecretName(provider);
-  return (await secrets.get({
+  return (await safeSecretGet(secrets, {
     service: aithySecretService(botId),
     name,
-  })) ?? (await secrets.get({
+  })) ?? (await safeSecretGet(secrets, {
     service: legacyAithySecretService,
     name,
   })) ?? undefined;
@@ -84,4 +88,33 @@ function isQuoted(value: string): boolean {
   const first = value[0];
   const last = value[value.length - 1];
   return (first === '"' && last === '"') || (first === "'" && last === "'");
+}
+
+async function safeSecretGet(
+  secrets: SecretStore,
+  options: { service: string; name: string },
+): Promise<string | null> {
+  try {
+    return await secrets.get(options);
+  } catch {
+    return null;
+  }
+}
+
+async function withSecretTimeout<T>(promise: Promise<T>, label: string): Promise<T> {
+  let timer: Timer | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} timed out after ${SECRET_TIMEOUT_MS / 1000} seconds.`)),
+          SECRET_TIMEOUT_MS,
+        );
+        timer.unref();
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

@@ -1,6 +1,7 @@
 import { f, fn, type AxAgentFunction } from "@ax-llm/ax";
 import type { AppConfig } from "../../config/env";
 import { smartScrape } from "../../scraper/smart-spider";
+import { argsPreview } from "../../security/capability-broker";
 import type { ToolContext } from "../tool-context";
 
 export function createWebScrapeTools(
@@ -38,6 +39,12 @@ export function createWebScrapeTools(
         code: "await web.scrape({ url: 'https://example.com/docs', task: 'Find install requirements and cite the source pages.' });",
       })
       .handler(async ({ url, task }) => {
+        ctx.capabilities?.require({
+          conversationId: ctx.session.conversationId,
+          capability: "web.scrape",
+          toolName: "web.scrape",
+          argsPreview: argsPreview({ url, task }),
+        });
         ctx.events.emit({
           type: "agent.turn",
           conversationId: ctx.session.conversationId,

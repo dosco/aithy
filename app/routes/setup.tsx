@@ -16,9 +16,6 @@ export const Route = createFileRoute("/setup")({
     return state;
   },
   component: () => (
-    <SetupPage
-      initialState={Route.useLoaderData()}
-      redirectTo={Route.useSearch().redirect}
-    />
+    <SetupPage initialState={Route.useLoaderData()} />
   ),
 });

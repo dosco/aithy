@@ -1,4 +1,4 @@
-export const minimumBunVersion = "1.3.13";
+export const minimumBunVersion = "1.3.0";
 
 export function assertSupportedBunVersion(version = Bun.version): void {
   if (compareVersions(version, minimumBunVersion) >= 0) return;

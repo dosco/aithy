@@ -9,6 +9,7 @@ import type { MemoryQueue } from "../memory/memory-queue";
 import type { NotificationCreate, NotificationEntry } from "../notifications/types";
 import type { UserProfile } from "../profile/types";
 import type { SandboxProvider } from "../sandbox/provider";
+import type { CapabilityBroker } from "../security/capability-broker";
 import type { SessionManager } from "../session/session-manager";
 import type { SoulProfile } from "../soul/types";
 import { formatSkillContent } from "../skills/skills-store";
@@ -27,7 +28,9 @@ interface RuntimeForUserChat {
   usage: SqliteUsageStore;
   activeRuns: ActiveRunRegistry;
   skills: SqliteSkillsStore;
+  capabilities?: CapabilityBroker;
   notify(input: NotificationCreate): NotificationEntry;
+  flushSessionState?(): Promise<void>;
 }
 
 export async function processUserChatJob(
@@ -56,12 +59,14 @@ export async function processUserChatJob(
     memoryQueue: runtime.memoryQueue,
     usage: runtime.usage,
     activeRuns: runtime.activeRuns,
+    capabilities: runtime.capabilities,
     notify: (input) => runtime.notify(input),
     skills,
     userMessagePersisted: true,
     skillsSearch: (queries) =>
       runtime.skills.search(queries).map((s) => ({ name: s.name, content: formatSkillContent(s) })),
   });
+  await runtime.flushSessionState?.();
   const assistant = [...runtime.sessions.getTranscript(reply.conversationId)]
     .reverse()
     .find((item) =>

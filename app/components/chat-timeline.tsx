@@ -32,7 +32,6 @@ type TimelineEntry =
   | { kind: "tool"; key: string; toolName: string; toolArgs: unknown; usage?: Usage }
   | { kind: "sub-session"; key: string; session: SessionSummaryDto }
   | { kind: "activity"; key: string; label: string }
-  | { kind: "sandbox-status"; key: string; label: string }
   | { kind: "typing"; key: string };
 
 const ESTIMATED_ROW_HEIGHT = 132;
@@ -47,7 +46,6 @@ export function ChatTimeline({
   activities,
   details,
   sending,
-  sandboxStatus,
   resetKey,
   hasMoreBefore,
   loadingMore,
@@ -59,7 +57,6 @@ export function ChatTimeline({
   activities: ActivityEvent[];
   details: boolean;
   sending: boolean;
-  sandboxStatus: string | null;
   resetKey: string | null;
   hasMoreBefore: boolean;
   loadingMore: boolean;
@@ -72,8 +69,8 @@ export function ChatTimeline({
   const [viewport, setViewport] = useState(() => currentViewport());
   const [heightVersion, setHeightVersion] = useState(0);
   const timeline = useMemo(
-    () => buildTimeline(messages, subSessions, activities, details, sending, sandboxStatus),
-    [messages, subSessions, activities, details, sending, sandboxStatus],
+    () => buildTimeline(messages, subSessions, activities, details, sending),
+    [messages, subSessions, activities, details, sending],
   );
 
   useEffect(() => {
@@ -153,9 +150,7 @@ export function ChatTimeline({
           <MeasuredRow key={item.key} itemKey={item.key} onHeight={recordHeight}>
             {item.kind === "typing"
               ? <TypingIndicator />
-              : item.kind === "sandbox-status"
-                ? <SandboxStatus label={item.label} />
-                : <TimelineItem item={item} onOpenSession={onOpenSession} />}
+              : <TimelineItem item={item} onOpenSession={onOpenSession} />}
           </MeasuredRow>
         ))}
       </AnimatePresence>
@@ -184,7 +179,6 @@ function buildTimeline(
   activities: ActivityEvent[],
   details: boolean,
   sending: boolean,
-  sandboxStatus: string | null,
 ): TimelineEntry[] {
   const entries: Array<{ at: string; entry: TimelineEntry }> = [];
   messages.forEach(({ id, message }) => {
@@ -244,9 +238,6 @@ function buildTimeline(
   }
   entries.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
   const out = entries.map((item) => item.entry);
-  if (sandboxStatus) {
-    out.push({ kind: "sandbox-status", key: "__sandbox_status__", label: sandboxStatus });
-  }
   if (sending) out.push({ kind: "typing", key: "__typing__" });
   return out;
 }
@@ -425,38 +416,6 @@ function TypingIndicator() {
           }
         />
       ))}
-    </motion.div>
-  );
-}
-
-function SandboxStatus({ label }: { label: string }) {
-  const reduce = useReducedMotion();
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0, y: 4 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-      className="flex w-fit items-center gap-2 rounded-full border border-dashed border-[rgb(var(--border))] bg-[rgb(var(--background))]/70 px-3 py-1.5 font-mono text-[10px] uppercase tracking-[0.18em] text-[rgb(var(--muted-foreground))]"
-      role="status"
-      aria-live="polite"
-    >
-      <span>Preparing sandbox: {label}</span>
-      <span className="flex items-center gap-1" aria-hidden>
-        {[0, 1, 2].map((i) => (
-          <motion.span
-            key={i}
-            className="block h-1.5 w-1.5 rounded-full bg-[rgb(var(--accent))]"
-            animate={reduce ? undefined : { opacity: [0.3, 1, 0.3] }}
-            transition={
-              reduce
-                ? undefined
-                : { duration: 1, ease: "easeInOut", repeat: Infinity, delay: i * 0.15 }
-            }
-          />
-        ))}
-      </span>
     </motion.div>
   );
 }

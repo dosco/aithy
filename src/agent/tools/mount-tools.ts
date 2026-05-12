@@ -3,6 +3,7 @@ import { constants as fsConstants } from "node:fs";
 import { copyFile, mkdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { f, fn } from "@ax-llm/ax";
+import { argsPreview } from "../../security/capability-broker";
 import type { ToolContext } from "../tool-context";
 
 export function createMountTools(ctx: ToolContext) {
@@ -18,6 +19,12 @@ export function createMountTools(ctx: ToolContext) {
       .returnsField("sizeBytes", f.number("File size in bytes (0 for directories)"))
       .returnsField("alreadyExisted", f.boolean("True if the folder was already in global mounts, or the file was already copied with the same source path (idempotent no-op)"))
       .handler(async ({ hostPath }) => {
+        ctx.capabilities?.require({
+          conversationId: ctx.session.conversationId,
+          capability: "sandbox.mount",
+          toolName: "sandbox.mount",
+          argsPreview: argsPreview({ hostPath }),
+        });
         const resolved = await realpath(hostPath);
         const info = await stat(resolved);
 
@@ -80,6 +87,12 @@ export function createMountTools(ctx: ToolContext) {
       .arg("hostPath", f.string("Absolute host path"))
       .returnsField("path", f.string("Sandbox path under /mounts or /workspace, or empty string if unavailable"))
       .handler(async ({ hostPath }) => {
+        ctx.capabilities?.require({
+          conversationId: ctx.session.conversationId,
+          capability: "sandbox.getPath",
+          toolName: "sandbox.getPath",
+          argsPreview: argsPreview({ hostPath }),
+        });
         const path = await resolveSandboxPathForHostPath({
           hostPath,
           mounts: ctx.sessions.mountsForSandbox(),

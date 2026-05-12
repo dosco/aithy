@@ -1,3 +1,5 @@
+import type { SetupStatusInput } from "../setup/status";
+
 export type BotEvent =
   | { type: "message.received"; conversationId: string; text: string }
   | {
@@ -22,6 +24,7 @@ export type BotEvent =
   | { type: "sandbox.mountsRefreshPending"; conversationId: string }
   | { type: "sandbox.mountsRefreshing"; conversationId: string; sessionId: string }
   | { type: "sandbox.mountsRefreshed"; conversationId: string; sessionId: string }
+  | { type: "setup.status"; status: SetupStatusInput }
   | {
       type: "error";
       conversationId?: string;

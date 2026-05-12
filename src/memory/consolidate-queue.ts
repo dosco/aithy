@@ -1,6 +1,7 @@
-import type { Job } from "bunqueue/client";
+import { Queue, type Job } from "bunqueue/client";
 import type { AppConfig } from "../config/env";
 import {
+  bunqueueDataPath,
   createEmbeddedQueueWorker,
   type EmbeddedQueueWorker,
   type QueueErrorReporter,
@@ -18,6 +19,40 @@ const CRON_PATTERN = "0 3 * * *"; // every day at 03:00 local time
 interface JobData {
   runId: string;
   triggeredAt: string;
+}
+
+export interface MemoryConsolidateHandle {
+  runNow(): Promise<void>;
+  close(): Promise<void>;
+}
+
+export class MemoryConsolidateProducer implements MemoryConsolidateHandle {
+  private readonly queue: Queue<JobData>;
+
+  constructor(stateDbPath: string) {
+    this.queue = new Queue<JobData>("aithy.memory.consolidate", {
+      embedded: true,
+      dataPath: bunqueueDataPath(stateDbPath),
+    });
+  }
+
+  async runNow(): Promise<void> {
+    const runId = crypto.randomUUID();
+    await this.queue.add(
+      "memory.consolidate.now",
+      { runId, triggeredAt: new Date().toISOString() },
+      {
+        attempts: MAX_ATTEMPTS,
+        backoff: { type: "exponential", delay: 30_000 },
+        deduplication: { id: "consolidate:adhoc", ttl: 30_000 },
+        jobId: `memory:consolidate:${runId}`,
+      },
+    );
+  }
+
+  async close(): Promise<void> {
+    this.queue.close();
+  }
 }
 
 export interface ConsolidateQueueDeps {
@@ -39,7 +74,7 @@ export interface ConsolidateQueueDeps {
  * over the entire active memory store; the agent decides what to merge,
  * supersede, or prune.
  */
-export class MemoryConsolidateQueue {
+export class MemoryConsolidateQueue implements MemoryConsolidateHandle {
   private readonly app: EmbeddedQueueWorker<JobData, { summary: string }>;
 
   constructor(private readonly deps: ConsolidateQueueDeps) {

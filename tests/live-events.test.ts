@@ -36,7 +36,7 @@ describe("web live events", () => {
     });
   });
 
-  test("converts sandbox startup lifecycle events to activity labels", () => {
+  test("converts sandbox startup lifecycle events to setup statuses", () => {
     const hub = new LiveEventHub();
     const received: unknown[] = [];
     const unsubscribe = hub.subscribe((event) => received.push(event));
@@ -56,9 +56,35 @@ describe("web live events", () => {
 
     expect(received).toHaveLength(3);
     expect(received).toEqual([
-      expect.objectContaining({ type: "activity", label: "starting sandbox..." }),
-      expect.objectContaining({ type: "activity", label: "resuming sandbox..." }),
-      expect.objectContaining({ type: "activity", label: "refreshing sandbox mounts..." }),
+      expect.objectContaining({ type: "setup-status", label: "starting sandbox" }),
+      expect.objectContaining({ type: "setup-status", label: "resuming sandbox" }),
+      expect.objectContaining({ type: "setup-status", label: "refreshing sandbox mounts" }),
+    ]);
+  });
+
+  test("replays active setup statuses to late subscribers", () => {
+    const hub = new LiveEventHub();
+    hub.publishBotEvent({
+      type: "setup.status",
+      status: {
+        key: "sandbox",
+        label: "downloading sandbox image python:3.11-slim",
+        active: true,
+        progress: 0.25,
+      },
+    });
+
+    const received: unknown[] = [];
+    const unsubscribe = hub.subscribe((event) => received.push(event));
+    unsubscribe();
+
+    expect(received).toEqual([
+      expect.objectContaining({
+        type: "setup-status",
+        key: "sandbox",
+        label: "downloading sandbox image python:3.11-slim",
+        progress: 0.25,
+      }),
     ]);
   });
 });

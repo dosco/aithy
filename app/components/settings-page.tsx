@@ -54,6 +54,7 @@ export function SettingsPage({ initialState }: { initialState: WebStateDto }) {
   const [soul, setSoul] = useState<SoulDto>(initialState.soul);
   const [profile, setProfile] = useState<ProfileDto>(initialState.profile);
   const [ui, setUi] = useState(initialState.settings.ui);
+  const profileImagesSupported = initialState.runtimeCapabilities.profileImages;
   const [primaryClearAction, setPrimaryClearAction] =
     useState<PrimaryClearAction | null>(null);
   const [primaryClearBusy, setPrimaryClearBusy] = useState(false);
@@ -434,13 +435,14 @@ export function SettingsPage({ initialState }: { initialState: WebStateDto }) {
         </TabsContent>
 
         <TabsContent value="profile">
-          <UserProfileSection profile={profile} onChange={setProfile} />
+          <UserProfileSection profile={profile} profileImagesSupported={profileImagesSupported} onChange={setProfile} />
         </TabsContent>
 
         <TabsContent value="agent">
           <AgentSettingsSection
             soul={soul}
             profile={profile}
+            profileImagesSupported={profileImagesSupported}
             onSoulChange={setSoul}
             onProfileChange={setProfile}
           />

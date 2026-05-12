@@ -1,4 +1,5 @@
 import { f, fn, type AxAgentFunction } from "@ax-llm/ax";
+import { argsPreview } from "../../security/capability-broker";
 import type { ToolContext } from "../tool-context";
 
 export function createMemoryTools(ctx: ToolContext): AxAgentFunction[] {
@@ -14,6 +15,12 @@ export function createMemoryTools(ctx: ToolContext): AxAgentFunction[] {
       .arg("hint", f.string("The user's request, ideally verbatim. Include enough context for the triage agent to act."))
       .returnsField("queued", f.boolean("Whether the request was queued"))
       .handler(async ({ hint }) => {
+        ctx.capabilities?.require({
+          conversationId: ctx.session.conversationId,
+          capability: "memory.remember",
+          toolName: "memory.remember",
+          argsPreview: argsPreview({ hint }),
+        });
         await enqueue({ hint, sessionId: ctx.session.conversationId });
         return { queued: true };
       })

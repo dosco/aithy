@@ -10,7 +10,15 @@ import {
   MAX_TOOL_OUTPUT_CHARS
 } from "../config/limits";
 import { ensureRelativePath } from "../workspace/safe-path";
+import {
+  activeStatus,
+  createPullProgressTracker,
+  failedStatus,
+  type PullProgressEventLike,
+  type SetupStatusInput,
+} from "../setup/status";
 import { trimOutput } from "./command";
+import { sandboxNameFor } from "./sandbox-name";
 import type {
   SandboxBashRequest,
   SandboxBashResult,
@@ -27,6 +35,7 @@ export interface MicrosandboxOptions {
   memoryMb: number;
   network: "none" | "public" | "allow-all";
   sandboxFactory?: typeof Sandbox;
+  onStatus?: (status: SetupStatusInput) => void;
 }
 
 type SandboxState = "live" | "parked";
@@ -180,10 +189,37 @@ export class MicrosandboxProvider implements SandboxProvider {
       for (const mount of mounts) {
         builder = builder.volume(`/mounts/${mount.mountName}`, (v: any) => v.bind(mount.hostPath));
       }
-      return await builder.create();
+      return await this.createFromBuilder(builder);
     } catch (error) {
-      throw new Error(`Failed to start Microsandbox microVM: ${formatMicrosandboxStartError(error)}`);
+      const message = formatMicrosandboxStartError(error);
+      this.options.onStatus?.(failedStatus("sandbox", `sandbox failed: ${message}`));
+      throw new Error(`Failed to start Microsandbox microVM: ${message}`);
     }
+  }
+
+  private async createFromBuilder(builder: any): Promise<any> {
+    this.options.onStatus?.(activeStatus("sandbox", `starting sandbox image ${this.options.image}`));
+    if (typeof builder.createWithPullProgress !== "function") {
+      return builder.create();
+    }
+    const created = await builder.createWithPullProgress();
+    const progressDone = this.consumePullProgress(created.progress);
+    try {
+      const sandbox = await created.awaitSandbox();
+      await progressDone.catch(() => undefined);
+      return sandbox;
+    } catch (error) {
+      await progressDone.catch(() => undefined);
+      throw error;
+    }
+  }
+
+  private async consumePullProgress(progress: AsyncIterable<PullProgressEventLike>): Promise<void> {
+    const statusFor = createPullProgressTracker(this.options.image);
+    for await (const event of progress) {
+      this.options.onStatus?.(statusFor(event));
+    }
+    this.options.onStatus?.(activeStatus("sandbox", `starting sandbox image ${this.options.image}`));
   }
 
   private async execWithTimeout(sessionId: string, cmd: string, args: string[], timeoutMs: number) {
@@ -219,10 +255,6 @@ export class MicrosandboxProvider implements SandboxProvider {
     if (!entry) throw new Error(`Microsandbox session not found: ${sessionId}`);
     return entry;
   }
-}
-
-export function sandboxNameFor(botId: string): string {
-  return `aithy-${botId.replace(/[^a-zA-Z0-9-]/g, "-").slice(0, 40)}`;
 }
 
 async function ensureHostWorkspace(hostWorkspacePath: string): Promise<void> {

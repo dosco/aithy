@@ -1,5 +1,6 @@
 import type { ReactNode, TextareaHTMLAttributes } from "react";
-import { Check, KeyRound, X } from "lucide-react";
+import { useState } from "react";
+import { Check, ChevronDown, KeyRound, X } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -131,43 +132,71 @@ export function ModelCombobox({
   const models = provider ? modelsForProvider(provider) : [];
   const options = value && !models.includes(value) ? [value, ...models] : models;
   const canClear = Boolean(onClear) && value.trim().length > 0;
-  if (models.length > 0) {
-    return (
+  const [open, setOpen] = useState(false);
+
+  return (
+    <div
+      className="relative"
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
       <div
         className={cn(
           "flex items-stretch overflow-hidden rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] transition focus-within:border-[rgb(var(--foreground))]",
           disabled && "opacity-50",
         )}
       >
-        <select
+        <input
+          className="h-11 w-full bg-transparent px-3.5 text-sm outline-none placeholder:text-[rgb(var(--muted-foreground))] disabled:cursor-not-allowed"
           value={value}
           disabled={disabled}
+          placeholder={placeholder}
+          onFocus={() => {
+            if (!disabled && options.length > 0) setOpen(true);
+          }}
           onChange={(event) => onChange(event.target.value)}
-          className={cn(selectClass, "h-11 rounded-none border-0 bg-transparent")}
-        >
-          <option value="" disabled>{placeholder ?? "Select model"}</option>
-          {options.map((model) => <option key={model} value={model}>{model}</option>)}
-        </select>
+          autoComplete="off"
+        />
+        {options.length > 0 ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            aria-label="Show model options"
+            title="Show model options"
+            disabled={disabled}
+            onMouseDown={(event) => event.preventDefault()}
+            onClick={() => setOpen((current) => !current)}
+            className="h-11 w-11 shrink-0 rounded-none border-0 border-l border-[rgb(var(--border))] text-[rgb(var(--muted-foreground))]"
+          >
+            <ChevronDown className={cn("h-4 w-4 transition", open && "rotate-180")} />
+          </Button>
+        ) : null}
         {onClear ? <ClearButton label={clearLabel} disabled={disabled || !canClear} onClear={onClear} /> : null}
       </div>
-    );
-  }
-  return (
-    <div
-      className={cn(
-        "flex items-stretch overflow-hidden rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] transition focus-within:border-[rgb(var(--foreground))]",
-        disabled && "opacity-50",
-      )}
-    >
-      <input
-        className="h-11 w-full bg-transparent px-3.5 text-sm outline-none placeholder:text-[rgb(var(--muted-foreground))] disabled:cursor-not-allowed"
-        value={value}
-        disabled={disabled}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-        autoComplete="off"
-      />
-      {onClear ? <ClearButton label={clearLabel} disabled={disabled || !canClear} onClear={onClear} /> : null}
+      {open && options.length > 0 ? (
+        <div className="absolute left-0 right-0 top-full z-50 mt-1.5 max-h-64 overflow-auto rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] p-1.5 shadow-lg">
+          {options.map((model) => (
+            <button
+              key={model}
+              type="button"
+              onMouseDown={(event) => event.preventDefault()}
+              onClick={() => {
+                onChange(model);
+                setOpen(false);
+              }}
+              className={cn(
+                "flex h-10 w-full items-center justify-between gap-3 rounded-lg px-3 text-left text-sm transition hover:bg-[rgb(var(--muted))] focus:bg-[rgb(var(--muted))] focus:outline-none",
+                model === value && "font-medium",
+              )}
+            >
+              <span className="truncate">{model}</span>
+              {model === value ? <Check className="h-4 w-4 shrink-0" /> : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
     </div>
   );
 }

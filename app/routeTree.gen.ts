@@ -17,6 +17,7 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SessionsRouteImport } from './routes/sessions'
 import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as MemoryRouteImport } from './routes/memory'
+import { Route as ConsoleRouteImport } from './routes/console'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChatSessionIdRouteImport } from './routes/chat.$sessionId'
@@ -62,6 +63,11 @@ const MemoryRoute = MemoryRouteImport.update({
   path: '/memory',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ConsoleRoute = ConsoleRouteImport.update({
+  id: '/console',
+  path: '/console',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ChatRoute = ChatRouteImport.update({
   id: '/chat',
   path: '/chat',
@@ -86,6 +92,7 @@ const ApiEventsRoute = ApiEventsRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/chat': typeof ChatRouteWithChildren
+  '/console': typeof ConsoleRoute
   '/memory': typeof MemoryRoute
   '/notifications': typeof NotificationsRoute
   '/sessions': typeof SessionsRoute
@@ -100,6 +107,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/chat': typeof ChatRouteWithChildren
+  '/console': typeof ConsoleRoute
   '/memory': typeof MemoryRoute
   '/notifications': typeof NotificationsRoute
   '/sessions': typeof SessionsRoute
@@ -115,6 +123,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/chat': typeof ChatRouteWithChildren
+  '/console': typeof ConsoleRoute
   '/memory': typeof MemoryRoute
   '/notifications': typeof NotificationsRoute
   '/sessions': typeof SessionsRoute
@@ -131,6 +140,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/chat'
+    | '/console'
     | '/memory'
     | '/notifications'
     | '/sessions'
@@ -145,6 +155,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/chat'
+    | '/console'
     | '/memory'
     | '/notifications'
     | '/sessions'
@@ -159,6 +170,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/chat'
+    | '/console'
     | '/memory'
     | '/notifications'
     | '/sessions'
@@ -174,6 +186,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   ChatRoute: typeof ChatRouteWithChildren
+  ConsoleRoute: typeof ConsoleRoute
   MemoryRoute: typeof MemoryRoute
   NotificationsRoute: typeof NotificationsRoute
   SessionsRoute: typeof SessionsRoute
@@ -243,6 +256,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MemoryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/console': {
+      id: '/console'
+      path: '/console'
+      fullPath: '/console'
+      preLoaderRoute: typeof ConsoleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/chat': {
       id: '/chat'
       path: '/chat'
@@ -287,6 +307,7 @@ const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   ChatRoute: ChatRouteWithChildren,
+  ConsoleRoute: ConsoleRoute,
   MemoryRoute: MemoryRoute,
   NotificationsRoute: NotificationsRoute,
   SessionsRoute: SessionsRoute,

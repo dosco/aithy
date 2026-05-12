@@ -12,6 +12,7 @@ describe("loadConfig", () => {
     expect(config.sandboxCpus).toBe(1);
     expect(config.sandboxMemoryMb).toBe(512);
     expect(config.sandboxNetwork).toBe("none");
+    expect(config.parallelAgents).toBe(3);
     expect(config.botId).toBe("default");
     expect(config.stateDbPath.endsWith("/.config/aithy/default/state.db")).toBe(true);
   });

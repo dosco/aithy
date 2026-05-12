@@ -35,6 +35,8 @@ export const AX_AI_PROVIDERS = [
 
 export type AxAiProviderName = (typeof AX_AI_PROVIDERS)[number];
 
+export const DEFAULT_OPENAI_MODEL = "gpt-5.4-mini";
+
 export function isAxAiProvider(value: string): value is AxAiProviderName {
   return (AX_AI_PROVIDERS as readonly string[]).includes(value);
 }
@@ -44,7 +46,7 @@ function enumValues(e: object): string[] {
 }
 
 export const AX_AI_PROVIDER_MODELS: Record<string, readonly string[]> = {
-  openai: enumValues(AxAIOpenAIModel),
+  openai: withPreferredModel(DEFAULT_OPENAI_MODEL, enumValues(AxAIOpenAIModel)),
   "openai-responses": enumValues(AxAIOpenAIResponsesModel),
   "azure-openai": enumValues(AxAIOpenAIModel),
   anthropic: enumValues(AxAIAnthropicModel),
@@ -64,4 +66,12 @@ export const AX_AI_PROVIDER_MODELS: Record<string, readonly string[]> = {
 
 export function modelsForProvider(provider: string): readonly string[] {
   return AX_AI_PROVIDER_MODELS[provider] ?? [];
+}
+
+export function defaultModelForProvider(provider: string): string {
+  return provider === "openai" ? DEFAULT_OPENAI_MODEL : "";
+}
+
+function withPreferredModel(model: string, models: readonly string[]): readonly string[] {
+  return models.includes(model) ? models : [model, ...models];
 }

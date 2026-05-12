@@ -5,6 +5,7 @@ import {
   MAX_BASH_TIMEOUT_MS,
   MAX_TOOL_OUTPUT_CHARS
 } from "../../config/limits";
+import { argsPreview } from "../../security/capability-broker";
 import type { ToolContext } from "../tool-context";
 
 export function createSandboxTools(ctx: ToolContext, sandboxProvider: AppConfig["sandboxProvider"]) {
@@ -23,7 +24,15 @@ function createEditTool(ctx: ToolContext, sandboxProvider: AppConfig["sandboxPro
     .arg("replace", f.string("Replacement text block"))
     .returnsField("path", f.string("Sandbox path edited"))
     .returnsField("sizeBytes", f.number("Updated file size in bytes"))
-    .handler(({ path, search, replace }) => ctx.sandbox.edit(ctx.session.sandboxSessionId, path, search, replace))
+    .handler(({ path, search, replace }) => {
+      ctx.capabilities?.require({
+        conversationId: ctx.session.conversationId,
+        capability: "sandbox.edit",
+        toolName: "sandbox.edit",
+        argsPreview: argsPreview({ path, searchBytes: search.length, replaceBytes: replace.length }),
+      });
+      return ctx.sandbox.edit(ctx.session.sandboxSessionId, path, search, replace);
+    })
     .build();
 }
 
@@ -45,6 +54,12 @@ function createBashTool(ctx: ToolContext, sandboxProvider: AppConfig["sandboxPro
     })
     .handler(async (request) => {
       const args = normalizeBashArgs(request);
+      ctx.capabilities?.require({
+        conversationId: ctx.session.conversationId,
+        capability: "sandbox.bash",
+        toolName: "sandbox.bash",
+        argsPreview: argsPreview(args),
+      });
       ctx.events.emit({
         type: "sandbox.exec",
         conversationId: ctx.session.conversationId,

@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChatUiProvider, useChatUi } from "@/components/chat-ui-context";
+import { ConsoleButton } from "@/components/console/console-button";
 import { NotificationBell } from "@/components/notification-bell";
 import { SessionRail } from "@/components/session-rail";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -205,6 +206,7 @@ function TopChrome() {
         </nav>
         <div className="pointer-events-auto flex items-center gap-1 rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--panel)/0.9)] p-1 shadow-lg shadow-black/5 backdrop-blur-xl">
           <NotificationBell />
+          <ConsoleButton />
           <ThemeToggle />
           {showDetails ? <DetailsToggle /> : null}
         </div>

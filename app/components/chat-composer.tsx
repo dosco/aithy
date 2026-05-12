@@ -6,15 +6,19 @@ import { cn } from "@/lib/utils";
 import { listSkillsPaged } from "@/server/skills-memory.functions";
 import type { SkillDto } from "@/server/dto";
 import { visibleWebSlashCommands } from "../../src/commands/web-commands";
+import type { WebLiveEvent } from "../../src/web/live-events";
 
 export interface SelectedSkill {
   id: string;
   name: string;
 }
 
+type SetupStatusEvent = Extract<WebLiveEvent, { type: "setup-status" }>;
+
 export function ChatComposer({
   input,
   sending,
+  setupStatuses,
   selectedSkills,
   onInputChange,
   onSelectedSkillsChange,
@@ -23,6 +27,7 @@ export function ChatComposer({
 }: {
   input: string;
   sending: boolean;
+  setupStatuses: SetupStatusEvent[];
   selectedSkills: SelectedSkill[];
   onInputChange: (value: string) => void;
   onSelectedSkillsChange: (value: SelectedSkill[]) => void;
@@ -187,6 +192,8 @@ export function ChatComposer({
           </div>
         ) : null}
 
+        <SetupStatusLog statuses={setupStatuses} />
+
         <div className="app-chat-composer flex flex-col gap-2 rounded-[28px] border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-5 py-2 shadow-md shadow-black/5">
           {selectedSkills.length > 0 ? (
             <div className="flex flex-wrap gap-2 pt-2">
@@ -232,4 +239,72 @@ export function ChatComposer({
       </div>
     </div>
   );
+}
+
+function SetupStatusLog({ statuses }: { statuses: SetupStatusEvent[] }) {
+  return (
+    <AnimatePresence initial={false}>
+      {statuses.length > 0 ? (
+        <motion.div
+          key="setup-status-log"
+          initial={{ opacity: 0, y: 4 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 4 }}
+          className="mb-2 grid gap-1.5 px-1 font-mono text-[11px] leading-none"
+          role="status"
+          aria-live="polite"
+        >
+          {statuses.map((status) => (
+            <SetupStatusRow key={status.id} status={status} />
+          ))}
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
+  );
+}
+
+function SetupStatusRow({ status }: { status: SetupStatusEvent }) {
+  const determinate = typeof status.progress === "number";
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 3 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 3 }}
+      className={cn(
+        "flex min-w-0 items-center gap-2",
+        status.tone === "danger"
+          ? "text-[rgb(var(--danger))]"
+          : "text-[rgb(var(--muted-foreground))]",
+      )}
+    >
+      <span className="min-w-0 truncate">{status.label}</span>
+      {status.loadedBytes !== undefined && status.totalBytes !== undefined ? (
+        <span className="shrink-0 text-[10px] opacity-75">
+          {formatBytes(status.loadedBytes)} / {formatBytes(status.totalBytes)}
+        </span>
+      ) : null}
+      <span className="relative h-1 w-28 shrink-0 overflow-hidden rounded-full bg-[rgb(var(--border))]" aria-hidden>
+        {determinate ? (
+          <motion.span
+            className="absolute inset-y-0 left-0 rounded-full bg-[rgb(var(--accent))]"
+            initial={false}
+            animate={{ width: `${Math.round((status.progress ?? 0) * 100)}%` }}
+            transition={{ duration: 0.2 }}
+          />
+        ) : (
+          <motion.span
+            className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-[rgb(var(--accent))]"
+            animate={{ x: ["-120%", "320%"] }}
+            transition={{ duration: 1.1, ease: "easeInOut", repeat: Infinity }}
+          />
+        )}
+      </span>
+    </motion.div>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${bytes} B`;
 }

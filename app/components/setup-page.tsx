@@ -16,6 +16,9 @@ import { Button } from "@/components/ui/button";
 import { saveSettingsWithSetupGateRefresh, setCachedSetupGateState } from "@/lib/setup-gate";
 import { saveProfile, saveProfileImage } from "@/server/profile.functions";
 import type { ProfileImageDto, WebStateDto } from "@/server/dto";
+import { defaultModelForProvider } from "../../src/agent/ai-providers";
+
+const SETUP_SAVE_TIMEOUT_MS = 45_000;
 
 const ASCII_LOGO = `      ..:::::..
    .:+#########+:.
@@ -28,16 +31,15 @@ const ASCII_LOGO = `      ..:::::..
 
 export function SetupPage({
   initialState,
-  redirectTo,
 }: {
   initialState: WebStateDto;
-  redirectTo: string;
 }) {
   const router = useRouter();
-  const [provider, setProvider] = useState(
-    initialState.config.aiProvider || "openai",
+  const initialProvider = initialState.config.aiProvider || "openai";
+  const [provider, setProvider] = useState(initialProvider);
+  const [model, setModel] = useState(
+    initialState.config.aiModel || defaultModelForProvider(initialProvider),
   );
-  const [model, setModel] = useState(initialState.config.aiModel || "");
   const [apiKey, setApiKey] = useState("");
   const [userName, setUserName] = useState(initialState.profile.userName);
   const [userLocation, setUserLocation] = useState(initialState.profile.userLocation);
@@ -45,6 +47,9 @@ export function SetupPage({
   const [pendingUserPhoto, setPendingUserPhoto] = useState<PhotoUploadPayload | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const profileImagesSupported =
+    initialState.runtimeCapabilities.profileImages;
 
   const needsModel = !initialState.aiConfigured;
   const needsKey = provider !== "ollama";
@@ -57,22 +62,36 @@ export function SetupPage({
     if (!canSubmit) return;
     setBusy(true);
     setError(null);
+    setSaveStatus("Saving profile...");
     try {
-      await saveProfile({
-        data: {
-          userName: userName.trim(),
-          userLocation: userLocation.trim(),
-        },
-      });
-      if (pendingUserPhoto) await saveProfileImage({ data: { kind: "user", ...pendingUserPhoto } });
+      await withSetupTimeout(
+        saveProfile({
+          data: {
+            userName: userName.trim(),
+            userLocation: userLocation.trim(),
+          },
+        }),
+        "Saving profile",
+      );
+      if (profileImagesSupported && pendingUserPhoto) {
+        setSaveStatus("Saving profile photo...");
+        await withSetupTimeout(
+          saveProfileImage({ data: { kind: "user", ...pendingUserPhoto } }),
+          "Saving profile photo",
+        );
+      }
       let aiConfigured = initialState.aiConfigured;
       if (needsModel) {
-        const result = await saveSettingsWithSetupGateRefresh({
-          data: {
-            runtime: { aiProvider: provider, aiModel: model.trim() },
-            apiKey: needsKey ? apiKey.trim() : undefined,
-          },
-        });
+        setSaveStatus("Checking model settings...");
+        const result = await withSetupTimeout(
+          saveSettingsWithSetupGateRefresh({
+            data: {
+              runtime: { aiProvider: provider, aiModel: model.trim() },
+              apiKey: needsKey ? apiKey.trim() : undefined,
+            },
+          }),
+          "Saving AI settings",
+        );
         aiConfigured = result.aiConfigured;
         if (!aiConfigured) {
           setError("Saved settings, but Aithy still needs a model and API key.");
@@ -80,11 +99,24 @@ export function SetupPage({
         }
       }
       setCachedSetupGateState({ aiConfigured, profileConfigured: true });
-      await router.navigate({ href: redirectTo, replace: true });
+      setSaveStatus("Opening chat...");
+      await withSetupTimeout(
+        router.navigate({ href: "/chat", replace: true }),
+        "Opening chat",
+        15_000,
+      );
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save settings");
     } finally {
       setBusy(false);
+      setSaveStatus(null);
+    }
+  }
+
+  function changeProvider(nextProvider: string) {
+    setProvider(nextProvider);
+    if (!initialState.config.aiModel) {
+      setModel(defaultModelForProvider(nextProvider));
     }
   }
 
@@ -122,22 +154,24 @@ export function SetupPage({
               placeholder="City, region, or timezone"
             />
           </Field>
-          <ProfilePhotoInput
-            label="Your photo"
-            image={userPhoto}
-            fallback={initials(userName, "You")}
-            onUpload={(payload) => {
-              setPendingUserPhoto(payload);
-              setUserPhoto(previewImage(payload));
-            }}
-          />
+          {profileImagesSupported ? (
+            <ProfilePhotoInput
+              label="Your photo"
+              image={userPhoto}
+              fallback={initials(userName, "You")}
+              onUpload={(payload) => {
+                setPendingUserPhoto(payload);
+                setUserPhoto(previewImage(payload));
+              }}
+            />
+          ) : null}
         </div>
 
         {needsModel ? (
           <>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Provider">
-                <ProviderSelect value={provider} onChange={setProvider} />
+                <ProviderSelect value={provider} onChange={changeProvider} />
               </Field>
               <Field label="Model">
                 <ModelCombobox
@@ -163,6 +197,12 @@ export function SetupPage({
         {error ? (
           <p className="text-sm text-red-500" role="alert">
             {error}
+          </p>
+        ) : null}
+
+        {busy && saveStatus ? (
+          <p className="text-sm text-[rgb(var(--muted-foreground))]" role="status" aria-live="polite">
+            {saveStatus}
           </p>
         ) : null}
 
@@ -194,4 +234,25 @@ function previewImage(payload: PhotoUploadPayload): ProfileImageDto {
 function initials(value: string, fallback: string): string {
   const letters = value.trim().split(/\s+/).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
   return letters || fallback;
+}
+
+async function withSetupTimeout<T>(
+  promise: Promise<T>,
+  label: string,
+  timeoutMs = SETUP_SAVE_TIMEOUT_MS,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`${label} timed out. Open Console to see service and provider logs.`)),
+          timeoutMs,
+        );
+      }),
+    ]);
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
 }

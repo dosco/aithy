@@ -133,6 +133,17 @@ describe("web settings", () => {
     expect(await readProviderApiKey("openai", "alpha", fake)).toBe("sk-legacy");
   });
 
+  test("treats unavailable secret backends as unconfigured", async () => {
+    const fake = {
+      get: async () => {
+        throw new Error("secret backend unavailable");
+      },
+      set: async () => undefined,
+      delete: async () => false,
+    };
+    expect(await readProviderApiKey("openai", "alpha", fake)).toBeUndefined();
+  });
+
   test("normalizes posted secrets by trimming whitespace and wrapping quotes", () => {
     expect(normalizePostedSecret("  'sk-test'  ")).toBe("sk-test");
     expect(normalizePostedSecret('  "  sk-test  "  ')).toBe("sk-test");

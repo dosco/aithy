@@ -32,6 +32,7 @@ export interface SqliteMemoryStoreOptions {
   embedder?: Embedder;
   reranker?: Reranker;
   log?: (msg: string) => void;
+  inlineEmbeds?: boolean;
 }
 
 export type { BackfillResult };
@@ -41,18 +42,22 @@ export class SqliteMemoryStore {
   private readonly embedder: Embedder | null;
   private readonly reranker: Reranker | null;
   private readonly log: (msg: string) => void;
+  private readonly inlineEmbeds: boolean;
   private readonly vecEnabled: boolean;
   private readonly pendingEmbeds = new Set<Promise<void>>();
 
   constructor(dbPath: string, options: SqliteMemoryStoreOptions = {}) {
     mkdirSync(path.dirname(dbPath), { recursive: true });
     this.db = new Database(dbPath, { create: true });
+    this.db.exec("PRAGMA busy_timeout = 10000;");
     this.db.exec("PRAGMA foreign_keys = ON;");
     this.db.exec("PRAGMA journal_mode = WAL;");
+    this.db.exec("PRAGMA synchronous = NORMAL;");
 
     this.embedder = options.embedder ?? null;
     this.reranker = options.reranker ?? null;
     this.log = options.log ?? (() => {});
+    this.inlineEmbeds = options.inlineEmbeds ?? true;
 
     const vecLoad = this.embedder ? tryLoadVecExtension(this.db, this.log) : { ok: false as const, reason: "no embedder" };
 
@@ -389,6 +394,7 @@ export class SqliteMemoryStore {
   }
 
   private scheduleEmbed(entry: MemoryEntry): void {
+    if (!this.inlineEmbeds) return;
     if (!this.isHybridReady() || !this.embedder) return;
     const embedder = this.embedder;
     const promise = embedAndStore(this.db, embedder, entry)

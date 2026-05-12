@@ -1,5 +1,4 @@
 import { handleSkillPromotionReply } from "../../src/skills/promote-acceptance";
-import { messageEvent } from "../../src/web/live-events";
 import type { ChannelMessage } from "../../src/channel/types";
 import type { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
 
@@ -20,14 +19,11 @@ export function tryHandleSkillPromotionReply(input: {
     skills: runtime.skills,
   });
   if (!result.handled) return null;
-  if (result.user) runtime.live.publish(messageEvent(user.conversationId, result.user));
   const assistant = result.assistant ?? {
     role: "assistant" as const,
     kind: "text" as const,
     content: "",
     createdAt: new Date().toISOString(),
   };
-  runtime.live.publish(messageEvent(user.conversationId, assistant));
-  input.publishSessions(runtime);
   return assistant;
 }

@@ -1,9 +1,17 @@
 import path from "node:path";
+import {
+  failedStatus,
+  readyStatus,
+  transformerProgressStatus,
+  type SetupStatusInput,
+  type TransformerProgressEvent,
+} from "../setup/status";
 
 export interface RerankerOptions {
   cacheDir: string;
   modelId?: string;
   log?: (msg: string) => void;
+  onStatus?: (status: SetupStatusInput) => void;
 }
 
 export interface Reranker {
@@ -48,6 +56,7 @@ export class RerankerService implements Reranker {
   readonly modelId: string;
   private readonly cacheDir: string;
   private readonly log?: (msg: string) => void;
+  private readonly onStatus?: (status: SetupStatusInput) => void;
   private loadPromise: Promise<void> | null = null;
   private tokenizer: TokenizerLike | null = null;
   private model: ModelLike | null = null;
@@ -57,6 +66,7 @@ export class RerankerService implements Reranker {
     this.modelId = opts.modelId ?? DEFAULT_MODEL_ID;
     this.cacheDir = path.join(opts.cacheDir, "transformers");
     this.log = opts.log;
+    this.onStatus = opts.onStatus;
   }
 
   async init(): Promise<void> {
@@ -67,6 +77,7 @@ export class RerankerService implements Reranker {
     } catch (err) {
       this.initFailed = (err as Error).message;
       this.log?.(`memory: reranker init failed — ${this.initFailed}`);
+      this.onStatus?.(failedStatus("memory.reranker", `reranker model failed: ${this.initFailed}`));
     }
   }
 
@@ -99,15 +110,31 @@ export class RerankerService implements Reranker {
     const transformers = await import("@xenova/transformers");
     transformers.env.cacheDir = this.cacheDir;
     transformers.env.allowLocalModels = true;
+    const progress_callback = (event: TransformerProgressEvent) => {
+      const status = transformerProgressStatus(
+        "memory.reranker",
+        "reranker model",
+        this.modelId,
+        event,
+      );
+      if (status) this.onStatus?.(status);
+    };
+    this.onStatus?.({
+      key: "memory.reranker",
+      label: `loading reranker model ${this.modelId}`,
+      active: true,
+    });
     const tokenizer = (await transformers.AutoTokenizer.from_pretrained(this.modelId, {
       quantized: true,
+      progress_callback,
     })) as unknown as TokenizerLike;
     const model = (await transformers.AutoModelForSequenceClassification.from_pretrained(
       this.modelId,
-      { quantized: true },
+      { quantized: true, progress_callback },
     )) as unknown as ModelLike;
     this.tokenizer = tokenizer;
     this.model = model;
     this.log?.(`memory: reranker ready (model=${this.modelId})`);
+    this.onStatus?.(readyStatus("memory.reranker", "reranker model ready"));
   }
 }

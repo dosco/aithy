@@ -11,6 +11,7 @@ import { readProviderApiKey } from "../../src/settings/secrets";
 import type { StoredSettings } from "../../src/settings/types";
 import type { AithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import type { SoulProfile } from "../../src/soul/types";
+import { hasNativeBunImage } from "../../src/profile/images";
 import type { ProfileImage, UserProfile } from "../../src/profile/types";
 import type { SkillEntry } from "../../src/skills/skills-store";
 import type { MemoryEntry, MemoryKind, MemoryLabel } from "../../src/memory/types";
@@ -74,6 +75,11 @@ export interface ProfileDto {
   updatedAt: string;
   userPhoto: ProfileImageDto | null;
   agentPhoto: ProfileImageDto | null;
+}
+
+export interface RuntimeCapabilitiesDto {
+  profileImages: boolean;
+  bunVersion: string;
 }
 
 export interface SkillDto {
@@ -185,6 +191,7 @@ export interface WebStateDto {
   notifications: NotificationDto[];
   unreadNotifications: number;
   aiConfigured: boolean;
+  runtimeCapabilities: RuntimeCapabilitiesDto;
 }
 
 export interface SetupGateStateDto {
@@ -257,6 +264,13 @@ export function profileImageDto(image: ProfileImage): ProfileImageDto {
   };
 }
 
+export function runtimeCapabilitiesDto(): RuntimeCapabilitiesDto {
+  return {
+    profileImages: hasNativeBunImage(),
+    bunVersion: Bun.version,
+  };
+}
+
 export function notificationDto(entry: NotificationEntry): NotificationDto {
   return { ...entry };
 }
@@ -304,10 +318,16 @@ export function skillDto(skill: SkillEntry): SkillDto {
   };
 }
 
+
 export async function webStateDto(
   runtime: AithyRuntime,
   activeSessionId: string | null,
 ): Promise<WebStateDto> {
+  await runtime.sessionState.preloadAll();
+  if (activeSessionId) {
+    await runtime.sessionState.preloadSession(activeSessionId);
+    await runtime.sessionState.preloadMessages(activeSessionId, { limit: 10 });
+  }
   const settings = runtime.settings.load();
   const skillsPage = runtime.skills.page({ cursor: null, limit: SKILLS_PAGE_SIZE, sort: "retrieved" });
   const memoriesPage = runtime.memory.page({ cursor: null, limit: MEMORIES_PAGE_SIZE });
@@ -340,6 +360,7 @@ export async function webStateDto(
     notifications: runtime.notifications.recent(50).map(notificationDto),
     unreadNotifications: runtime.notifications.unreadCount(),
     aiConfigured: isAiConfigured(runtime.config),
+    runtimeCapabilities: runtimeCapabilitiesDto(),
   };
 }
 

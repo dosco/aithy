@@ -1,0 +1,126 @@
+import { Database } from "bun:sqlite";
+import { mkdtemp } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { describe, expect, test } from "bun:test";
+import { CapabilityBroker } from "../src/security/capability-broker";
+import { RuntimeStore } from "../src/runtime/runtime-store";
+
+describe("RuntimeStore", () => {
+  test("stores live events and tails them by id", async () => {
+    const { store } = await makeStore();
+    const first = store.latestEventId();
+    const id = store.appendEvent({
+      type: "activity",
+      id: "event-1",
+      conversationId: "c1",
+      createdAt: new Date().toISOString(),
+      label: "hello",
+    });
+
+    expect(id).toBeGreaterThan(first);
+    const events = store.eventsAfter(first);
+    expect(events).toHaveLength(1);
+    expect(events[0].payload).toMatchObject({ type: "activity", conversationId: "c1" });
+    store.close();
+  });
+
+  test("claims commands once and marks completion", async () => {
+    const { store, dbPath } = await makeStore();
+    const id = store.enqueueCommand("agent-worker", "stop_conversation", { conversationId: "c1" });
+
+    const first = store.claimPendingCommands("agent-worker");
+    const second = store.claimPendingCommands("agent-worker");
+    expect(first.map((row) => row.id)).toEqual([id]);
+    expect(second).toEqual([]);
+
+    store.completeCommand(id, "completed");
+    const db = new Database(dbPath, { readonly: true });
+    const row = db.query(`SELECT status FROM runtime_commands WHERE id = ?`).get(id) as { status: string };
+    expect(row.status).toBe("completed");
+    db.close();
+    store.close();
+  });
+
+  test("stores log events and filters by role", async () => {
+    const { store } = await makeStore();
+    store.appendLog({ role: "sandbox-worker", level: "info", source: "stdout", message: "vm ready" });
+    store.appendLog({ role: "embedding-worker", level: "warn", message: "model warming" });
+
+    const logs = store.recentEvents({ kinds: ["log"], role: "sandbox-worker" });
+    expect(logs).toHaveLength(1);
+    expect(logs[0].payload).toMatchObject({ type: "log", role: "sandbox-worker", message: "vm ready" });
+    store.close();
+  });
+
+  test("records service heartbeats for split runtime roles", async () => {
+    const { store } = await makeStore();
+    store.heartbeat("sandbox-worker", "ready", { provider: "disabled" });
+    store.heartbeat("embedding-worker", "starting", { model: "mini" });
+
+    expect(store.service("sandbox-worker")).toMatchObject({ role: "sandbox-worker", state: "ready" });
+    expect(store.services().map((service) => service.role)).toContain("embedding-worker");
+    expect(store.recentEvents({ kinds: ["service-status"] })).toHaveLength(2);
+    store.close();
+  });
+
+  test("waits for typed command completion", async () => {
+    const { store } = await makeStore();
+    const id = store.enqueueCommand("sandbox-worker", "sandbox.read", { path: "/workspace/a.txt" });
+    setTimeout(() => {
+      store.claimPendingCommands("sandbox-worker");
+      store.completeCommand(id, "completed", { ok: true, result: "hello" });
+    }, 10).unref();
+
+    await expect(store.waitForCommand(id, { timeoutMs: 500, pollMs: 5 })).resolves.toEqual({
+      ok: true,
+      result: "hello",
+    });
+    store.close();
+  });
+
+  test("emits queue status using owner-role protocol", async () => {
+    const { store } = await makeStore();
+    store.appendQueueStatus({
+      id: "agent.chat",
+      ownerRole: "agent-worker",
+      state: "blocked",
+      depth: 1,
+      activeCount: 0,
+      blockedReason: "waiting for sandbox-worker",
+      dependencyRoles: ["sandbox-worker"],
+      updatedAt: new Date().toISOString(),
+    });
+
+    const [event] = store.recentEvents({ kinds: ["queue-status"] });
+    expect(event.payload).toMatchObject({
+      type: "queue-status",
+      queue: { id: "agent.chat", ownerRole: "agent-worker", state: "blocked" },
+    });
+    store.close();
+  });
+
+  test("capability broker requires grants and audits decisions", async () => {
+    const { store, dbPath } = await makeStore();
+    const broker = new CapabilityBroker(store);
+    expect(() =>
+      broker.require({ capability: "sandbox.bash", toolName: "sandbox.bash", conversationId: "c1" }),
+    ).toThrow("Capability denied");
+
+    broker.ensureDefaultLocalGrants();
+    broker.require({ capability: "sandbox.bash", toolName: "sandbox.bash", conversationId: "c1" });
+
+    const db = new Database(dbPath, { readonly: true });
+    const row = db.query(`SELECT COUNT(*) AS count FROM tool_audit_log`).get() as { count: number };
+    expect(row.count).toBe(2);
+    db.close();
+    store.close();
+  });
+});
+
+async function makeStore(): Promise<{ store: RuntimeStore; dbPath: string }> {
+  const dir = await mkdtemp(path.join(tmpdir(), "aithy-runtime-store-"));
+  const dbPath = path.join(dir, "state.db");
+  const store = new RuntimeStore(dbPath);
+  return { store, dbPath };
+}

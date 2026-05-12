@@ -1,9 +1,17 @@
 import path from "node:path";
+import {
+  failedStatus,
+  readyStatus,
+  transformerProgressStatus,
+  type SetupStatusInput,
+  type TransformerProgressEvent,
+} from "../setup/status";
 
 export interface EmbedServiceOptions {
   cacheDir: string;
   modelId?: string;
   log?: (msg: string) => void;
+  onStatus?: (status: SetupStatusInput) => void;
 }
 
 const DEFAULT_MODEL_ID = "Xenova/all-MiniLM-L6-v2";
@@ -36,6 +44,7 @@ export class EmbedService implements Embedder {
   readonly dim = EMBED_DIM;
   private readonly cacheDir: string;
   private readonly log?: (msg: string) => void;
+  private readonly onStatus?: (status: SetupStatusInput) => void;
   private pipelinePromise: Promise<unknown> | null = null;
   private extractor: ((text: string | string[], opts: { pooling: "mean"; normalize: true }) =>
     Promise<{ data: Float32Array; dims: number[] }>) | null = null;
@@ -45,6 +54,7 @@ export class EmbedService implements Embedder {
     this.modelId = opts.modelId ?? DEFAULT_MODEL_ID;
     this.cacheDir = path.join(opts.cacheDir, "transformers");
     this.log = opts.log;
+    this.onStatus = opts.onStatus;
   }
 
   async init(): Promise<void> {
@@ -57,6 +67,7 @@ export class EmbedService implements Embedder {
     } catch (err) {
       this.initFailed = (err as Error).message;
       this.log?.(`memory: embedder init failed — ${this.initFailed}`);
+      this.onStatus?.(failedStatus("memory.embedder", `memory model failed: ${this.initFailed}`));
     }
   }
 
@@ -99,12 +110,29 @@ export class EmbedService implements Embedder {
     const transformers = await import("@xenova/transformers");
     transformers.env.cacheDir = this.cacheDir;
     transformers.env.allowLocalModels = true;
+    this.onStatus?.({
+      key: "memory.embedder",
+      label: `loading memory model ${this.modelId}`,
+      active: true,
+    });
     const extractor = await transformers.pipeline(
       "feature-extraction",
       this.modelId,
-      { quantized: true },
+      {
+        quantized: true,
+        progress_callback: (event: TransformerProgressEvent) => {
+          const status = transformerProgressStatus(
+            "memory.embedder",
+            "memory model",
+            this.modelId,
+            event,
+          );
+          if (status) this.onStatus?.(status);
+        },
+      },
     );
     this.extractor = extractor as unknown as typeof this.extractor;
     this.log?.(`memory: embedder ready (model=${this.modelId} dim=${this.dim})`);
+    this.onStatus?.(readyStatus("memory.embedder", "memory model ready"));
   }
 }

@@ -21,7 +21,8 @@ import { getSessionMessages } from "@/server/session-messages.functions";
 import type { SessionSummaryDto, WebStateDto } from "@/server/dto";
 import type { WebLiveEvent } from "../../src/web/live-events";
 
-type ActivityEvent = Extract<WebLiveEvent, { type: "activity" }>;
+type SetupStatusEvent = Extract<WebLiveEvent, { type: "setup-status" }>;
+type QueueStatusEvent = Extract<WebLiveEvent, { type: "queue-status" }>;
 
 export function ChatPage({ initialState }: { initialState: WebStateDto }) {
   const navigate = useNavigate();
@@ -57,14 +58,16 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
   const [loadingMore, setLoadingMore] = useState(false);
   const [sessions, setSessions] = useState(initialState.sessions);
   const [activities, setActivities] = useState<Array<Extract<WebLiveEvent, { type: "activity" }>>>([]);
-  const [sandboxStatus, setSandboxStatus] = useState<string | null>(null);
+  const [setupStatuses, setSetupStatuses] = useState<SetupStatusEvent[]>([]);
   const [input, setInput] = useState("");
   const [selectedSkills, setSelectedSkills] = useState<SelectedSkill[]>([]);
   const [sending, setSending] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [previewSessionId, setPreviewSessionId] = useState<string | null>(null);
+  const [emptyReloadKey, setEmptyReloadKey] = useState<string | null>(null);
   const activeSessionRef = useRef<string | null>(activeSessionId);
+  const setupClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   activeSessionRef.current = activeSessionId;
   const activeSession = useMemo(
     () => sessions.find((s) => s.conversationId === activeSessionId),
@@ -88,31 +91,60 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
     setHasMoreBefore(initialPage.hasMoreBefore);
     setLoadingMore(false);
     setActivities([]);
-    setSandboxStatus(null);
+    clearSetupStatusLog();
     setPreviewSessionId(null);
+    setEmptyReloadKey(null);
   }, [resolvedInitialSessionId, initialPage]);
   const { details } = useChatUi();
+  const visibleSetupStatuses = useMemo(() => compactSetupStatuses(setupStatuses), [setupStatuses]);
 
   useEffect(() => {
     const source = new EventSource("/api/events");
     source.onmessage = (message) => {
       const event = JSON.parse(message.data) as WebLiveEvent | { type: "connected" };
       if (event.type === "sessions") setSessions(event.sessions);
+      if (event.type === "setup-status") {
+        cancelSetupStatusClear();
+        setSetupStatuses((current) => appendSetupStatus(current, event));
+      }
+      if (event.type === "queue-status" && event.queue.id === "agent.chat") {
+        cancelSetupStatusClear();
+        setSetupStatuses((current) => appendSetupStatus(current, queueStatusToSetup(event)));
+      }
       if ("conversationId" in event && event.conversationId === activeSessionRef.current) {
         if (event.type === "message") {
           setMessages((current) =>
             appendUnique(current, { id: event.id, message: event.message }));
+          if (event.message.role === "assistant") {
+            setSending(false);
+            scheduleSetupStatusClear();
+          }
         }
         if (event.type === "activity") {
           setActivities((current) => [...current.slice(-79), event]);
-          setSandboxStatus((current) => nextSandboxStatus(current, event));
         }
       }
     };
     return () => source.close();
   }, []);
 
+  useEffect(() => () => cancelSetupStatusClear(), []);
+
   const debugCount = useMemo(() => countDebugItems(messages, activities), [messages, activities]);
+
+  useEffect(() => {
+    if (!activeSessionId || messages.length > 0 || loadingMore || emptyReloadKey === activeSessionId) return;
+    setEmptyReloadKey(activeSessionId);
+    setLoadingMore(true);
+    void getSessionMessages({
+      data: { conversationId: activeSessionId, beforeId: null, limit: 10 },
+    }).then((page) => {
+      if (page.items.length === 0) return;
+      setMessages(page.items);
+      setOldestMessageId(page.oldestId);
+      setHasMoreBefore(page.hasMoreBefore);
+    }).finally(() => setLoadingMore(false));
+  }, [activeSessionId, messages.length, loadingMore, emptyReloadKey]);
 
   const loadMoreMessages = useCallback(async (): Promise<boolean> => {
     if (!activeSessionId || !oldestMessageId || loadingMore || !hasMoreBefore) return false;
@@ -138,6 +170,7 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
     const text = input.trim();
     if (!text || sending) return;
     setInput("");
+    clearSetupStatusLog();
     setSending(true);
     const wasDraft = !activeSessionId;
     const conversationId = activeSessionId ?? crypto.randomUUID();
@@ -152,8 +185,10 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
         }));
     }
     const skillIds = selectedSkills.map((skill) => skill.id);
+    let keepSending = false;
     try {
       const result = await sendChatMessage({ data: { conversationId, text, createdAt, skillIds } });
+      keepSending = Boolean(result.queued && !isCommand);
       if (!isCommand) setSelectedSkills([]);
       if (result.activeSessionId !== conversationId) {
         setActiveSessionId(result.activeSessionId);
@@ -162,8 +197,27 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
         await navigate({ to: "/chat/$sessionId", params: { sessionId: conversationId } });
       }
     } finally {
-      setSending(false);
+      if (!keepSending) setSending(false);
     }
+  }
+
+  function cancelSetupStatusClear() {
+    if (!setupClearTimerRef.current) return;
+    clearTimeout(setupClearTimerRef.current);
+    setupClearTimerRef.current = null;
+  }
+
+  function clearSetupStatusLog() {
+    cancelSetupStatusClear();
+    setSetupStatuses([]);
+  }
+
+  function scheduleSetupStatusClear() {
+    cancelSetupStatusClear();
+    setupClearTimerRef.current = setTimeout(() => {
+      setupClearTimerRef.current = null;
+      setSetupStatuses([]);
+    }, 1600);
   }
 
   async function removeActiveSession() {
@@ -233,7 +287,6 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
           activities={activities}
           details={details}
           sending={sending}
-          sandboxStatus={sandboxStatus}
           resetKey={activeSessionId}
           hasMoreBefore={hasMoreBefore}
           loadingMore={loadingMore}
@@ -246,11 +299,13 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
       <ChatComposer
         input={input}
         sending={sending}
+        setupStatuses={visibleSetupStatuses}
         selectedSkills={selectedSkills}
         onInputChange={setInput}
         onSelectedSkillsChange={setSelectedSkills}
         onSubmit={() => void submit()}
         onStop={() => {
+          setSending(false);
           if (activeSessionId) void stopChatMessage({ data: { conversationId: activeSessionId } });
         }}
       />
@@ -273,31 +328,54 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
   );
 }
 
-function nextSandboxStatus(
-  current: string | null,
-  event: ActivityEvent,
-): string | null {
-  if (
-    event.label === "starting sandbox..."
-    || event.label === "resuming sandbox..."
-    || event.label === "refreshing sandbox mounts..."
-  ) {
-    return event.label;
-  }
-  if (
-    event.tone === "danger"
-    || event.label === "agent completed"
-    || event.label.startsWith("sandbox ready:")
-    || event.label.startsWith("mounts refreshed:")
-  ) {
-    return null;
-  }
-  return current;
+function queueStatusToSetup(event: QueueStatusEvent): SetupStatusEvent {
+  const queue = event.queue;
+  const waiting = queue.blockedReason ?? (
+    queue.depth && queue.depth > 0 ? `queued (${queue.depth} waiting)` : "chat queue idle"
+  );
+  const active = queue.state === "blocked" || queue.state === "running";
+  return {
+    type: "setup-status",
+    id: event.id,
+    createdAt: event.createdAt,
+    key: "agent.dispatcher",
+    label: waiting,
+    active,
+    tone: queue.state === "failed" ? "danger" : active ? "neutral" : "neutral",
+  };
 }
 
 function sessionIdFromPath(pathname: string): string | null {
   const match = /^\/chat\/([^/]+)/.exec(pathname);
   return match ? decodeURIComponent(match[1]) : null;
+}
+
+function appendSetupStatus(
+  current: SetupStatusEvent[],
+  event: SetupStatusEvent,
+): SetupStatusEvent[] {
+  return compactSetupStatuses([...current, event]);
+}
+
+function compactSetupStatuses(current: SetupStatusEvent[]): SetupStatusEvent[] {
+  const byKey = new Map<string, SetupStatusEvent>();
+  for (const event of current) {
+    const key = event.key ?? event.id;
+    if (event.key === "agent" && !event.active) {
+      byKey.delete(key);
+      continue;
+    }
+    if (event.key === "agent.dispatcher" && !event.active) {
+      byKey.delete(key);
+      continue;
+    }
+    if (!event.active && event.tone !== "danger" && event.tone !== "success") {
+      byKey.delete(key);
+      continue;
+    }
+    byKey.set(key, event);
+  }
+  return [...byKey.values()].slice(-8);
 }
 
 function SubSessionDrawer({

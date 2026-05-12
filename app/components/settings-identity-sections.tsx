@@ -21,9 +21,11 @@ import type { ProfileDto, SoulDto } from "@/server/dto";
 
 export function UserProfileSection({
   profile,
+  profileImagesSupported,
   onChange,
 }: {
   profile: ProfileDto;
+  profileImagesSupported: boolean;
   onChange: (profile: ProfileDto) => void;
 }) {
   const [saved, setSaved] = useState(false);
@@ -52,13 +54,15 @@ export function UserProfileSection({
             <input className={fieldClass} value={profile.userLocation} onChange={(e) => onChange({ ...profile, userLocation: e.target.value })} />
           </Field>
         </div>
-        <ProfilePhotoInput
-          label="Your photo"
-          image={profile.userPhoto}
-          fallback={initials(profile.userName, "You")}
-          onUpload={savePhoto}
-          onClear={async () => onChange(await clearProfileImage({ data: { kind: "user" } }))}
-        />
+        {profileImagesSupported ? (
+          <ProfilePhotoInput
+            label="Your photo"
+            image={profile.userPhoto}
+            fallback={initials(profile.userName, "You")}
+            onUpload={savePhoto}
+            onClear={async () => onChange(await clearProfileImage({ data: { kind: "user" } }))}
+          />
+        ) : null}
         <div className="flex justify-end">
           <Button onClick={() => void saveFields()} disabled={!profile.userName.trim()}>
             {saved ? <Check className="h-4 w-4" /> : null}
@@ -73,11 +77,13 @@ export function UserProfileSection({
 export function AgentSettingsSection({
   soul,
   profile,
+  profileImagesSupported,
   onSoulChange,
   onProfileChange,
 }: {
   soul: SoulDto;
   profile: ProfileDto;
+  profileImagesSupported: boolean;
   onSoulChange: (soul: SoulDto) => void;
   onProfileChange: (profile: ProfileDto) => void;
 }) {
@@ -103,13 +109,15 @@ export function AgentSettingsSection({
   return (
     <Section title="Agent" subtitle="Identity, photo, and the soul of the agent passed to the responder.">
       <div className="grid gap-4">
-        <ProfilePhotoInput
-          label="Agent photo"
-          image={profile.agentPhoto}
-          fallback={initials(soul.name, "AI")}
-          onUpload={saveAgentPhoto}
-          onClear={async () => onProfileChange(await clearProfileImage({ data: { kind: "agent" } }))}
-        />
+        {profileImagesSupported ? (
+          <ProfilePhotoInput
+            label="Agent photo"
+            image={profile.agentPhoto}
+            fallback={initials(soul.name, "AI")}
+            onUpload={saveAgentPhoto}
+            onClear={async () => onProfileChange(await clearProfileImage({ data: { kind: "agent" } }))}
+          />
+        ) : null}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Name">
             <input className={fieldClass} value={soul.name} onChange={(e) => onSoulChange({ ...soul, name: e.target.value })} />

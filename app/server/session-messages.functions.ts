@@ -14,6 +14,11 @@ export const getSessionMessages = createServerFn({ method: "GET" })
   .handler(async ({ data }) => {
     const runtime = await getAithyRuntime();
     runtime.sessions.ensureLogicalSession(data.conversationId);
+    await runtime.sessionState.flush();
+    await runtime.sessionState.preloadMessages(data.conversationId, {
+      beforeId: data.beforeId ?? null,
+      limit: data.limit ?? 10,
+    });
     return sessionMessagePageDto(runtime, data.conversationId, {
       beforeId: data.beforeId ?? null,
       limit: data.limit ?? 10,

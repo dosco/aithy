@@ -16,7 +16,7 @@ Aithy is a local AI agent that runs on your machine. It can help with projects, 
 
 ## Quick start
 
-You need [Bun](https://bun.sh/) 1.3.13 or newer and a model API key from a supported provider.
+You need [Bun](https://bun.sh/) 1.3.0 or newer and a model API key from a supported provider. Profile photos are shown only on Bun runtimes with native image support.
 
 ```bash
 bun install

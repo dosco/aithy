@@ -16,7 +16,7 @@ import { isAiConfigured } from "../../src/config/validate";
 import { getAithyRuntime, resetAithyRuntimeSystem } from "../../src/runtime/aithy-runtime.server";
 import { generateSessionName } from "../../src/session/session-names";
 import type { UserMessage } from "../../src/session/types";
-import { messageEvent, userMessageEvent } from "../../src/web/live-events";
+import { messageEvent } from "../../src/web/live-events";
 import {
   webStateDto,
   sessionDto,
@@ -99,6 +99,7 @@ export const getWebState = createServerFn({ method: "GET" })
   .inputValidator(sessionInput)
   .handler(async ({ data }) => {
     const runtime = await getAithyRuntime();
+    await runtime.sessionState.preloadAll();
     const activeSessionId = selectSession(runtime, data.conversationId);
     return webStateDto(runtime, activeSessionId);
   });
@@ -123,6 +124,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       name: generateSessionName(text),
       nameSource: "generated",
     });
+    await runtime.sessionState.flush();
     runtime.settings.save({ ui: { lastActiveSessionId: data.conversationId } });
 
     if (text.startsWith("/")) {
@@ -136,6 +138,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       }
       const reply = assistantMessage(result.reply.text);
       runtime.live.publish(messageEvent(result.reply.conversationId, reply));
+      await runtime.sessionState.flush();
       publishSessions(runtime);
       return {
         activeSessionId: result.activeConversationId ?? data.conversationId,
@@ -144,27 +147,28 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     }
 
     const promotionReply = tryHandleSkillPromotionReply({ runtime, user, publishSessions });
-    if (promotionReply) return { activeSessionId: data.conversationId, queued: false };
+    if (promotionReply) {
+      await runtime.sessionState.flush();
+      return { activeSessionId: data.conversationId, queued: false };
+    }
 
     try {
       runtime.sessions.appendMessages(data.conversationId, [persistedUserMessage(user)]);
-      runtime.live.publish(userMessageEvent(data.conversationId, user.text, user.createdAt));
-      publishSessions(runtime);
+      await runtime.sessionState.flush();
       runtime.assertReady();
-      await runtime.dispatcher.enqueueUserChat({
+      const queued = await runtime.dispatcher.enqueueUserChat({
         conversationId: data.conversationId,
         text: user.text,
         createdAt: user.createdAt.toISOString(),
         skillIds: data.skillIds ?? [],
       });
-      return { activeSessionId: data.conversationId, queued: true };
+      return { activeSessionId: data.conversationId, queued: true, jobId: queued.jobId };
     } catch (error) {
       const bot = assistantMessage(
         error instanceof Error ? `Error: ${error.message}` : "Unknown error",
       );
       runtime.sessions.appendMessages(data.conversationId, [bot]);
-      runtime.live.publish(messageEvent(data.conversationId, bot));
-      publishSessions(runtime);
+      await runtime.sessionState.flush();
       return { activeSessionId: data.conversationId, queued: false };
     }
   });
@@ -174,9 +178,8 @@ export const stopChatMessage = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
-    const stopped = runtime.activeRuns.stop(data.conversationId);
-    const dropped = runtime.dispatcher.cancelByConversation(data.conversationId);
-    return { stopped, queuedDropped: dropped };
+    const dropped = await runtime.dispatcher.cancelByConversation(data.conversationId);
+    return { stopped: true, queuedDropped: dropped };
   });
 
 export const renameSession = createServerFn({ method: "POST" })
@@ -185,7 +188,7 @@ export const renameSession = createServerFn({ method: "POST" })
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
     const renamed = runtime.sessions.renameSession(data.conversationId, data.name);
-    publishSessions(runtime);
+    await runtime.sessionState.flush();
     return renamed ? sessionDto(renamed) : null;
   });
 
@@ -195,7 +198,7 @@ export const clearSession = createServerFn({ method: "POST" })
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
     await runtime.sessions.clear(data.conversationId);
-    publishSessions(runtime);
+    await runtime.sessionState.flush();
     return webStateDto(runtime, data.conversationId);
   });
 
@@ -204,13 +207,14 @@ export const deleteSession = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
+    await runtime.dispatcher.cancelByConversation(data.conversationId);
     const deletedIds = await runtime.sessions.deleteSession(data.conversationId);
+    await runtime.sessionState.flush();
     runtime.memoryRuns.deleteForSessions(deletedIds);
     const settings = runtime.settings.load();
     if (deletedIds.includes(settings.ui.lastActiveSessionId ?? "")) {
       runtime.settings.save({ ui: { lastActiveSessionId: null } });
     }
-    publishSessions(runtime);
     return { deletedIds, sessions: runtime.sessions.listSessions().map(sessionDto) };
   });
 
@@ -219,10 +223,11 @@ export const deleteAllSessions = createServerFn({ method: "POST" })
   .handler(async () => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
+    await runtime.dispatcher.cancelAll?.("Deleting all sessions");
     const deletedIds = await runtime.sessions.deleteAllSessions();
+    await runtime.sessionState.flush();
     runtime.memoryRuns.deleteForSessions(deletedIds);
     runtime.settings.save({ ui: { lastActiveSessionId: null } });
-    publishSessions(runtime);
     return { deletedIds, sessions: [] };
   });
 
@@ -247,8 +252,8 @@ export const resetSystemOptions = createServerFn({ method: "POST" })
     const runtime = await resetAithyRuntimeSystem();
     const id = crypto.randomUUID();
     runtime.sessions.ensureLogicalSession(id);
+    await runtime.sessionState.flush();
     runtime.settings.save({ ui: { lastActiveSessionId: id } });
-    publishSessions(runtime);
     return webStateDto(runtime, id);
   });
 
@@ -376,6 +381,7 @@ export const getChildSessions = createServerFn({ method: "GET" })
   .inputValidator(z.object({ parentSessionId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const runtime = await getAithyRuntime();
+    await runtime.sessionState.preloadAll();
     return runtime.sessions.listChildSessions(data.parentSessionId).map(sessionDto);
   });
 
