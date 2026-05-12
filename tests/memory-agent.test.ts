@@ -19,6 +19,7 @@ describe("memory agents", () => {
     expect(generatorDescription(program)).toContain("dense, consolidated, self-contained");
     expect(generatorDescription(program)).toContain("include an explicit frequency");
     expect(generatorDescription(program)).toContain("validFrom, validUntil, durationDays, and evidence");
+    expect(generatorDescription(program)).toContain("I like coffee, really like it");
     memory.close();
   });
 

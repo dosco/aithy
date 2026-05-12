@@ -31,6 +31,7 @@ CRITICAL — how to actually persist:
 
 WRITE (\`memory.write\`) only:
 - stable facts about the user, their environment, their preferences ("uses pnpm", "main repo is ~/src/foo").
+- simple explicit personal preferences, including foods, drinks, hobbies, media, tools, and recurring likes/dislikes, when the user states them as true about themselves. Example: "I like coffee, really like it" should write a preference such as "The user really likes coffee."
 - project-specific conventions or constraints that will matter in future turns.
 - something the user explicitly asked you to remember (trigger='explicit').
 - time-bounded or episode-like information worth recalling (kind='event', body under ~500 words / 4 KB).
