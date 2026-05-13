@@ -1,4 +1,4 @@
-import type { Job } from "bunqueue/client";
+import type { Job, JobOptions } from "bunqueue/client";
 import type { AppConfig } from "../config/env";
 import type { SessionManager } from "../session/session-manager";
 import type { BotMessage } from "../session/types";
@@ -15,10 +15,8 @@ import type { SqliteMemoryRunsStore } from "./memory-runs";
 import type { SqliteUsageStore } from "../usage/usage-store";
 import { captureProgramUsage } from "../usage/capture";
 
-// Long enough to cover a typical LLM call plus exponential retries (~70s + run
-// time) so a long-in-flight job blocks duplicate auto enqueues. Eventually
-// expires so a stuck job can't permanently silence a session's triage.
-const AUTO_DEDUP_TTL_MS = 5 * 60_000;
+export const AUTO_MEMORY_BATCH_DELAY_MS = 10 * 60_000;
+export const AUTO_MEMORY_DEDUP_TTL_MS = 15 * 60_000;
 const MAX_ATTEMPTS = 3;
 // Hard cap on a single triage attempt. A wedged LLM call would otherwise tie up
 // the worker indefinitely; bunqueue's TTL kills the job and lets the dedup
@@ -39,7 +37,7 @@ export interface PostToSubSession {
     parentMessageId?: number | null;
     text: string;
     name?: string;
-  }): { sessionId: string; messageId: number | null };
+  }): Promise<{ sessionId: string; messageId: number | null }> | { sessionId: string; messageId: number | null };
 }
 
 export interface MemoryQueueDeps {
@@ -76,22 +74,26 @@ export class MemoryQueue {
       const attempt = getJobFailureAttempt(job);
       if (attempt < MAX_ATTEMPTS) return;
       const data = job.data as MemoryJobData;
-      const sub = deps.postFailureToSubSession({
-        parentSessionId: data.sessionId,
-        parentMessageId: data.finalMessageId,
-        text: `Memory triage failed after ${attempt} attempt(s): ${error.message}`,
-        name: "Memory error",
-      });
-      try {
-        deps.runs.recordFail(data.runId, error.message, sub.sessionId);
-      } catch {
-        // run row may not exist if start was never recorded
-      }
-      deps.notify?.({
-        kind: "memory.failed",
-        title: "Memory triage failed",
-        body: error.message,
-        link: `/chat/${sub.sessionId}`,
+      void (async () => {
+        const sub = await deps.postFailureToSubSession({
+          parentSessionId: data.sessionId,
+          parentMessageId: data.finalMessageId,
+          text: `Memory triage failed after ${attempt} attempt(s): ${error.message}`,
+          name: "Memory error",
+        });
+        try {
+          deps.runs.recordFail(data.runId, error.message, sub.sessionId);
+        } catch {
+          // run row may not exist if start was never recorded
+        }
+        deps.notify?.({
+          kind: "memory.failed",
+          title: "Memory triage failed",
+          body: error.message,
+          link: `/chat/${sub.sessionId}`,
+        });
+      })().catch((cause) => {
+        deps.onQueueError?.("[aithy.memory] failed to post terminal failure", cause instanceof Error ? cause : new Error(String(cause)));
       });
     });
   }
@@ -102,12 +104,7 @@ export class MemoryQueue {
       await this.app.queue.add(
         "memory.auto",
         { trigger: "auto", sessionId, finalMessageId, runId },
-        {
-          attempts: MAX_ATTEMPTS,
-          backoff: { type: "exponential", delay: 10_000 },
-          deduplication: { id: `auto:${sessionId}`, ttl: AUTO_DEDUP_TTL_MS },
-          jobId: `memory:auto:${runId}`,
-        },
+        autoMemoryJobOptions(sessionId, runId),
       );
     } catch (error) {
       if (isDuplicateJobWriteError(error)) {
@@ -139,7 +136,8 @@ export class MemoryQueue {
   }
 
   private async processJob(job: Job<MemoryJobData>): Promise<{ summary: string }> {
-    if (Date.now() - job.timestamp > JOB_TTL_MS) {
+    const availableAt = job.timestamp + (job.delay ?? job.opts.delay ?? 0);
+    if (Date.now() - availableAt > JOB_TTL_MS) {
       return { summary: "job expired" };
     }
     return this.process(job.data);
@@ -197,6 +195,21 @@ export class MemoryQueue {
     }
     return { summary };
   }
+}
+
+export function autoMemoryJobOptions(sessionId: string, runId: string): JobOptions {
+  return {
+    attempts: MAX_ATTEMPTS,
+    backoff: { type: "exponential", delay: 10_000 },
+    delay: AUTO_MEMORY_BATCH_DELAY_MS,
+    deduplication: {
+      id: `auto:${sessionId}`,
+      ttl: AUTO_MEMORY_DEDUP_TTL_MS,
+      extend: true,
+      replace: true,
+    },
+    jobId: `memory:auto:${runId}`,
+  };
 }
 
 const ACTION_LIKE = /\b(saved|stored|persist(ed)?|wrote|recorded|remembered|noted|added|superseded|replaced|deleted|removed)\b/i;

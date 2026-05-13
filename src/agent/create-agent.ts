@@ -2,14 +2,15 @@ import {
   AxAgentFunction,
   AxJSRuntime,
   agent,
+  type AxAgentFunctionCall,
   type AxAgentSkillsSearchFn,
   type AxFunctionCallTrace,
 } from "@ax-llm/ax";
 import type { AppConfig } from "../config/env";
 import type { EventBus } from "../events/bus";
 import { combineResponderDescription } from "../profile/service";
-import type { UserProfile } from "../profile/types";
 import type { SoulProfile } from "../soul/types";
+import type { AithyAgentProgram, AxAgentConfigBoundary, AxServiceHandle } from "./ax-boundary";
 import { createAiService, createFastAiService } from "./ai-service";
 import { aithySignature } from "./signatures";
 
@@ -24,12 +25,12 @@ export type AxAgentMemoriesSearchFn = (
 ) => readonly AxAgentMemoryResult[] | Promise<readonly AxAgentMemoryResult[]>;
 
 export interface CreatedAgent {
-  program: any;
-  llm: any;
+  program: AithyAgentProgram;
+  llm: AxServiceHandle;
 }
 
 export type AgentFunctionCallHandler = (
-  call: Readonly<AxFunctionCallTrace>,
+  call: Readonly<AxFunctionCallTrace | AxAgentFunctionCall>,
 ) => void | Promise<void>;
 
 export interface CreateAithyAgentOptions {
@@ -38,22 +39,33 @@ export interface CreateAithyAgentOptions {
   events: EventBus;
   conversationId: string;
   soul?: SoulProfile;
-  profile?: UserProfile;
   onSkillsSearch?: AxAgentSkillsSearchFn;
   onMemoriesSearch?: AxAgentMemoriesSearchFn;
   onFunctionCall?: AgentFunctionCallHandler;
 }
 
-const contextDescription = `conversationHistory is a plain-text transcript of prior turns, one per line, formatted as "[<ISO timestamp>] <role>: <content>". Entries are in chronological order — oldest first, most recent last. The current user turn is delivered separately as userRequest, not inside history.
+const contextDescription = `You are the context distiller for the agent pipeline. Your job is to use the JavaScript runtime to inspect chat history, resolve the user's latest message into a self-contained request, gather only the evidence the executor needs, and then call final(resolvedRequest, evidence). The executor will not see raw conversationHistory, so resolvedRequest must carry forward any relevant prior intent, entities, locations, constraints, and answers to clarifying questions.
+
+conversationHistory is a plain-text transcript of prior turns, one per line, formatted as "[<ISO timestamp>] <role>: <content>". Entries are in chronological order — oldest first, most recent last. The current user turn is delivered separately as userRequest, not inside history. The prompt may show only a tail excerpt; use inputs.conversationHistory in JavaScript as the source of truth.
+
+Efficient JavaScript strategy:
+- Parse inputs.conversationHistory into turns, for example with /^\\[(.*?)\\] (user|assistant): (.*)$/.
+- Inspect from newest to oldest to find the most recent assistant question, offered choices, and unresolved topic.
+- Also carry forward the latest concrete user-provided facts: target object, location, filters, names, ids, files, and requested action.
+- Build a compact evidence object such as { latestRequest, resolvedIntent, activeTopic, location, clarificationAnswer, supportingTurns }. Keep supportingTurns short and quote only the lines needed to justify the resolution.
+- Call final(...) as soon as the latest request is resolved; do not over-summarize the entire transcript.
 
 Resolving referential userRequests:
 - Treat conversationHistory as your primary tool for resolving ambiguity. Before answering, always re-read it.
 - When userRequest is short, ambiguous, or referential — one-word replies like "yes" / "no" / "do it" / "sure"; pronouns or deictics like "that" / "it" / "them" / "the other one" / "this"; partial answers; or any turn that doesn't make sense in isolation — scan history from most recent to oldest and bind the referent to the most recent open question, choice you offered, or topic under discussion.
-- One-word affirmations and negations are direct answers to the most recent question you (the assistant) asked. Act on that answer; do not re-ask the same question.
+- Affirmations and negations, including repeated affirmations like "yes yes yes", are direct answers to the most recent question you (the assistant) asked. Act on that answer; do not re-ask the same question.
 - If the most recent assistant turn was a clarifying question or offered options, the next user turn almost certainly addresses it. Resolve from there first before considering anything else.
+- When the latest answer affirms an offered interpretation, choose the option that best matches the earlier concrete user request. Example: if the user asked for "near by cat food places", supplied "downtown vancouver" after a location question, and then says "yes yes yes" after you ask whether they mean nearby cat food stores/restaurants/etc., resolve this as "find nearby cat food places/stores near downtown Vancouver."
 - Only ask the user to clarify when the referent genuinely cannot be resolved from any visible history. When you do ask, briefly quote the candidate interpretations you considered so the user can pick instead of restating from scratch.
 
 When the transcript exceeds its budget, the oldest entries are dropped first, so do not assume the transcript starts at the beginning of the conversation. Durable cross-session memory is available — use it for anything that must survive future truncation, and do not rely on history as durable memory.`;
+
+const conversationHistoryPromptChars = 2_000;
 
 const durableMemoryDescription = `Durable memory:
 - \`inputs.memories\` is auto-populated with relevant prior facts, preferences, instructions, and events. Read it before answering questions that might depend on user/project context not in the current conversation.
@@ -97,7 +109,6 @@ export function createAithyAgent({
   events,
   conversationId,
   soul,
-  profile,
   onSkillsSearch,
   onMemoriesSearch,
   onFunctionCall,
@@ -106,14 +117,14 @@ export function createAithyAgent({
   const fastLlm = createFastAiService(config);
 
   const responderOptions: Record<string, unknown> = {
-    description: combineResponderDescription(soul?.responderDescription, profile),
+    description: combineResponderDescription(soul?.responderDescription),
   };
   if (fastLlm) responderOptions.ai = fastLlm;
 
   const recursionOptions: Record<string, unknown> = {};
   if (fastLlm) recursionOptions.ai = fastLlm;
 
-  const agentConfig: any = {
+  const agentConfig: AxAgentConfigBoundary = {
     agentIdentity: {
       name: soul?.name ?? "Aithy",
       description: soul?.description ?? "Friendly neighborhood bot",
@@ -122,7 +133,7 @@ export function createAithyAgent({
       {
         reverseTruncate: true,
         field: "conversationHistory",
-        keepInPromptChars: 500,
+        keepInPromptChars: conversationHistoryPromptChars,
       },
     ],
     contextOptions: { description: contextDescription },
@@ -136,11 +147,11 @@ export function createAithyAgent({
     onSkillsSearch,
     onMemoriesSearch,
     onFunctionCall: onFunctionCall
-      ? (call: unknown) => onFunctionCall(call as AxFunctionCallTrace)
+      ? (call: unknown) => onFunctionCall(call as AxFunctionCallTrace | AxAgentFunctionCall)
       : undefined,
     // debug: true,
   };
-  const program = agent(aithySignature, agentConfig);
+  const program = agent(aithySignature, agentConfig as never) as unknown as AithyAgentProgram;
 
   return { program, llm };
 }

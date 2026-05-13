@@ -1,4 +1,5 @@
 import type { SetupStatusInput } from "../setup/status";
+import type { AssistantToolCallMessage } from "../session/types";
 
 export type BotEvent =
   | { type: "message.received"; conversationId: string; text: string }
@@ -13,6 +14,11 @@ export type BotEvent =
       conversationId: string;
       summary: string;
       detail?: unknown;
+    }
+  | {
+      type: "agent.tool_call";
+      conversationId: string;
+      message: AssistantToolCallMessage;
     }
   | { type: "agent.completed"; conversationId: string; agentResponse: string }
   | { type: "agent.clarification"; conversationId: string; question: string }

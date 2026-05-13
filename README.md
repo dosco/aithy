@@ -16,7 +16,7 @@ Aithy is a local AI agent that runs on your machine. It can help with projects, 
 
 ## Quick start
 
-You need [Bun](https://bun.sh/) 1.3.0 or newer and a model API key from a supported provider. Profile photos are shown only on Bun runtimes with native image support.
+You need [Bun](https://bun.sh/) 1.3.14 or newer and a model API key from a supported provider.
 
 ```bash
 bun install
@@ -27,10 +27,13 @@ Open `http://127.0.0.1:3000`. The welcome screen walks you through your name, op
 
 Local state lives at `~/.config/aithy/default/`. Set `AITHY_BOT_ID` or `AITHY_STATE_DIR` if you want a different namespace or multiple bots.
 
+Aithy uses Parallel Search MCP for public web search. Search works through Parallel's free anonymous endpoint by default, so no Parallel account or API key is required. For higher limits, set `AITHY_PARALLEL_API_KEY` or `PARALLEL_API_KEY`; for testing or proxying, set `AITHY_PARALLEL_SEARCH_MCP_URL`.
+
 ## What it does
 
 - Runs as a personal agent on your own setup.
 - Keeps durable conversation history and user-approved memory.
+- Searches the public web through free Parallel Search MCP, then reads known URLs with its local web fetcher.
 - Uses a persistent sandbox workspace for commands, scripts, and generated files.
 - Lets you attach or mount files when you want the agent to work with local project data.
 - Surfaces reusable skills when it notices repeated workflows.

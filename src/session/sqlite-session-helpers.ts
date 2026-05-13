@@ -45,12 +45,13 @@ function rowToMessage(row: MessageRow): BotMessage {
     };
   }
 
-  if (row.tool_name !== null) {
+  if (row.tool_name !== null || row.tool_args !== null || row.tool_result !== null) {
+    const toolArgs = row.tool_args ? JSON.parse(row.tool_args) : null;
     return {
       role: "assistant",
       kind: "tool_call",
-      toolName: row.tool_name,
-      toolArgs: row.tool_args ? JSON.parse(row.tool_args) : null,
+      toolName: row.tool_name ?? inferToolName(toolArgs),
+      toolArgs,
       toolResult: row.tool_result ? JSON.parse(row.tool_result) : undefined,
       thought: row.thought ?? undefined,
       usage,
@@ -66,6 +67,20 @@ function rowToMessage(row: MessageRow): BotMessage {
     usage,
     createdAt: row.created_at,
   };
+}
+
+function inferToolName(toolArgs: unknown): string {
+  if (hasKeys(toolArgs, ["query", "task"])) return "web.search";
+  if (hasKeys(toolArgs, ["url"])) return "web.fetch";
+  if (hasKeys(toolArgs, ["queries", "excludeIds"])) return "memory.recall";
+  if (hasKeys(toolArgs, ["queries"])) return "skills.search";
+  if (hasKeys(toolArgs, ["command"])) return "sandbox.bash";
+  return "unknown";
+}
+
+function hasKeys(value: unknown, keys: string[]): boolean {
+  if (!value || typeof value !== "object") return false;
+  return keys.every((key) => key in value);
 }
 
 export function messageToBindings(message: BotMessage) {

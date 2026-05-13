@@ -1,9 +1,10 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { PageFrame } from "@/components/page-frame";
-import { getWebState, markAllNotificationsRead } from "@/server/actions.functions";
+import { markAllNotificationsRead } from "@/server/actions.functions";
+import { getNotificationsPageState } from "@/server/state.functions";
 
 export const Route = createFileRoute("/notifications")({
-  loader: () => getWebState({ data: {} }),
+  loader: () => getNotificationsPageState(),
   component: NotificationsPage,
 });
 

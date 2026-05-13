@@ -28,7 +28,7 @@ import { assertSupportedBunVersion } from "../../bun-version";
 import { loadBaseConfig, resolveEffectiveConfig } from "../../resolve-effective-config";
 import { RuntimeStore, type RuntimeCommandRow } from "../../runtime-store";
 import { processUserChatJob } from "../../process-user-chat-job";
-import { postToSubSession } from "../../post-sub-session";
+import { postToSubSessionAndFlush } from "../../post-sub-session";
 import { publishUserChatFailure, publishUserChatReply } from "../../user-chat-live-events";
 import { RemoteEmbedder, RemoteReranker } from "../embedding/client";
 import { SandboxCommandClient } from "../sandbox/client";
@@ -136,8 +136,8 @@ export class AgentWorkerRuntime {
       });
       return entry;
     };
-    const postSub = (input: Parameters<typeof postToSubSession>[3]) =>
-      postToSubSession(sessions, live, notify, input);
+    const postSub = (input: Parameters<typeof postToSubSessionAndFlush>[3]) =>
+      postToSubSessionAndFlush(sessions, live, notify, input, () => sessionState.flush());
     const onQueueError = (message: string, error: Error) =>
       events.emit({ type: "error", message, cause: error });
 

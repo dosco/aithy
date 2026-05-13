@@ -1,49 +1,53 @@
 import { useEffect, useState } from "react";
+import { useLiveEvent } from "@/components/live-events";
 import { getRuntimeConsole } from "@/server/console.functions";
 import type { RuntimeConsoleDto, RuntimeLogDto } from "@/server/runtime-console.dto";
 import type { JsonValue, WebLiveEvent } from "../../../src/web/live-events";
 
-export function useRuntimeConsole(initial?: RuntimeConsoleDto) {
+export interface RuntimeConsoleLimits {
+  logLimit: number;
+  commandLimit: number;
+}
+
+export function useRuntimeConsole(
+  initial?: RuntimeConsoleDto,
+  limits: RuntimeConsoleLimits = { logLimit: 120, commandLimit: 120 },
+) {
   const [state, setState] = useState<RuntimeConsoleDto>(
     initial ?? { services: [], logs: [], commands: [], queues: [] },
   );
 
   useEffect(() => {
-    if (initial) return;
-    void getRuntimeConsole({ data: {} }).then(setState);
-  }, [initial]);
+    if (initial && limits.logLimit === 120 && limits.commandLimit === 120) return;
+    void getRuntimeConsole({ data: limits }).then(setState);
+  }, [initial, limits.logLimit, limits.commandLimit]);
 
-  useEffect(() => {
-    const source = new EventSource("/api/events");
-    source.onmessage = (message) => {
-      const event = JSON.parse(message.data) as WebLiveEvent | { type: "connected" };
-      if (event.type === "log") {
-        setState((current) => ({
-          ...current,
-          logs: [liveLog(event), ...current.logs].slice(0, 120),
-        }));
-      }
-      if (event.type === "service-status") {
-        setState((current) => ({
-          ...current,
-          services: upsertBy(current.services, event.role, {
-            role: event.role,
-            state: event.state,
-            pid: event.pid,
-            detail: serializableDetail(event.detail),
-            lastSeenAt: event.lastSeenAt,
-          }),
-        }));
-      }
-      if (event.type === "queue-status") {
-        setState((current) => ({
-          ...current,
-          queues: upsertBy(current.queues, event.queue.id, event.queue),
-        }));
-      }
-    };
-    return () => source.close();
-  }, []);
+  useLiveEvent((event) => {
+    if (event.type === "log") {
+      setState((current) => ({
+        ...current,
+        logs: [liveLog(event), ...current.logs].slice(0, limits.logLimit),
+      }));
+    }
+    if (event.type === "service-status") {
+      setState((current) => ({
+        ...current,
+        services: upsertBy(current.services, event.role, {
+          role: event.role,
+          state: event.state,
+          pid: event.pid,
+          detail: serializableDetail(event.detail),
+          lastSeenAt: event.lastSeenAt,
+        }),
+      }));
+    }
+    if (event.type === "queue-status") {
+      setState((current) => ({
+        ...current,
+        queues: upsertBy(current.queues, event.queue.id, event.queue),
+      }));
+    }
+  }, [limits.logLimit]);
 
   return state;
 }

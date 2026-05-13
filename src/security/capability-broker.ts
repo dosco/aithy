@@ -12,6 +12,7 @@ const defaultLocalCapabilities = [
   "sandbox.edit",
   "sandbox.mount",
   "sandbox.getPath",
+  "web.search",
   "web.scrape",
   "memory.remember",
   "audio.input",

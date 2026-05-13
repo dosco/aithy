@@ -391,9 +391,9 @@ html[data-layout="work"] .app-chat-composer-wrap {
 }
 
 html[data-layout="work"] .app-chat-composer {
-  border-radius: 10px;
-  box-shadow: none;
-  padding: 0.35rem 0.5rem 0.35rem 0.875rem;
+  border-radius: 14px;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
+  padding: 0.4rem 0.5rem 0.4rem 0.875rem;
 }
 
 html[data-layout="work"] .app-sessions-actions {

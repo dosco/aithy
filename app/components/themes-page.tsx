@@ -11,10 +11,10 @@ import {
   themePreviews,
 } from "@/lib/themes";
 import { saveSettingsWithSetupGateRefresh } from "@/lib/setup-gate";
-import type { WebStateDto } from "@/server/dto";
+import type { ThemesPageStateDto } from "@/server/dto";
 import type { LayoutName, ThemeName } from "../../src/settings/types";
 
-export function ThemesPage({ initialState }: { initialState: WebStateDto }) {
+export function ThemesPage({ initialState }: { initialState: ThemesPageStateDto }) {
   const [theme, setTheme] = useState(initialState.settings.ui.theme);
   const [layout, setLayout] = useState(initialState.settings.ui.layout);
 

@@ -50,7 +50,9 @@ describe("agent sandbox tools", () => {
 
     expect(names).toContain("sandbox.bash");
     expect(names).toContain("sandbox.edit");
-    expect(names).toContain("web.scrape");
+    expect(names).toContain("web.search");
+    expect(names).toContain("web.fetch");
+    expect(names).not.toContain("web.scrape");
     expect(names).not.toContain("sandbox.mount");
     expect(names).not.toContain("sandbox.getPath");
   });
@@ -64,7 +66,9 @@ describe("agent sandbox tools", () => {
 
     expect(names).toContain("sandbox.mount");
     expect(names).toContain("sandbox.getPath");
-    expect(names).toContain("web.scrape");
+    expect(names).toContain("web.search");
+    expect(names).toContain("web.fetch");
+    expect(names).not.toContain("web.scrape");
   });
 
   test("getPath resolves files under mounted folders", async () => {

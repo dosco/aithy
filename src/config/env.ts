@@ -27,6 +27,8 @@ export interface AppConfig {
   sessionTtlMs: number;
   idleParkMs: number;
   parallelAgents: number;
+  parallelSearchMcpUrl: string;
+  parallelApiKey?: string;
   workspaceRoot: string;
   botId: string;
   stateDir: string;
@@ -63,6 +65,12 @@ export function loadConfig(
       env.AITHY_PARALLEL_AGENTS,
       DEFAULT_PARALLEL_AGENTS,
     ),
+    parallelSearchMcpUrl:
+      cleanString(env.AITHY_PARALLEL_SEARCH_MCP_URL)
+      ?? "https://search.parallel.ai/mcp",
+    parallelApiKey:
+      cleanString(env.AITHY_PARALLEL_API_KEY)
+      ?? cleanString(env.PARALLEL_API_KEY),
     workspaceRoot:
       env.AITHY_WORKSPACE_ROOT ?? path.join(stateDir, botId, "workspace"),
     botId,
@@ -88,6 +96,11 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function cleanString(value: string | undefined): string | undefined {
+  const trimmed = value?.trim();
+  return trimmed ? trimmed : undefined;
 }
 
 function parseBotId(value: string | undefined): string {

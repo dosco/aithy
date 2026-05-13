@@ -2,7 +2,7 @@ const packageJsonPath = "package.json";
 const bunfigPath = "bunfig.toml";
 const bunLockPath = "bun.lock";
 const alternateLocks = ["package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb"];
-const trustedDependencyAllowlist = new Set(["protobufjs", "sharp"]);
+const trustedDependencyAllowlist = new Set(["bun", "protobufjs", "sharp"]);
 const minimumReleaseAgeSeconds = 604800;
 
 const tanStackAffectedVersions: Record<string, string[]> = {

@@ -3,12 +3,14 @@ import type { ToolContext } from "../tool-context";
 import { createMemoryTools } from "./memory-tools";
 import { createMountTools } from "./mount-tools";
 import { createSandboxTools } from "./sandbox-tools";
-import { createWebScrapeTools } from "./web-scrape-tool";
+import { createWebFetchTools } from "./web-fetch-tool";
+import { createWebSearchTools } from "./web-search-tool";
 
 export function createAgentTools(ctx: ToolContext, config: AppConfig) {
   const tools = [
     ...createSandboxTools(ctx, config.sandboxProvider),
-    ...createWebScrapeTools(ctx, config),
+    ...createWebSearchTools(ctx, config),
+    ...createWebFetchTools(ctx, config),
     ...createMemoryTools(ctx),
   ];
   if (config.sandboxProvider === "microsandbox") {

@@ -19,7 +19,7 @@ export async function smartScrape(
   deps: SmartScraperDeps,
 ): Promise<SmartScrapeResult> {
   const startUrl = normalizeHttpUrl(input.url);
-  if (!startUrl) throw new Error("web.scrape url must be http:// or https://");
+  if (!startUrl) throw new Error("web.fetch url must be http:// or https://");
 
   const renderPage = deps.renderPage ?? renderPageWithWebView;
   const chooseLinks = deps.chooseLinks ?? createAxLinkChooser(requiredConfig(deps));

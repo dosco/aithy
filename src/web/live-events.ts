@@ -122,15 +122,21 @@ type Listener = (event: WebLiveEvent) => void;
 export class LiveEventHub {
   private readonly listeners = new Set<Listener>();
   private readonly setupStatuses = new Map<string, WebLiveEvent & { type: "setup-status" }>();
+  private readonly serviceStatuses = new Map<string, WebLiveEvent & { type: "service-status" }>();
+  private readonly queueStatuses = new Map<string, WebLiveEvent & { type: "queue-status" }>();
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     for (const event of this.setupStatuses.values()) listener(event);
+    for (const event of this.serviceStatuses.values()) listener(event);
+    for (const event of this.queueStatuses.values()) listener(event);
     return () => this.listeners.delete(listener);
   }
 
   publish(event: WebLiveEvent): void {
     if (event.type === "setup-status") this.rememberSetupStatus(event);
+    if (event.type === "service-status") this.serviceStatuses.set(event.role, event);
+    if (event.type === "queue-status") this.queueStatuses.set(event.queue.id, event);
     for (const listener of this.listeners) listener(event);
   }
 
@@ -205,6 +211,9 @@ function liveEventFromBotEvent(event: BotEvent): WebLiveEvent | undefined {
   }
   if (event.type === "agent.turn") {
     return activity(event.conversationId, event.summary, event.detail);
+  }
+  if (event.type === "agent.tool_call") {
+    return messageEvent(event.conversationId, event.message);
   }
   if (event.type === "agent.clarification") {
     return activity(event.conversationId, "agent requested clarification");

@@ -13,6 +13,7 @@ import type { SqliteSkillPromotionStore } from "./promote-store";
 import type { SqliteSkillsStore } from "./skills-store";
 
 const CRON_PATTERN = "0 4 * * *"; // 04:00 daily, after the memory consolidator
+type MaybePromise<T> = T | Promise<T>;
 
 interface JobData {
   triggeredAt: string;
@@ -29,7 +30,7 @@ export interface SkillPromoteQueueDeps {
     name?: string;
     source?: string;
     notify?: boolean;
-  }) => { sessionId: string; messageId: number | null };
+  }) => MaybePromise<{ sessionId: string; messageId: number | null }>;
   drafter?: SkillPromotionDrafter;
   usage?: SqliteUsageStore;
   notify: (input: {
@@ -119,7 +120,7 @@ export class SkillPromoteQueue {
           runId: pattern.signature,
         });
       }
-      const sub = this.deps.postToSubSession({
+      const sub = await this.deps.postToSubSession({
         parentSessionId: pattern.sourceSessionId,
         parentMessageId: pattern.sourceMessageId,
         text: draftMessage({

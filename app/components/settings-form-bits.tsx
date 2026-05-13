@@ -5,7 +5,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { SecretStatusDto } from "@/server/dto";
-import { AX_AI_PROVIDERS, modelsForProvider } from "../../src/agent/ai-providers";
+import {
+  AX_AI_PROVIDERS,
+  modelsForProvider,
+  providerDisplayName,
+} from "../../src/agent/ai-providers";
 
 export const fieldClass =
   "h-11 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5 text-sm outline-none transition placeholder:text-[rgb(var(--muted-foreground))] focus:border-[rgb(var(--foreground))]";
@@ -238,7 +242,11 @@ export function ProviderSelect({
   return (
     <select value={value} onChange={(event) => onChange(event.target.value)} className={selectClass}>
       {allowEmpty ? <option value="">- none -</option> : null}
-      {AX_AI_PROVIDERS.map((name) => <option key={name} value={name}>{name}</option>)}
+      {AX_AI_PROVIDERS.map((name) => (
+        <option key={name} value={name}>
+          {providerDisplayName(name)}
+        </option>
+      ))}
     </select>
   );
 }

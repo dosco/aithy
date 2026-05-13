@@ -43,11 +43,14 @@ Rules:
 
 export function createScraperAi(
   config: AppConfig,
-  factories = {
+  factories: {
+    fast: (config: AppConfig) => unknown;
+    normal: (config: AppConfig) => unknown;
+  } = {
     fast: createFastAiService,
     normal: createAiService,
   },
-): any {
+): unknown {
   return factories.fast(config) ?? factories.normal(config);
 }
 
@@ -59,7 +62,7 @@ export function createAxLinkChooser(config: AppConfig) {
   } as any);
 
   return async (input: ChooseLinksInput): Promise<LinkChoice[]> => {
-    const result = await program.forward(ai, {
+    const result = await program.forward(ai as never, {
       task: input.task,
       currentPage: formatPage(input.currentPage),
       pagesVisited: input.pagesVisited.map(formatPage).join("\n\n"),
@@ -81,7 +84,7 @@ export function createAxSynthesizer(config: AppConfig) {
   } as any);
 
   return async (input: SynthesizeInput): Promise<string> => {
-    const result = await program.forward(ai, {
+    const result = await program.forward(ai as never, {
       task: input.task,
       pages: formatPagesForSynthesis(input.pagesVisited, input.sources),
     });

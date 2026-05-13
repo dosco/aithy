@@ -2,10 +2,6 @@ import { useState } from "react";
 import { useRouter } from "@tanstack/react-router";
 import { ArrowRight } from "lucide-react";
 import {
-  ProfilePhotoInput,
-  type PhotoUploadPayload,
-} from "@/components/profile-photo-input";
-import {
   ApiKeyInput,
   Field,
   ModelCombobox,
@@ -14,8 +10,8 @@ import {
 import { ThemeSync } from "@/components/theme-sync";
 import { Button } from "@/components/ui/button";
 import { saveSettingsWithSetupGateRefresh, setCachedSetupGateState } from "@/lib/setup-gate";
-import { saveProfile, saveProfileImage } from "@/server/profile.functions";
-import type { ProfileImageDto, WebStateDto } from "@/server/dto";
+import { saveProfile } from "@/server/profile.functions";
+import type { SetupPageStateDto } from "@/server/dto";
 import { defaultModelForProvider } from "../../src/agent/ai-providers";
 
 const SETUP_SAVE_TIMEOUT_MS = 45_000;
@@ -32,7 +28,7 @@ const ASCII_LOGO = `      ..:::::..
 export function SetupPage({
   initialState,
 }: {
-  initialState: WebStateDto;
+  initialState: SetupPageStateDto;
 }) {
   const router = useRouter();
   const initialProvider = initialState.config.aiProvider || "openai";
@@ -43,13 +39,9 @@ export function SetupPage({
   const [apiKey, setApiKey] = useState("");
   const [userName, setUserName] = useState(initialState.profile.userName);
   const [userLocation, setUserLocation] = useState(initialState.profile.userLocation);
-  const [userPhoto, setUserPhoto] = useState<ProfileImageDto | null>(initialState.profile.userPhoto);
-  const [pendingUserPhoto, setPendingUserPhoto] = useState<PhotoUploadPayload | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
-  const profileImagesSupported =
-    initialState.runtimeCapabilities.profileImages;
 
   const needsModel = !initialState.aiConfigured;
   const needsKey = provider !== "ollama";
@@ -73,13 +65,6 @@ export function SetupPage({
         }),
         "Saving profile",
       );
-      if (profileImagesSupported && pendingUserPhoto) {
-        setSaveStatus("Saving profile photo...");
-        await withSetupTimeout(
-          saveProfileImage({ data: { kind: "user", ...pendingUserPhoto } }),
-          "Saving profile photo",
-        );
-      }
       let aiConfigured = initialState.aiConfigured;
       if (needsModel) {
         setSaveStatus("Checking model settings...");
@@ -154,7 +139,8 @@ export function SetupPage({
               placeholder="City, region, or timezone"
             />
           </Field>
-          {profileImagesSupported ? (
+          {/*
+          Profile image UI intentionally hidden until launch.
             <ProfilePhotoInput
               label="Your photo"
               image={userPhoto}
@@ -164,7 +150,7 @@ export function SetupPage({
                 setUserPhoto(previewImage(payload));
               }}
             />
-          ) : null}
+          */}
         </div>
 
         {needsModel ? (
@@ -219,16 +205,6 @@ export function SetupPage({
       </p>
     </section>
   );
-}
-
-function previewImage(payload: PhotoUploadPayload): ProfileImageDto {
-  return {
-    mimeType: payload.mimeType,
-    width: 0,
-    height: 0,
-    updatedAt: "",
-    dataUrl: `data:${payload.mimeType};base64,${payload.base64}`,
-  };
 }
 
 function initials(value: string, fallback: string): string {

@@ -29,7 +29,7 @@ type TimelineEntry =
   | { kind: "user"; key: string; content: string }
   | { kind: "assistant"; key: string; content: string; usage?: Usage }
   | { kind: "thought"; key: string; content: string }
-  | { kind: "tool"; key: string; toolName: string; toolArgs: unknown; usage?: Usage }
+  | { kind: "tool"; key: string; toolName: string; toolArgs: unknown; toolResult?: unknown; usage?: Usage }
   | { kind: "sub-session"; key: string; session: SessionSummaryDto }
   | { kind: "activity"; key: string; label: string }
   | { kind: "typing"; key: string };
@@ -211,8 +211,9 @@ function buildTimeline(
         entry: {
           kind: "tool",
           key: baseKey,
-          toolName: message.toolName,
+          toolName: displayToolName(message.toolName, message.toolArgs),
           toolArgs: message.toolArgs,
+          toolResult: message.toolResult,
           usage: message.usage,
         },
       });
@@ -350,6 +351,14 @@ function TimelineItem({
         <div className="overflow-x-auto whitespace-pre-wrap break-all">
           {JSON.stringify(item.toolArgs, null, 2)}
         </div>
+        {item.toolResult === undefined ? null : (
+          <>
+            <div className="mb-1 mt-3 font-sans text-[10px] uppercase tracking-[0.2em]">result</div>
+            <div className="overflow-x-auto whitespace-pre-wrap break-all">
+              {JSON.stringify(item.toolResult, null, 2)}
+            </div>
+          </>
+        )}
         {item.usage ? <UsageLine usage={item.usage} /> : null}
       </motion.div>
     );
@@ -429,6 +438,21 @@ function UsageLine({ usage }: { usage: Usage }) {
       <span>· {usage.total} total</span>
     </div>
   );
+}
+
+function displayToolName(toolName: string | undefined, toolArgs: unknown): string {
+  if (toolName?.trim()) return toolName;
+  if (hasKeys(toolArgs, ["query", "task"])) return "web.search";
+  if (hasKeys(toolArgs, ["url"])) return "web.fetch";
+  if (hasKeys(toolArgs, ["queries", "excludeIds"])) return "memory.recall";
+  if (hasKeys(toolArgs, ["queries"])) return "skills.search";
+  if (hasKeys(toolArgs, ["command"])) return "sandbox.bash";
+  return "unknown";
+}
+
+function hasKeys(value: unknown, keys: string[]): boolean {
+  if (!value || typeof value !== "object") return false;
+  return keys.every((key) => key in value);
 }
 
 function currentViewport(): { scrollY: number; height: number } {

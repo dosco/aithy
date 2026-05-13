@@ -25,6 +25,7 @@ type CommandHandler = (command: RuntimeCommandRow) => Promise<unknown>;
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
+  timer: Timer;
 }
 
 export class QueueServiceClient {
@@ -32,21 +33,49 @@ export class QueueServiceClient {
   private readonly eventListeners = new Set<EventListener>();
   private readonly serviceCache = new Map<RuntimeServiceRole, RuntimeServiceStatus>();
   private commandHandler?: CommandHandler;
+  private closedError?: Error;
 
   private constructor(
     private readonly socket: WebSocket,
     public readonly role: RuntimeServiceRole,
+    private readonly requestTimeoutMs: number,
   ) {}
 
-  static async connect(input: { url: string; role: RuntimeServiceRole }): Promise<QueueServiceClient> {
+  static async connect(input: {
+    url: string;
+    role: RuntimeServiceRole;
+    requestTimeoutMs?: number;
+    connectTimeoutMs?: number;
+  }): Promise<QueueServiceClient> {
     const socket = new WebSocket(input.url);
-    const client = new QueueServiceClient(socket, input.role);
+    const client = new QueueServiceClient(socket, input.role, input.requestTimeoutMs ?? 5_000);
+    let opened = false;
     await new Promise<void>((resolve, reject) => {
-      socket.onopen = () => resolve();
-      socket.onerror = () => reject(new Error("Failed to connect to queue-service"));
+      let settled = false;
+      const fail = (error: Error) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        socket.close();
+        reject(error);
+      };
+      const timer = setTimeout(() => fail(new Error("Timed out connecting to queue-service")), input.connectTimeoutMs ?? 10_000);
+      timer.unref();
+      socket.onopen = () => {
+        if (settled) return;
+        settled = true;
+        opened = true;
+        clearTimeout(timer);
+        resolve();
+      };
+      socket.onerror = () => {
+        const error = new Error("Failed to connect to queue-service");
+        if (opened) client.markClosed(error);
+        else fail(error);
+      };
     });
     socket.onmessage = (message) => void client.receive(message.data);
-    socket.onclose = () => client.rejectAll("queue-service connection closed");
+    socket.onclose = () => client.markClosed(new Error("queue-service connection closed"));
     client.send({ type: "hello", role: input.role, pid: process.pid, instanceId: crypto.randomUUID() });
     return client;
   }
@@ -75,7 +104,7 @@ export class QueueServiceClient {
       kind,
       payload,
       timeoutMs,
-    }) as CommandCompletion<T>;
+    }, (timeoutMs ?? 60_000) + 5_000) as CommandCompletion<T>;
     if (!completion.ok) throw new RuntimeCommandError(completion.error, { commandId: "", targetRole });
     return completion.result;
   }
@@ -178,11 +207,26 @@ export class QueueServiceClient {
     return this.request("session.lastMessageId", { conversationId }) as Promise<number | null>;
   }
 
-  private request(method: RuntimeBusMethod, params: unknown): Promise<unknown> {
+  private request(method: RuntimeBusMethod, params: unknown, timeoutMs = this.requestTimeoutMs): Promise<unknown> {
+    if (this.closedError) return Promise.reject(this.closedError);
+    if (this.socket.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new Error("queue-service connection is not open"));
+    }
     const id = crypto.randomUUID();
-    this.send({ id, type: "request", method, params } as RuntimeBusClientFrame);
     return new Promise((resolve, reject) => {
-      this.pending.set(id, { resolve, reject });
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`queue-service request timed out: ${method}`));
+      }, timeoutMs);
+      timer.unref();
+      this.pending.set(id, { resolve, reject, timer });
+      try {
+        this.send({ id, type: "request", method, params } as RuntimeBusClientFrame);
+      } catch (error) {
+        clearTimeout(timer);
+        this.pending.delete(id);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
     });
   }
 
@@ -206,6 +250,7 @@ export class QueueServiceClient {
     const pending = this.pending.get(frame.id);
     if (!pending) return;
     this.pending.delete(frame.id);
+    clearTimeout(pending.timer);
     if (frame.ok) pending.resolve(frame.result);
     else pending.reject(new Error(frame.error));
   }
@@ -227,10 +272,16 @@ export class QueueServiceClient {
     if (event.type === "service-status") this.serviceCache.set(event.role, reviveService(event));
   }
 
-  private rejectAll(message: string): void {
+  private markClosed(error: Error): void {
+    this.closedError = error;
+    this.rejectAll(error);
+  }
+
+  private rejectAll(error: Error): void {
     for (const [id, pending] of this.pending) {
       this.pending.delete(id);
-      pending.reject(new Error(message));
+      clearTimeout(pending.timer);
+      pending.reject(error);
     }
   }
 

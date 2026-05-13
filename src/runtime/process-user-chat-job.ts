@@ -61,6 +61,7 @@ export async function processUserChatJob(
     activeRuns: runtime.activeRuns,
     capabilities: runtime.capabilities,
     notify: (input) => runtime.notify(input),
+    flushSessionState: runtime.flushSessionState ? () => runtime.flushSessionState?.() ?? Promise.resolve() : undefined,
     skills,
     userMessagePersisted: true,
     skillsSearch: (queries) =>

@@ -1,6 +1,4 @@
-import { existsSync } from "node:fs";
 import { mkdir } from "node:fs/promises";
-import { createRequire } from "node:module";
 import path from "node:path";
 import { NetworkPolicy, Sandbox } from "microsandbox";
 import {
@@ -18,6 +16,16 @@ import {
   type SetupStatusInput,
 } from "../setup/status";
 import { trimOutput } from "./command";
+import {
+  applyBundledRuntime,
+  formatError,
+  formatMicrosandboxStartError,
+  stopSandbox,
+  type MicrosandboxBuilder,
+  type MicrosandboxFactory,
+  type MicrosandboxFs,
+  type MicrosandboxInstance,
+} from "./microsandbox-sdk";
 import { sandboxNameFor } from "./sandbox-name";
 import type {
   SandboxBashRequest,
@@ -34,14 +42,14 @@ export interface MicrosandboxOptions {
   cpus: number;
   memoryMb: number;
   network: "none" | "public" | "allow-all";
-  sandboxFactory?: typeof Sandbox;
+  sandboxFactory?: MicrosandboxFactory;
   onStatus?: (status: SetupStatusInput) => void;
 }
 
 type SandboxState = "live" | "parked";
 
 interface SandboxEntry {
-  sandbox: any;
+  sandbox: MicrosandboxInstance | null;
   hostWorkspacePath: string;
   mounts: SessionMount[];
   state: SandboxState;
@@ -72,7 +80,7 @@ export class MicrosandboxProvider implements SandboxProvider {
     const existing = this.sandboxes.get(sessionId);
     if (existing) {
       this.sandboxes.delete(sessionId);
-      if (existing.state === "live") await stopSandbox(existing.sandbox);
+      if (existing.state === "live" && existing.sandbox) await stopSandbox(existing.sandbox);
     }
     await ensureHostWorkspace(hostWorkspacePath);
     const sandbox = await this.createSandbox(sessionId, hostWorkspacePath, mounts);
@@ -123,8 +131,9 @@ export class MicrosandboxProvider implements SandboxProvider {
     const entry = this.sandboxes.get(sessionId);
     if (!entry || entry.state === "parked") return;
     // Stop the VM but keep the database record + host volumes so resume() can rebuild it.
-    if (typeof entry.sandbox.stopAndWait === "function") await entry.sandbox.stopAndWait();
-    else if (typeof entry.sandbox.stop === "function") await entry.sandbox.stop();
+    const sandbox = this.getLiveSandbox(sessionId);
+    if (typeof sandbox.stopAndWait === "function") await sandbox.stopAndWait();
+    else if (typeof sandbox.stop === "function") await sandbox.stop();
     entry.state = "parked";
     entry.sandbox = null;
   }
@@ -133,15 +142,15 @@ export class MicrosandboxProvider implements SandboxProvider {
     const entry = this.sandboxes.get(sessionId);
     if (!entry) throw new Error(`Microsandbox session not found: ${sessionId}`);
     if (entry.state === "live" && entry.sandbox) return;
-    const factory = this.options.sandboxFactory ?? Sandbox;
-    if (typeof (factory as any)?.get !== "function") {
+    const factory = this.factory();
+    if (typeof factory.get !== "function") {
       // SDK does not expose Sandbox.get — rebuild from scratch using the same builder pipeline.
       entry.sandbox = await this.createSandbox(sessionId, entry.hostWorkspacePath, entry.mounts);
       entry.state = "live";
       return;
     }
     try {
-      const handle = await (factory as any).get(sessionId);
+      const handle = await factory.get(sessionId);
       entry.sandbox = await handle.startDetached();
     } catch {
       // No persisted record (or it was lost) — build a fresh VM with the same configuration.
@@ -158,9 +167,9 @@ export class MicrosandboxProvider implements SandboxProvider {
       await stopSandbox(entry.sandbox);
     } else {
       // Parked: VM is already stopped; remove the persisted DB record so the name is reusable.
-      const factory = this.options.sandboxFactory ?? Sandbox;
-      if (typeof (factory as any)?.remove === "function") {
-        await (factory as any).remove(sessionId).catch(() => undefined);
+      const factory = this.factory();
+      if (typeof factory.remove === "function") {
+        await factory.remove(sessionId).catch(() => undefined);
       }
     }
   }
@@ -177,17 +186,17 @@ export class MicrosandboxProvider implements SandboxProvider {
     name: string,
     hostWorkspacePath: string,
     mounts: SessionMount[]
-  ): Promise<any> {
-    const factory = this.options.sandboxFactory ?? Sandbox;
+  ): Promise<MicrosandboxInstance> {
+    const factory = this.factory();
     if (!factory?.builder) throw new Error("Microsandbox SDK does not expose Sandbox.builder(...). Install a local no-key microsandbox package.");
 
     try {
       let builder = factory.builder(name).image(this.options.image).cpus(this.options.cpus).memory(this.options.memoryMb).replace();
       builder = applyBundledRuntime(builder);
       builder = applyNetwork(builder, this.options.network);
-      builder = builder.volume("/workspace", (v: any) => v.bind(hostWorkspacePath));
+      builder = builder.volume("/workspace", (v) => v.bind(hostWorkspacePath));
       for (const mount of mounts) {
-        builder = builder.volume(`/mounts/${mount.mountName}`, (v: any) => v.bind(mount.hostPath));
+        builder = builder.volume(`/mounts/${mount.mountName}`, (v) => v.bind(mount.hostPath));
       }
       return await this.createFromBuilder(builder);
     } catch (error) {
@@ -197,7 +206,7 @@ export class MicrosandboxProvider implements SandboxProvider {
     }
   }
 
-  private async createFromBuilder(builder: any): Promise<any> {
+  private async createFromBuilder(builder: MicrosandboxBuilder): Promise<MicrosandboxInstance> {
     this.options.onStatus?.(activeStatus("sandbox", `starting sandbox image ${this.options.image}`));
     if (typeof builder.createWithPullProgress !== "function") {
       return builder.create();
@@ -223,7 +232,7 @@ export class MicrosandboxProvider implements SandboxProvider {
   }
 
   private async execWithTimeout(sessionId: string, cmd: string, args: string[], timeoutMs: number) {
-    const sandbox = this.getEntry(sessionId).sandbox;
+    const sandbox = this.getLiveSandbox(sessionId);
     let didTimeOut = false;
     const timeout = new Promise<never>((_, reject) => {
       setTimeout(() => {
@@ -246,8 +255,8 @@ export class MicrosandboxProvider implements SandboxProvider {
     if (result.exitCode !== 0) throw new Error(result.stderr || `Failed to create ${sandboxPath}`);
   }
 
-  private fs(sessionId: string): any {
-    return this.getEntry(sessionId).sandbox.fs();
+  private fs(sessionId: string): MicrosandboxFs {
+    return this.getLiveSandbox(sessionId).fs();
   }
 
   private getEntry(sessionId: string): SandboxEntry {
@@ -255,65 +264,26 @@ export class MicrosandboxProvider implements SandboxProvider {
     if (!entry) throw new Error(`Microsandbox session not found: ${sessionId}`);
     return entry;
   }
+
+  private getLiveSandbox(sessionId: string): MicrosandboxInstance {
+    const entry = this.getEntry(sessionId);
+    if (!entry.sandbox) throw new Error(`Microsandbox session is not live: ${sessionId}`);
+    return entry.sandbox;
+  }
+
+  private factory(): MicrosandboxFactory {
+    return (this.options.sandboxFactory ?? Sandbox) as MicrosandboxFactory;
+  }
 }
 
 async function ensureHostWorkspace(hostWorkspacePath: string): Promise<void> {
   await mkdir(hostWorkspacePath, { recursive: true });
 }
 
-function applyNetwork(builder: any, network: MicrosandboxOptions["network"]) {
-  if (network === "none") return builder.network((n: any) => n.policy(NetworkPolicy.none()));
-  if (network === "allow-all") return builder.network((n: any) => n.policy(NetworkPolicy.allowAll()));
-  return builder.network((n: any) => n.policy(NetworkPolicy.publicOnly()));
-}
-
-function applyBundledRuntime(builder: any) {
-  if (typeof builder.libkrunfwPath !== "function") return builder;
-  const libkrunfwPath = resolveBundledLibkrunfwPath();
-  return libkrunfwPath ? builder.libkrunfwPath(libkrunfwPath) : builder;
-}
-
-async function stopSandbox(sandbox: any): Promise<void> {
-  if (typeof sandbox.stopAndWait === "function") await sandbox.stopAndWait();
-  else if (typeof sandbox.stop === "function") await sandbox.stop();
-  if (typeof sandbox.removePersisted === "function") await sandbox.removePersisted();
-}
-
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function formatMicrosandboxStartError(error: unknown): string {
-  const message = formatError(error);
-  if (message.includes("libkrunfw not found")) {
-    return `${message}. The bundled Microsandbox platform package was installed, but the runtime did not find libkrunfw. Try \`bun node_modules/.bin/microsandbox self install\` once, or set MSB_PATH/libkrunfwPath to a working Microsandbox runtime.`;
-  }
-  if (message.includes("Operation not permitted")) {
-    return `${message}. Microsandbox could not start a microVM with the current host permissions. On macOS this usually means the terminal/app needs virtualization permission or the process is running inside a restricted sandbox; on Linux check KVM access.`;
-  }
-  return message;
-}
-
-function resolveBundledLibkrunfwPath(): string | undefined {
-  const triple = platformTriple();
-  if (!triple) return undefined;
-  try {
-    const require = createRequire(import.meta.url);
-    const packagePath = require.resolve(`@superradcompany/microsandbox-${triple}/package.json`);
-    const root = path.dirname(packagePath);
-    const name = process.platform === "darwin" ? "libkrunfw.5.dylib" : "libkrunfw.so";
-    const candidate = path.join(root, "lib", name);
-    return existsSync(candidate) ? candidate : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function platformTriple(): string | undefined {
-  if (process.platform === "darwin" && process.arch === "arm64") return "darwin-arm64";
-  if (process.platform === "linux" && process.arch === "x64") return "linux-x64-gnu";
-  if (process.platform === "linux" && process.arch === "arm64") return "linux-arm64-gnu";
-  return undefined;
+function applyNetwork(builder: MicrosandboxBuilder, network: MicrosandboxOptions["network"]) {
+  if (network === "none") return builder.network((n) => n.policy(NetworkPolicy.none()));
+  if (network === "allow-all") return builder.network((n) => n.policy(NetworkPolicy.allowAll()));
+  return builder.network((n) => n.policy(NetworkPolicy.publicOnly()));
 }
 
 function toWorkspacePath(sandboxPath: string): string {

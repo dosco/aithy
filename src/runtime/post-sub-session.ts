@@ -50,3 +50,18 @@ export function postToSubSession(
     messageId: sessions.lastMessageId(sub.conversationId),
   };
 }
+
+export async function postToSubSessionAndFlush(
+  sessions: SessionManager,
+  live: LiveEventHub,
+  notify: (input: NotificationCreate) => NotificationEntry,
+  input: PostToSubSessionInput,
+  flushSessionState?: () => Promise<void>,
+): Promise<{ sessionId: string; messageId: number | null }> {
+  const result = postToSubSession(sessions, live, notify, input);
+  await flushSessionState?.();
+  return {
+    sessionId: result.sessionId,
+    messageId: sessions.lastMessageId(result.sessionId),
+  };
+}

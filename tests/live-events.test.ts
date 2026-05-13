@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import { createLiveEventBus } from "../app/components/live-events";
 import { LiveEventHub, userMessageEvent } from "../src/web/live-events";
 
 describe("web live events", () => {
@@ -62,6 +63,39 @@ describe("web live events", () => {
     ]);
   });
 
+  test("converts agent tool calls to live message events", () => {
+    const hub = new LiveEventHub();
+    const received: unknown[] = [];
+    const unsubscribe = hub.subscribe((event) => received.push(event));
+
+    hub.publishBotEvent({
+      type: "agent.tool_call",
+      conversationId: "conversation",
+      message: {
+        role: "assistant",
+        kind: "tool_call",
+        toolName: "sandbox.bash",
+        toolArgs: { command: "pwd" },
+        toolResult: { ok: true, value: "/workspace" },
+        createdAt: "2026-04-30T00:00:00.000Z",
+      },
+    });
+    unsubscribe();
+
+    expect(received).toEqual([
+      expect.objectContaining({
+        type: "message",
+        conversationId: "conversation",
+        message: expect.objectContaining({
+          kind: "tool_call",
+          toolName: "sandbox.bash",
+          toolArgs: { command: "pwd" },
+          toolResult: { ok: true, value: "/workspace" },
+        }),
+      }),
+    ]);
+  });
+
   test("replays active setup statuses to late subscribers", () => {
     const hub = new LiveEventHub();
     hub.publishBotEvent({
@@ -86,5 +120,58 @@ describe("web live events", () => {
         progress: 0.25,
       }),
     ]);
+  });
+
+  test("replays latest service and queue statuses to late subscribers", () => {
+    const hub = new LiveEventHub();
+    hub.publish({
+      type: "service-status",
+      id: "svc-1",
+      createdAt: "2026-05-13T00:00:00.000Z",
+      role: "agent-worker",
+      state: "ready",
+      pid: 123,
+      detail: { parallelAgents: 3 },
+      lastSeenAt: "2026-05-13T00:00:00.000Z",
+    });
+    hub.publish({
+      type: "queue-status",
+      id: "queue-1",
+      createdAt: "2026-05-13T00:00:01.000Z",
+      queue: {
+        id: "agent.chat",
+        ownerRole: "queue-service",
+        state: "idle",
+        depth: 0,
+        activeCount: 0,
+        dependencyRoles: ["sandbox-worker"],
+        updatedAt: "2026-05-13T00:00:01.000Z",
+      },
+    });
+
+    const received: unknown[] = [];
+    const unsubscribe = hub.subscribe((event) => received.push(event));
+    unsubscribe();
+
+    expect(received).toEqual([
+      expect.objectContaining({ type: "service-status", role: "agent-worker", state: "ready" }),
+      expect.objectContaining({ type: "queue-status", queue: expect.objectContaining({ id: "agent.chat" }) }),
+    ]);
+  });
+
+  test("client live event bus fans one event out to multiple subscribers", () => {
+    const bus = createLiveEventBus();
+    const first: unknown[] = [];
+    const second: unknown[] = [];
+    const unsubscribeFirst = bus.subscribe((event) => first.push(event));
+    bus.subscribe((event) => second.push(event));
+
+    bus.publish({ type: "connected", createdAt: "2026-05-13T00:00:00.000Z" });
+    unsubscribeFirst();
+    bus.publish(userMessageEvent("conversation", "only second sees this"));
+
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(2);
+    expect(bus.listenerCount()).toBe(1);
   });
 });

@@ -112,7 +112,7 @@ export async function backfillEmbeddings(
     await new Promise((r) => setTimeout(r, 0));
   }
 
-  if (done > 0 || skipped > 0) {
+  if (done > 0) {
     log(`memory: backfill done=${done} skipped=${skipped}`);
   }
   return { done, skipped, indexed };

@@ -245,6 +245,7 @@ export class QueueServiceRuntime {
     detail?: unknown,
     pid: number | null = null,
   ): void {
+    const previous = this.services.get(role);
     const status = {
       role,
       state,
@@ -253,7 +254,8 @@ export class QueueServiceRuntime {
       lastSeenAt: new Date().toISOString(),
     };
     this.services.set(role, status);
-    this.runtimeStore.heartbeat(role, state, detail);
+    this.runtimeStore.heartbeat(role, state, detail, { emitEvent: false, pid });
+    if (previous && sameServiceStatus(previous, status)) return;
     this.publish({
       type: "service-status",
       id: crypto.randomUUID(),
@@ -348,6 +350,13 @@ export class QueueServiceRuntime {
     if (ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify(frame));
   }
+}
+
+function sameServiceStatus(a: RuntimeServiceStatus, b: RuntimeServiceStatus): boolean {
+  return a.role === b.role
+    && a.state === b.state
+    && a.pid === b.pid
+    && JSON.stringify(a.detail ?? null) === JSON.stringify(b.detail ?? null);
 }
 
 function reviveLogicalInput(input: unknown): Parameters<QueueSessionCache["ensure"]>[0] {

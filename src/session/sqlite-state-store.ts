@@ -19,6 +19,7 @@ import {
   summaryFromRow,
 } from "./sqlite-session-helpers";
 import { applySqliteMigrations } from "../sqlite/migrations";
+import { migrateSessionMountsToGlobal } from "./sqlite-session-legacy-migrations";
 
 interface MessageRowWithId extends MessageRow {
   id: number;
@@ -35,7 +36,7 @@ export class SqliteSessionStateStore implements SessionStateStore {
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA synchronous = NORMAL;");
     this.migrate();
-    this.migrateSessionMountsToGlobal();
+    migrateSessionMountsToGlobal(this.db);
   }
 
   ensureSession(input: LogicalSessionInput): void {
@@ -235,75 +236,6 @@ export class SqliteSessionStateStore implements SessionStateStore {
     applySqliteMigrations(this.db, "session", sessionMigrations);
   }
 
-  /**
-   * One-time migration: lift any rows from the legacy `session_mounts` table
-   * (per-conversation mount state) into the unified `web.settings.globalMounts`
-   * list, then drop the table. Idempotent — once the table is gone, this is a
-   * no-op forever.
-   */
-  private migrateSessionMountsToGlobal(): void {
-    const tableRow = this.db.query(`
-      SELECT name FROM sqlite_master
-      WHERE type = 'table' AND name = 'session_mounts'
-    `).get() as { name: string } | undefined;
-    if (!tableRow) return;
-
-    const rows = this.db.query(`
-      SELECT DISTINCT host_path FROM session_mounts ORDER BY host_path
-    `).all() as Array<{ host_path: string }>;
-
-    if (rows.length > 0) {
-      // Metadata table is owned by SqliteSettingsStore; in normal startup it
-      // exists by the time we get here, but in test/CLI flows it may not.
-      // Create a compatible shape if missing so the migration is self-contained.
-      this.db.exec(`
-        CREATE TABLE IF NOT EXISTS metadata (
-          key TEXT PRIMARY KEY,
-          value TEXT NOT NULL,
-          hash TEXT
-        );
-      `);
-      const settingsRow = this.db.query(`
-        SELECT value FROM metadata WHERE key = 'web.settings'
-      `).get() as { value: string } | undefined;
-
-      // If existing settings JSON is corrupt, skip the data migration rather
-      // than overwriting and clobbering the user's other settings. We still
-      // drop the legacy table below — losing per-session mounts is preferable
-      // to wiping the rest of the settings object.
-      const parsed = settingsRow ? tryParseJson(settingsRow.value) : { ok: true, value: {} as Record<string, unknown> };
-      if (parsed.ok) {
-        const settings = parsed.value;
-        const runtime = (settings.runtime ??= {}) as Record<string, unknown>;
-        const existing = Array.isArray(runtime.globalMounts)
-          ? (runtime.globalMounts as Array<{ hostPath: string }>)
-          : [];
-        const seen = new Set(existing.map((m) => m.hostPath));
-        for (const r of rows) {
-          if (!seen.has(r.host_path)) {
-            existing.push({ hostPath: r.host_path });
-            seen.add(r.host_path);
-          }
-        }
-        runtime.globalMounts = existing;
-        settings.updatedAt = new Date().toISOString();
-
-        this.db.query(`
-          INSERT INTO metadata (key, value, hash)
-          VALUES ('web.settings', $value, NULL)
-          ON CONFLICT(key) DO UPDATE SET value = excluded.value
-        `).run({ $value: JSON.stringify(settings) });
-      } else {
-        console.warn(
-          "[session-state-store] web.settings JSON unparseable; dropping session_mounts without migrating data",
-        );
-      }
-    }
-
-    this.db.exec("DROP INDEX IF EXISTS session_mounts_session_idx;");
-    this.db.exec("DROP TABLE IF EXISTS session_mounts;");
-  }
-
   private sessionRow(conversationId: string): SessionRow | undefined {
     return this.db.query(`
       SELECT * FROM sessions WHERE id = $id
@@ -328,19 +260,5 @@ export class SqliteSessionStateStore implements SessionStateStore {
 
   close(): void {
     this.db.close();
-  }
-}
-
-function tryParseJson(
-  value: string,
-): { ok: true; value: Record<string, unknown> } | { ok: false } {
-  try {
-    const parsed = JSON.parse(value);
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return { ok: true, value: parsed as Record<string, unknown> };
-    }
-    return { ok: false };
-  } catch {
-    return { ok: false };
   }
 }

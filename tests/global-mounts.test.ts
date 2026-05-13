@@ -23,6 +23,7 @@ function configFixture(globalMounts: AppConfig["globalMounts"] = []): AppConfig 
     sessionTtlMs: 1,
     idleParkMs: 1,
     parallelAgents: 1,
+    parallelSearchMcpUrl: "https://search.parallel.ai/mcp",
     workspaceRoot: "/tmp",
     botId: "default",
     stateDir: "/tmp",

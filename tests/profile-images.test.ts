@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   assertProfileImageInput,
-  hasNativeBunImage,
   profileImageMimeType,
   profileImageSize,
   resizeProfileImage,
@@ -16,8 +15,7 @@ describe("profile image processing", () => {
     expect(() => assertProfileImageInput("image/png", 9 * 1024 * 1024)).toThrow("8 MB or smaller");
   });
 
-  const nativeImageTest = hasNativeBunImage() ? test : test.skip;
-  nativeImageTest("resizes accepted images to WebP avatars", async () => {
+  test("resizes accepted images to WebP avatars", async () => {
     const result = await resizeProfileImage(tinyPng(), "image/png");
     expect(result.mimeType).toBe(profileImageMimeType);
     expect(result.width).toBe(profileImageSize);

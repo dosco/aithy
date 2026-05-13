@@ -3,7 +3,7 @@ import { PageFrame } from "@/components/page-frame";
 import { ThemeSync } from "@/components/theme-sync";
 import { cn } from "@/lib/utils";
 import { getUsageStats } from "@/server/actions.functions";
-import type { UsageBucketDto, UsageTotalsDto, WebStateDto } from "@/server/dto";
+import type { UsageBucketDto, UsagePageStateDto, UsageTotalsDto } from "@/server/dto";
 
 const PURPOSE_TINT: Record<string, string> = {
   chat: "fill-sky-500",
@@ -27,7 +27,7 @@ const TOKEN_SEGMENTS = [
   { key: "thought", label: "thinking", className: "bg-violet-500" },
 ] as const;
 
-export function UsagePage({ initialState }: { initialState: WebStateDto }) {
+export function UsagePage({ initialState }: { initialState: UsagePageStateDto }) {
   const [days, setDays] = useState<7 | 14 | 30>(30);
   const [buckets, setBuckets] = useState<UsageBucketDto[]>([]);
   const [totals, setTotals] = useState<UsageTotalsDto>({

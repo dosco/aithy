@@ -1,11 +1,11 @@
-import { DEFAULT_IDLE_PARK_MS, DEFAULT_SESSION_TTL_MS, MAX_CONVERSATION_HISTORY_MESSAGES } from "../config/limits";
+import { DEFAULT_SESSION_TTL_MS } from "../config/limits";
 import type { ActiveRunRegistry } from "../agent/active-runs";
 import type { GlobalMount } from "../config/env";
 import type { EventBus } from "../events/bus";
 import type { SandboxProvider, SessionMount } from "../sandbox/provider";
-import { defaultSessionName, generateSessionName, sessionIdFromName } from "./session-names";
+import { sessionIdFromName } from "./session-names";
 import { deleteEverySession, deleteSessionTree } from "./delete-sessions";
-import { computeMountName, summaryFromSession } from "./session-summary";
+import { computeMountName } from "./session-summary";
 export { computeMountName } from "./session-summary";
 import {
   mountsForSandbox as globalMountsForSandbox,
@@ -13,12 +13,22 @@ import {
   scheduleMountsRefresh,
   type AddGlobalMountResult,
 } from "./global-mounts";
+import { SandboxLifecycle } from "./sandbox-lifecycle";
 import type { MessagePage, SessionStateStore } from "./state-store";
-import type { BotMessage, BotSession, BotSessionSummary, SessionNameSource, SessionTokenTotals } from "./types";
-
-const ZERO_TOKENS: SessionTokenTotals = { input: 0, output: 0, thought: 0, total: 0 };
-
-type SandboxState = "idle" | "starting" | "live" | "parking" | "parked" | "resuming";
+import {
+  appendSessionMessages,
+  createLiveSession,
+  ensureLogicalSessionRecord,
+  getSummaryRecord,
+  getTranscriptRecord,
+  listSessionRecords,
+  messagesPageRecord,
+  renameSessionRecord,
+  touchLiveSession,
+  ZERO_TOKENS,
+  type SessionRecordContext,
+} from "./session-records";
+import type { BotMessage, BotSession, BotSessionSummary, SessionNameSource } from "./types";
 
 export class SessionManager {
   private readonly sessions = new Map<string, BotSession>();
@@ -26,11 +36,8 @@ export class SessionManager {
   private readonly source: string;
   private readonly botId: string;
   private readonly workspaceRoot: string;
+  private readonly sandboxLifecycle: SandboxLifecycle;
   private globalMounts: GlobalMount[] = [];
-
-  private sandboxState: SandboxState = "idle";
-  private sandboxId: string | null = null;
-  private sandboxReady: Promise<void> | null = null;
 
   constructor(
     private readonly options: {
@@ -45,103 +52,39 @@ export class SessionManager {
       activeRuns?: ActiveRunRegistry;
       persistGlobalMounts?: (mounts: GlobalMount[]) => void;
       globalMounts?: GlobalMount[];
-    }
+    },
   ) {
     this.source = options.source ?? "unknown";
     this.botId = options.botId;
     this.workspaceRoot = options.workspaceRoot;
     this.globalMounts = options.globalMounts ?? [];
+    this.sandboxLifecycle = new SandboxLifecycle({
+      sandbox: options.sandbox,
+      botId: this.botId,
+      workspaceRoot: this.workspaceRoot,
+      events: options.events,
+      sessions: this.sessions,
+      idleParkMs: options.idleParkMs,
+      mountsForSandbox: () => this.mountsForSandbox(),
+    });
   }
 
   async ensureBotSandbox(): Promise<void> {
-    if (this.sandboxState === "live" && this.sandboxId) return;
-    if (this.sandboxReady) return this.sandboxReady;
-    this.sandboxReady = this.bringSandboxLive().finally(() => {
-      this.sandboxReady = null;
-    });
-    return this.sandboxReady;
-  }
-
-  private async bringSandboxLive(): Promise<void> {
-    if (this.sandboxState === "idle") {
-      this.sandboxState = "starting";
-      this.options.events.emit({ type: "sandbox.starting", conversationId: this.botId });
-      try {
-        const sandbox = await this.options.sandbox.createSession(
-          this.botId,
-          this.workspaceRoot,
-          this.mountsForSandbox(),
-        );
-        this.sandboxId = sandbox.id;
-        this.sandboxState = "live";
-        this.options.events.emit({ type: "sandbox.created", conversationId: this.botId, sessionId: sandbox.id });
-      } catch (error) {
-        this.sandboxState = "idle";
-        this.sandboxId = null;
-        throw error;
-      }
-      return;
-    }
-    if (this.sandboxState === "parked" && this.sandboxId) {
-      this.sandboxState = "resuming";
-      this.options.events.emit({ type: "sandbox.resuming", conversationId: this.botId, sessionId: this.sandboxId });
-      try {
-        await this.options.sandbox.resume(this.sandboxId);
-        this.sandboxState = "live";
-        this.options.events.emit({ type: "sandbox.created", conversationId: this.botId, sessionId: this.sandboxId });
-      } catch (error) {
-        this.sandboxState = "parked";
-        throw error;
-      }
-      return;
-    }
-    if (!this.sandboxId) throw new Error(`Sandbox in unexpected state: ${this.sandboxState}`);
+    await this.sandboxLifecycle.ensureBotSandbox();
   }
 
   async get(
     conversationId: string,
     options: { name?: string; nameSource?: SessionNameSource } = {},
   ): Promise<BotSession> {
-    await this.ensureBotSandbox();
-    const sandboxId = this.sandboxId!;
-
+    const sandboxId = await this.sandboxLifecycle.ensureBotSandbox();
     const existing = this.sessions.get(conversationId);
     if (existing && existing.expiresAt > new Date()) {
-      existing.expiresAt = this.nextExpiry();
-      existing.lastActivityAt = new Date();
-      existing.updatedAt = existing.lastActivityAt.toISOString();
-      existing.state = "live";
+      touchLiveSession(this.recordContext(), existing);
       return existing;
     }
-
     if (existing) await this.destroy(conversationId);
-    const stored = this.options.state?.loadSession(conversationId);
-    const logical = this.logicalSessions.get(conversationId);
-    const nowDate = new Date();
-    const now = nowDate.toISOString();
-    const session: BotSession = {
-      conversationId,
-      name: options.name ?? stored?.name ?? logical?.name ?? defaultSessionName(),
-      nameSource: options.nameSource ?? stored?.nameSource ?? logical?.nameSource ?? "generated",
-      source: stored?.source ?? logical?.source ?? this.source,
-      model: stored?.model ?? logical?.model ?? null,
-      systemPrompt: stored?.systemPrompt ?? logical?.systemPrompt ?? null,
-      parentSessionId: stored?.parentSessionId ?? logical?.parentSessionId ?? null,
-      parentMessageId: stored?.parentMessageId ?? logical?.parentMessageId ?? null,
-      tokenTotals: stored?.tokenTotals ?? logical?.tokenTotals ?? { ...ZERO_TOKENS },
-      createdAt: stored?.createdAt ?? logical?.createdAt ?? now,
-      updatedAt: now,
-      sandboxSessionId: sandboxId,
-      messages: stored?.messages ?? [],
-      workspacePath: this.workspaceRoot,
-      expiresAt: this.nextExpiry(),
-      lastActivityAt: nowDate,
-      state: "live",
-    };
-    this.ensureLogicalSession(conversationId, { name: session.name, nameSource: session.nameSource });
-    this.sessions.set(conversationId, session);
-    this.logicalSessions.delete(conversationId);
-    return session;
+    return createLiveSession(this.recordContext(), conversationId, sandboxId, options);
   }
 
   ensureLogicalSession(
@@ -154,42 +97,7 @@ export class SessionManager {
       source?: string;
     } = {},
   ): BotSessionSummary {
-    const active = this.sessions.get(conversationId);
-    if (active) return summaryFromSession(active);
-    const stored = this.options.state?.getSummary(conversationId);
-    if (stored) return stored;
-    const existing = this.logicalSessions.get(conversationId);
-    if (existing) return existing;
-
-    const now = new Date().toISOString();
-    const summary: BotSessionSummary = {
-      conversationId,
-      name: options.name ?? defaultSessionName(),
-      nameSource: options.nameSource ?? "generated",
-      source: options.source ?? this.source,
-      model: null,
-      systemPrompt: null,
-      parentSessionId: options.parentSessionId ?? null,
-      parentMessageId: options.parentMessageId ?? null,
-      tokenTotals: { ...ZERO_TOKENS },
-      createdAt: now,
-      updatedAt: now,
-      expiresAt: this.nextExpiry(),
-    };
-    this.options.state?.ensureSession({
-      conversationId,
-      name: summary.name,
-      nameSource: summary.nameSource,
-      source: summary.source,
-      model: summary.model,
-      systemPrompt: summary.systemPrompt,
-      parentSessionId: summary.parentSessionId,
-      parentMessageId: summary.parentMessageId,
-      now,
-      expiresAt: summary.expiresAt,
-    });
-    if (!this.options.state) this.logicalSessions.set(conversationId, summary);
-    return summary;
+    return ensureLogicalSessionRecord(this.recordContext(), conversationId, options);
   }
 
   createSubSession(input: {
@@ -198,8 +106,7 @@ export class SessionManager {
     name?: string;
     source?: string;
   }): BotSessionSummary {
-    const id = `sub-${crypto.randomUUID()}`;
-    return this.ensureLogicalSession(id, {
+    return this.ensureLogicalSession(`sub-${crypto.randomUUID()}`, {
       name: input.name,
       parentSessionId: input.parentSessionId,
       parentMessageId: input.parentMessageId ?? null,
@@ -227,35 +134,19 @@ export class SessionManager {
   }
 
   getSummary(conversationId: string): BotSessionSummary | undefined {
-    const active = this.sessions.get(conversationId);
-    if (active) return summaryFromSession(active);
-    return this.options.state?.getSummary(conversationId)
-      ?? this.logicalSessions.get(conversationId);
+    return getSummaryRecord(this.recordContext(), conversationId);
   }
 
   listSessions(): BotSessionSummary[] {
-    const byId = new Map<string, BotSessionSummary>();
-    for (const summary of this.options.state?.listSessions() ?? []) {
-      byId.set(summary.conversationId, summary);
-    }
-    for (const summary of this.logicalSessions.values()) {
-      byId.set(summary.conversationId, summary);
-    }
-    for (const session of this.sessions.values()) {
-      byId.set(session.conversationId, summaryFromSession(session));
-    }
-    return [...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return listSessionRecords(this.recordContext());
   }
 
   getTranscript(conversationId: string): BotMessage[] {
-    const active = this.sessions.get(conversationId);
-    if (active) return [...active.messages];
-    return this.options.state?.loadSession(conversationId)?.messages ?? [];
+    return getTranscriptRecord(this.recordContext(), conversationId);
   }
 
   messagesPage(conversationId: string, input: { beforeId?: number | null; limit: number }): MessagePage {
-    return this.options.state?.messagesPage(conversationId, input)
-      ?? { items: [], oldestId: null, newestId: null, hasMoreBefore: false };
+    return messagesPageRecord(this.recordContext(), conversationId, input);
   }
 
   findSessionsByName(name: string): BotSessionSummary[] {
@@ -263,60 +154,11 @@ export class SessionManager {
   }
 
   renameSession(conversationId: string, name: string): BotSessionSummary | undefined {
-    const trimmed = name.trim();
-    if (!trimmed) throw new Error("Session name cannot be empty");
-    const now = new Date().toISOString();
-    const active = this.sessions.get(conversationId);
-    if (active) {
-      active.name = trimmed;
-      active.nameSource = "manual";
-      active.updatedAt = now;
-      this.options.state?.renameSession(conversationId, trimmed);
-      return summaryFromSession(active);
-    }
-    const stored = this.options.state?.getSummary(conversationId);
-    if (stored) {
-      this.options.state?.renameSession(conversationId, trimmed);
-      return this.options.state?.getSummary(conversationId);
-    }
-    const logical = this.logicalSessions.get(conversationId);
-    if (!logical) return undefined;
-    const renamed = { ...logical, name: trimmed, nameSource: "manual" as const, updatedAt: now };
-    this.logicalSessions.set(conversationId, renamed);
-    return renamed;
+    return renameSessionRecord(this.recordContext(), conversationId, name);
   }
 
   appendMessages(conversationId: string, messages: BotMessage[]): void {
-    const session = this.sessions.get(conversationId);
-    if (!session) {
-      if (this.options.state?.getSummary(conversationId)) {
-        this.options.state.appendMessages(conversationId, messages);
-      }
-      return;
-    }
-    session.messages.push(...messages);
-    if (session.messages.length > MAX_CONVERSATION_HISTORY_MESSAGES) {
-      session.messages.splice(
-        0,
-        session.messages.length - MAX_CONVERSATION_HISTORY_MESSAGES,
-      );
-    }
-    for (const message of messages) {
-      if (message.role === "assistant" && message.usage) {
-        session.tokenTotals.input += message.usage.input;
-        session.tokenTotals.output += message.usage.output;
-        session.tokenTotals.thought += message.usage.thought;
-        session.tokenTotals.total += message.usage.total;
-      }
-    }
-    if (session.nameSource === "generated") {
-      const firstUserContent = session.messages.find((m) => m.role === "user")?.content;
-      if (firstUserContent) session.name = generateSessionName(firstUserContent);
-    }
-    const nowDate = new Date();
-    session.updatedAt = nowDate.toISOString();
-    session.lastActivityAt = nowDate;
-    this.options.state?.appendMessages(conversationId, messages);
+    appendSessionMessages(this.recordContext(), conversationId, messages);
   }
 
   listGlobalMounts(): GlobalMount[] {
@@ -331,10 +173,7 @@ export class SessionManager {
     return globalMountsForSandbox(this.globalMounts);
   }
 
-  async addGlobalMount(
-    hostPath: string,
-    callerConversationId?: string,
-  ): Promise<AddGlobalMountResult> {
+  async addGlobalMount(hostPath: string, callerConversationId?: string): Promise<AddGlobalMountResult> {
     const prepared = prepareGlobalMountAdd(this.globalMounts, hostPath);
     if (!prepared.next) return prepared.result;
     this.globalMounts = prepared.next;
@@ -343,40 +182,12 @@ export class SessionManager {
     return prepared.result;
   }
 
-  async refreshMounts(conversationId?: string): Promise<void> {
-    if (this.sandboxState !== "live" || !this.sandboxId) return;
-    this.options.events.emit({
-      type: "sandbox.mountsRefreshing",
-      conversationId: conversationId ?? this.botId,
-      sessionId: this.sandboxId,
-    });
-    const sandbox = await this.options.sandbox.recreate(
-      this.sandboxId,
-      this.workspaceRoot,
-      this.mountsForSandbox(),
-    );
-    this.sandboxId = sandbox.id;
-    for (const session of this.sessions.values()) session.sandboxSessionId = sandbox.id;
-    this.options.events.emit({
-      type: "sandbox.mountsRefreshed",
-      conversationId: conversationId ?? this.botId,
-      sessionId: sandbox.id,
-    });
+  refreshMounts(conversationId?: string): Promise<void> {
+    return this.sandboxLifecycle.refreshMounts(conversationId);
   }
 
   refreshAllMounts(): void {
     void this.scheduleMountsRefresh(undefined);
-  }
-
-  private scheduleMountsRefresh(callerConversationId?: string): Promise<void> {
-    return scheduleMountsRefresh({
-      activeRuns: this.options.activeRuns,
-      sessions: this.sessions,
-      events: this.options.events,
-      botId: this.botId,
-      callerConversationId,
-      refresh: (id) => this.refreshMounts(id),
-    });
   }
 
   async clear(conversationId: string): Promise<void> {
@@ -388,68 +199,30 @@ export class SessionManager {
       await this.destroy(conversationId);
     }
     const now = new Date().toISOString();
-    const summary = this.getSummary(conversationId)
-      ?? this.ensureLogicalSession(conversationId);
+    const summary = this.getSummary(conversationId) ?? this.ensureLogicalSession(conversationId);
     this.options.state?.clearSession(conversationId, now);
     if (!this.options.state) {
-      this.logicalSessions.set(conversationId, {
-        ...summary,
-        tokenTotals: { ...ZERO_TOKENS },
-        updatedAt: now,
-      });
+      this.logicalSessions.set(conversationId, { ...summary, tokenTotals: { ...ZERO_TOKENS }, updatedAt: now });
     }
   }
 
-  async deleteSession(conversationId: string): Promise<string[]> {
+  deleteSession(conversationId: string): Promise<string[]> {
     return deleteSessionTree(this.deleteContext(), conversationId);
   }
 
-  async deleteAllSessions(): Promise<string[]> {
+  deleteAllSessions(): Promise<string[]> {
     return deleteEverySession(this.deleteContext());
   }
 
   async sweepExpired(now = new Date()): Promise<void> {
-    const idleMs = this.options.idleParkMs ?? DEFAULT_IDLE_PARK_MS;
     for (const [conversationId, session] of [...this.sessions]) {
-      if (session.expiresAt <= now) {
-        await this.destroy(conversationId);
-      }
+      if (session.expiresAt <= now) await this.destroy(conversationId);
     }
-    if (this.sandboxState !== "live" || !this.sandboxId) return;
-    const liveSessions = [...this.sessions.values()];
-    if (liveSessions.length === 0) {
-      await this.parkBot();
-      return;
-    }
-    const allIdle = liveSessions.every(
-      (s) => now.getTime() - s.lastActivityAt.getTime() > idleMs,
-    );
-    if (allIdle) await this.parkBot();
-  }
-
-  private async parkBot(): Promise<void> {
-    if (this.sandboxState !== "live" || !this.sandboxId) return;
-    this.sandboxState = "parking";
-    try {
-      await this.options.sandbox.park(this.sandboxId);
-      this.sandboxState = "parked";
-      for (const session of this.sessions.values()) session.state = "parked";
-    } catch (error) {
-      this.sandboxState = "live";
-      throw error;
-    }
+    await this.sandboxLifecycle.sweepExpired(now);
   }
 
   async replaceSandboxProvider(sandbox: SandboxProvider): Promise<void> {
-    if (this.sandboxId && (this.sandboxState === "live" || this.sandboxState === "parked")) {
-      try {
-        await this.options.sandbox.destroy(this.sandboxId);
-      } catch {}
-    }
-    this.sessions.clear();
-    this.sandboxId = null;
-    this.sandboxState = "idle";
-    this.sandboxReady = null;
+    await this.sandboxLifecycle.replaceProvider(sandbox);
     this.options.sandbox = sandbox;
   }
 
@@ -459,6 +232,7 @@ export class SessionManager {
 
   setIdleParkMs(idleParkMs: number): void {
     this.options.idleParkMs = idleParkMs;
+    this.sandboxLifecycle.setIdleParkMs(idleParkMs);
   }
 
   async destroy(conversationId: string): Promise<void> {
@@ -476,10 +250,30 @@ export class SessionManager {
     this.options.state?.close?.();
   }
 
-  async parkAll(): Promise<void> {
-    try {
-      await this.parkBot();
-    } catch {}
+  parkAll(): Promise<void> {
+    return this.sandboxLifecycle.parkAll();
+  }
+
+  private scheduleMountsRefresh(callerConversationId?: string): Promise<void> {
+    return scheduleMountsRefresh({
+      activeRuns: this.options.activeRuns,
+      sessions: this.sessions,
+      events: this.options.events,
+      botId: this.botId,
+      callerConversationId,
+      refresh: (id) => this.refreshMounts(id),
+    });
+  }
+
+  private recordContext(): SessionRecordContext {
+    return {
+      sessions: this.sessions,
+      logicalSessions: this.logicalSessions,
+      state: this.options.state,
+      source: this.source,
+      workspaceRoot: this.workspaceRoot,
+      nextExpiry: () => this.nextExpiry(),
+    };
   }
 
   private nextExpiry(): Date {

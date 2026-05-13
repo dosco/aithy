@@ -7,25 +7,15 @@ import {
   fieldClass,
 } from "@/components/settings-form-bits";
 import { Button } from "@/components/ui/button";
-import {
-  ProfilePhotoInput,
-  type PhotoUploadPayload,
-} from "@/components/profile-photo-input";
 import { saveSoul } from "@/server/actions.functions";
-import {
-  clearProfileImage,
-  saveProfile,
-  saveProfileImage,
-} from "@/server/profile.functions";
+import { saveProfile } from "@/server/profile.functions";
 import type { ProfileDto, SoulDto } from "@/server/dto";
 
 export function UserProfileSection({
   profile,
-  profileImagesSupported,
   onChange,
 }: {
   profile: ProfileDto;
-  profileImagesSupported: boolean;
   onChange: (profile: ProfileDto) => void;
 }) {
   const [saved, setSaved] = useState(false);
@@ -40,9 +30,6 @@ export function UserProfileSection({
     setSaved(true);
     setTimeout(() => setSaved(false), 1400);
   }
-  async function savePhoto(payload: PhotoUploadPayload) {
-    onChange(await saveProfileImage({ data: { kind: "user", ...payload } }));
-  }
   return (
     <Section title="User profile" subtitle="Basic context the responder can use when talking with you.">
       <div className="grid gap-4">
@@ -54,7 +41,8 @@ export function UserProfileSection({
             <input className={fieldClass} value={profile.userLocation} onChange={(e) => onChange({ ...profile, userLocation: e.target.value })} />
           </Field>
         </div>
-        {profileImagesSupported ? (
+        {/*
+        Profile image UI intentionally hidden until launch.
           <ProfilePhotoInput
             label="Your photo"
             image={profile.userPhoto}
@@ -62,7 +50,7 @@ export function UserProfileSection({
             onUpload={savePhoto}
             onClear={async () => onChange(await clearProfileImage({ data: { kind: "user" } }))}
           />
-        ) : null}
+        */}
         <div className="flex justify-end">
           <Button onClick={() => void saveFields()} disabled={!profile.userName.trim()}>
             {saved ? <Check className="h-4 w-4" /> : null}
@@ -77,13 +65,11 @@ export function UserProfileSection({
 export function AgentSettingsSection({
   soul,
   profile,
-  profileImagesSupported,
   onSoulChange,
   onProfileChange,
 }: {
   soul: SoulDto;
   profile: ProfileDto;
-  profileImagesSupported: boolean;
   onSoulChange: (soul: SoulDto) => void;
   onProfileChange: (profile: ProfileDto) => void;
 }) {
@@ -103,13 +89,11 @@ export function AgentSettingsSection({
     setSaved(true);
     setTimeout(() => setSaved(false), 1400);
   }
-  async function saveAgentPhoto(payload: PhotoUploadPayload) {
-    onProfileChange(await saveProfileImage({ data: { kind: "agent", ...payload } }));
-  }
   return (
     <Section title="Agent" subtitle="Identity, photo, and the soul of the agent passed to the responder.">
       <div className="grid gap-4">
-        {profileImagesSupported ? (
+        {/*
+        Profile image UI intentionally hidden until launch.
           <ProfilePhotoInput
             label="Agent photo"
             image={profile.agentPhoto}
@@ -117,7 +101,7 @@ export function AgentSettingsSection({
             onUpload={saveAgentPhoto}
             onClear={async () => onProfileChange(await clearProfileImage({ data: { kind: "agent" } }))}
           />
-        ) : null}
+        */}
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Name">
             <input className={fieldClass} value={soul.name} onChange={(e) => onSoulChange({ ...soul, name: e.target.value })} />

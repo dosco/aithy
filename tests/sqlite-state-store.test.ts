@@ -91,6 +91,42 @@ describe("SqliteSessionStateStore", () => {
     `).get()).toBeFalsy();
   });
 
+  test("recovers legacy tool rows that are missing tool_name", async () => {
+    const dbPath = await tempDbPath();
+    const store = new SqliteSessionStateStore(dbPath);
+    const now = "2026-05-02T12:00:00.000Z";
+
+    store.ensureSession({
+      conversationId: "conversation",
+      name: "Initial",
+      nameSource: "manual",
+      source: "web",
+      now,
+      expiresAt: new Date("2026-05-02T13:00:00.000Z"),
+    });
+
+    const db = new Database(dbPath);
+    db.query(`
+      INSERT INTO messages (session_id, role, content, thought, tool_name, tool_args, tool_result, created_at)
+      VALUES ($sessionId, 'assistant', NULL, NULL, NULL, $toolArgs, NULL, $createdAt)
+    `).run({
+      $sessionId: "conversation",
+      $toolArgs: JSON.stringify({ query: "Vikram Rangnekar tech", task: "Find identifying details." }),
+      $createdAt: now,
+    });
+    db.close();
+
+    const loaded = store.loadSession("conversation");
+    expect(loaded?.messages).toMatchObject([
+      {
+        role: "assistant",
+        kind: "tool_call",
+        toolName: "web.search",
+        toolArgs: { query: "Vikram Rangnekar tech", task: "Find identifying details." },
+      },
+    ]);
+  });
+
   test("migrates legacy session_mounts rows into web.settings.globalMounts and drops the table", async () => {
     const dbPath = await tempDbPath();
     // Build a legacy DB shape: pretend an older version of the schema where

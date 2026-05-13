@@ -1,6 +1,4 @@
 import { useState } from "react";
-import type { Dispatch, SetStateAction } from "react";
-import { Check } from "lucide-react";
 import { useRouter } from "@tanstack/react-router";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PageFrame } from "@/components/page-frame";
@@ -9,36 +7,23 @@ import {
   type PrimaryClearAction,
   networkValue,
   primaryClearCopy,
-  saveButtonLabel,
 } from "@/components/settings-page-helpers";
-import {
-  ApiKeyInput,
-  Field,
-  ModelCombobox,
-  ProviderSelect,
-  Section,
-  fieldClass,
-  selectClass,
-} from "@/components/settings-form-bits";
-import { GlobalMountsSection } from "@/components/settings-global-mounts";
 import {
   AgentSettingsSection,
   UserProfileSection,
 } from "@/components/settings-identity-sections";
+import { ModelSettingsTab, SandboxSettingsTab } from "@/components/settings-runtime-tabs";
 import { ThemeSync } from "@/components/theme-sync";
-import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { saveSettingsWithSetupGateRefresh } from "@/lib/setup-gate";
 import type {
-  ConfigDto,
   ProfileDto,
   SecretStatusDto,
+  SettingsPageStateDto,
   SoulDto,
-  WebStateDto,
 } from "@/server/dto";
 
-export function SettingsPage({ initialState }: { initialState: WebStateDto }) {
+export function SettingsPage({ initialState }: { initialState: SettingsPageStateDto }) {
   const router = useRouter();
   const [config, setConfig] = useState(initialState.config);
   const [secret, setSecret] = useState(initialState.secret);
@@ -54,7 +39,6 @@ export function SettingsPage({ initialState }: { initialState: WebStateDto }) {
   const [soul, setSoul] = useState<SoulDto>(initialState.soul);
   const [profile, setProfile] = useState<ProfileDto>(initialState.profile);
   const [ui, setUi] = useState(initialState.settings.ui);
-  const profileImagesSupported = initialState.runtimeCapabilities.profileImages;
   const [primaryClearAction, setPrimaryClearAction] =
     useState<PrimaryClearAction | null>(null);
   const [primaryClearBusy, setPrimaryClearBusy] = useState(false);
@@ -158,291 +142,41 @@ export function SettingsPage({ initialState }: { initialState: WebStateDto }) {
         ) : null}
 
         <TabsContent value="model">
-          <div className="grid gap-5">
-            <Section
-              title="Primary"
-              subtitle="Drives the executor, context, and final responder by default."
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Provider">
-                  <ProviderSelect
-                    value={config.aiProvider}
-                    onChange={(value) =>
-                      setConfigValue(setConfig, "aiProvider", value)
-                    }
-                  />
-                </Field>
-                <Field label="Model">
-                  <ModelCombobox
-                    provider={config.aiProvider}
-                    value={config.aiModel}
-                    onChange={(value) =>
-                      setConfigValue(setConfig, "aiModel", value)
-                    }
-                    onClear={() => setPrimaryClearAction("model")}
-                  />
-                </Field>
-              </div>
-              <Field label="API key">
-                <ApiKeyInput
-                  value={apiKey}
-                  onChange={setApiKey}
-                  secret={secret}
-                  fallback="Stored in the encrypted secrets store"
-                  onClear={() => setPrimaryClearAction("key")}
-                />
-              </Field>
-            </Section>
-
-            <Section
-              title="Fast model"
-              subtitle="Optional. Used for responder + recursion calls; falls back to primary when empty."
-              muted
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Provider">
-                  <ProviderSelect
-                    value={config.fastAiProvider}
-                    allowEmpty
-                    onChange={(value) =>
-                      setConfigValue(setConfig, "fastAiProvider", value)
-                    }
-                  />
-                </Field>
-                <Field label="Model">
-                  <ModelCombobox
-                    provider={config.fastAiProvider}
-                    value={config.fastAiModel}
-                    disabled={!config.fastAiProvider}
-                    placeholder={
-                      config.fastAiProvider
-                        ? "e.g. gpt-4o-mini"
-                        : "set provider first"
-                    }
-                    onChange={(value) =>
-                      setConfigValue(setConfig, "fastAiModel", value)
-                    }
-                  />
-                </Field>
-              </div>
-              <Field label="API key">
-                <ApiKeyInput
-                  value={fastApiKey}
-                  onChange={setFastApiKey}
-                  secret={fastSecret}
-                  disabled={!config.fastAiProvider}
-                  fallback={
-                    !config.fastAiProvider
-                      ? "Set provider first"
-                      : config.fastAiProvider === config.aiProvider
-                        ? secret.configured
-                          ? "Reuses primary key"
-                          : "Set primary key first"
-                        : "Stored in the encrypted secrets store"
-                  }
-                />
-              </Field>
-            </Section>
-
-            <div className="flex justify-end pt-1">
-              <Button
-                onClick={() => void save()}
-                disabled={saveBusy}
-                className="sm:min-w-[140px]"
-              >
-                {saved ? <Check className="h-4 w-4" /> : null}
-                {saveButtonLabel(saveBusy, saved)}
-              </Button>
-            </div>
-          </div>
+          <ModelSettingsTab
+            config={config}
+            setConfig={setConfig}
+            secret={secret}
+            fastSecret={fastSecret}
+            apiKey={apiKey}
+            fastApiKey={fastApiKey}
+            setApiKey={setApiKey}
+            setFastApiKey={setFastApiKey}
+            setPrimaryClearAction={setPrimaryClearAction}
+            saved={saved}
+            saveBusy={saveBusy}
+            onSave={() => void save()}
+          />
         </TabsContent>
 
         <TabsContent value="sandbox">
-          <div className="grid gap-5">
-            <Section
-              title="Sandbox"
-              subtitle="Where tool calls execute. Disabled mode runs local Bun Shell commands without isolation."
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Provider">
-                  <select
-                    value={config.sandboxProvider}
-                    onChange={(event) =>
-                      setConfigValue(
-                        setConfig,
-                        "sandboxProvider",
-                        event.target.value,
-                      )
-                    }
-                    className={selectClass}
-                  >
-                    <option value="microsandbox">microsandbox</option>
-                    <option value="disabled">disabled</option>
-                  </select>
-                </Field>
-                {config.sandboxProvider === "microsandbox" ? (
-                  <>
-                    <Field label="Image">
-                      <input
-                        className={fieldClass}
-                        value={config.sandboxImage}
-                        onChange={(event) =>
-                          setConfigValue(
-                            setConfig,
-                            "sandboxImage",
-                            event.target.value,
-                          )
-                        }
-                      />
-                    </Field>
-                    <Field label="Network">
-                      <select
-                        value={config.sandboxNetwork}
-                        onChange={(event) =>
-                          setConfigValue(
-                            setConfig,
-                            "sandboxNetwork",
-                            event.target.value,
-                          )
-                        }
-                        className={selectClass}
-                      >
-                        <option value="none">none</option>
-                        <option value="public">public</option>
-                        <option value="allow-all">allow-all</option>
-                      </select>
-                    </Field>
-                    <div className="grid grid-cols-2 gap-3">
-                      <Field label="CPUs">
-                        <input
-                          className={fieldClass}
-                          type="number"
-                          value={config.sandboxCpus}
-                          onChange={(event) =>
-                            setConfigValue(
-                              setConfig,
-                              "sandboxCpus",
-                              Number(event.target.value),
-                            )
-                          }
-                        />
-                      </Field>
-                      <Field label="Memory (MB)">
-                        <input
-                          className={fieldClass}
-                          type="number"
-                          value={config.sandboxMemoryMb}
-                          onChange={(event) =>
-                            setConfigValue(
-                              setConfig,
-                              "sandboxMemoryMb",
-                              Number(event.target.value),
-                            )
-                          }
-                        />
-                      </Field>
-                    </div>
-                  </>
-                ) : (
-                  <Field label="Execution">
-                    <input
-                      className={fieldClass}
-                      value="Local host via Bun Shell"
-                      readOnly
-                    />
-                  </Field>
-                )}
-              </div>
-            </Section>
-            <Section
-              title="Javascript Runtime"
-              subtitle="Session lifecycle and tracing."
-            >
-              <div className="grid gap-4 sm:grid-cols-2">
-                <Field label="Session TTL (ms)">
-                  <input
-                    className={fieldClass}
-                    type="number"
-                    value={config.sessionTtlMs}
-                    onChange={(event) =>
-                      setConfigValue(
-                        setConfig,
-                        "sessionTtlMs",
-                        Number(event.target.value),
-                      )
-                    }
-                  />
-                </Field>
-                <Field label="Tracing">
-                  <div className="flex h-11 items-center gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5">
-                    <Switch
-                      checked={config.traceEnabled}
-                      onCheckedChange={(value) =>
-                        setConfigValue(setConfig, "traceEnabled", value)
-                      }
-                    />
-                    <span className="text-sm text-[rgb(var(--muted-foreground))]">
-                      {config.traceEnabled ? "Enabled" : "Disabled"}
-                    </span>
-                  </div>
-                </Field>
-                <Field label={`Parallel agents (${config.parallelAgents})`}>
-                  <div className="flex h-11 items-center gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5">
-                    <input
-                      type="range"
-                      min={1}
-                      max={8}
-                      step={1}
-                      value={config.parallelAgents}
-                      onChange={(event) =>
-                        setConfigValue(
-                          setConfig,
-                          "parallelAgents",
-                          Number(event.target.value),
-                        )
-                      }
-                      className="flex-1"
-                      aria-label="Parallel agents"
-                    />
-                    <span className="w-6 text-right tabular-nums text-sm text-[rgb(var(--muted-foreground))]">
-                      {config.parallelAgents}
-                    </span>
-                  </div>
-                </Field>
-              </div>
-            </Section>
-            {config.sandboxProvider === "microsandbox" ? (
-              <GlobalMountsSection
-                mounts={config.globalMounts}
-                skippedPaths={skippedPaths}
-                onChange={(next) =>
-                  setConfigValue(setConfig, "globalMounts", next)
-                }
-              />
-            ) : null}
-
-            <div className="flex justify-end pt-1">
-              <Button
-                onClick={() => void save()}
-                disabled={saveBusy}
-                className="sm:min-w-[140px]"
-              >
-                {saved ? <Check className="h-4 w-4" /> : null}
-                {saveButtonLabel(saveBusy, saved)}
-              </Button>
-            </div>
-          </div>
+          <SandboxSettingsTab
+            config={config}
+            setConfig={setConfig}
+            skippedPaths={skippedPaths}
+            saved={saved}
+            saveBusy={saveBusy}
+            onSave={() => void save()}
+          />
         </TabsContent>
 
         <TabsContent value="profile">
-          <UserProfileSection profile={profile} profileImagesSupported={profileImagesSupported} onChange={setProfile} />
+          <UserProfileSection profile={profile} onChange={setProfile} />
         </TabsContent>
 
         <TabsContent value="agent">
           <AgentSettingsSection
             soul={soul}
             profile={profile}
-            profileImagesSupported={profileImagesSupported}
             onSoulChange={setSoul}
             onProfileChange={setProfile}
           />
@@ -484,12 +218,4 @@ export function SettingsPage({ initialState }: { initialState: WebStateDto }) {
       />
     </PageFrame>
   );
-}
-
-function setConfigValue<K extends keyof ConfigDto>(
-  setter: Dispatch<SetStateAction<ConfigDto>>,
-  key: K,
-  value: ConfigDto[K],
-) {
-  setter((current) => ({ ...current, [key]: value }));
 }

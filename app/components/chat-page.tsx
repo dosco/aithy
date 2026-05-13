@@ -1,28 +1,32 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, ExternalLink, Trash2, X } from "lucide-react";
+import { ArrowLeft, Trash2 } from "lucide-react";
 import { ChatComposer, type SelectedSkill } from "@/components/chat-composer";
-import { appendUnique, prependUnique } from "@/components/chat-message-state";
+import { appendUnique } from "@/components/chat-message-state";
 import {
   ChatTimeline,
   countDebugItems,
-  type ChatMessageItem,
 } from "@/components/chat-timeline";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { useChatUi } from "@/components/chat-ui-context";
-import { Markdown } from "@/components/markdown";
+import { useLiveEvent } from "@/components/live-events";
+import {
+  appendSetupStatus,
+  compactSetupStatuses,
+  queueStatusToSetup,
+  sessionIdFromPath,
+  type SetupStatusEvent,
+} from "@/components/chat-page-helpers";
+import { SubSessionDrawer } from "@/components/sub-session-drawer";
 import { ThemeSync } from "@/components/theme-sync";
+import { useChatMessages } from "@/components/use-chat-messages";
 import {
   deleteSession,
   sendChatMessage,
   stopChatMessage,
 } from "@/server/actions.functions";
-import { getSessionMessages } from "@/server/session-messages.functions";
-import type { SessionSummaryDto, WebStateDto } from "@/server/dto";
+import type { WebStateDto } from "@/server/dto";
 import type { WebLiveEvent } from "../../src/web/live-events";
-
-type SetupStatusEvent = Extract<WebLiveEvent, { type: "setup-status" }>;
-type QueueStatusEvent = Extract<WebLiveEvent, { type: "queue-status" }>;
 
 export function ChatPage({ initialState }: { initialState: WebStateDto }) {
   const navigate = useNavigate();
@@ -46,18 +50,21 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
   const [activeSessionId, setActiveSessionId] = useState<string | null>(
     resolvedInitialSessionId,
   );
-  const [messages, setMessages] = useState<ChatMessageItem[]>(
-    initialPage.items,
-  );
-  const [oldestMessageId, setOldestMessageId] = useState<number | null>(
-    initialPage.oldestId,
-  );
-  const [hasMoreBefore, setHasMoreBefore] = useState(
-    initialPage.hasMoreBefore,
-  );
-  const [loadingMore, setLoadingMore] = useState(false);
+  const {
+    messages,
+    setMessages,
+    hasMoreBefore,
+    loadingMore,
+    loadMoreMessages,
+    clearMessages,
+  } = useChatMessages(resolvedInitialSessionId, initialPage);
   const [sessions, setSessions] = useState(initialState.sessions);
-  const [activities, setActivities] = useState<Array<Extract<WebLiveEvent, { type: "activity" }>>>([]);
+  const initialActivities = useMemo(
+    () => initialState.activities ?? [],
+    [initialState.activities],
+  );
+  const [activities, setActivities] =
+    useState<Array<Extract<WebLiveEvent, { type: "activity" }>>>(initialActivities);
   const [setupStatuses, setSetupStatuses] = useState<SetupStatusEvent[]>([]);
   const [input, setInput] = useState("");
   const [selectedSkills, setSelectedSkills] = useState<SelectedSkill[]>([]);
@@ -65,7 +72,6 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [previewSessionId, setPreviewSessionId] = useState<string | null>(null);
-  const [emptyReloadKey, setEmptyReloadKey] = useState<string | null>(null);
   const activeSessionRef = useRef<string | null>(activeSessionId);
   const setupClearTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   activeSessionRef.current = activeSessionId;
@@ -86,85 +92,41 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
 
   useEffect(() => {
     setActiveSessionId(resolvedInitialSessionId);
-    setMessages(initialPage.items);
-    setOldestMessageId(initialPage.oldestId);
-    setHasMoreBefore(initialPage.hasMoreBefore);
-    setLoadingMore(false);
-    setActivities([]);
+    setActivities(initialActivities);
     clearSetupStatusLog();
     setPreviewSessionId(null);
-    setEmptyReloadKey(null);
-  }, [resolvedInitialSessionId, initialPage]);
+  }, [resolvedInitialSessionId, initialPage, initialActivities]);
   const { details } = useChatUi();
   const visibleSetupStatuses = useMemo(() => compactSetupStatuses(setupStatuses), [setupStatuses]);
 
-  useEffect(() => {
-    const source = new EventSource("/api/events");
-    source.onmessage = (message) => {
-      const event = JSON.parse(message.data) as WebLiveEvent | { type: "connected" };
-      if (event.type === "sessions") setSessions(event.sessions);
-      if (event.type === "setup-status") {
-        cancelSetupStatusClear();
-        setSetupStatuses((current) => appendSetupStatus(current, event));
-      }
-      if (event.type === "queue-status" && event.queue.id === "agent.chat") {
-        cancelSetupStatusClear();
-        setSetupStatuses((current) => appendSetupStatus(current, queueStatusToSetup(event)));
-      }
-      if ("conversationId" in event && event.conversationId === activeSessionRef.current) {
-        if (event.type === "message") {
-          setMessages((current) =>
-            appendUnique(current, { id: event.id, message: event.message }));
-          if (event.message.role === "assistant") {
-            setSending(false);
-            scheduleSetupStatusClear();
-          }
-        }
-        if (event.type === "activity") {
-          setActivities((current) => [...current.slice(-79), event]);
+  useLiveEvent((event) => {
+    if (event.type === "sessions") setSessions(event.sessions);
+    if (event.type === "setup-status") {
+      cancelSetupStatusClear();
+      setSetupStatuses((current) => appendSetupStatus(current, event));
+    }
+    if (event.type === "queue-status" && event.queue.id === "agent.chat") {
+      cancelSetupStatusClear();
+      setSetupStatuses((current) => appendSetupStatus(current, queueStatusToSetup(event)));
+    }
+    if ("conversationId" in event && event.conversationId === activeSessionRef.current) {
+      if (event.type === "message") {
+        setMessages((current) =>
+          appendUnique(current, { id: event.id, message: event.message }));
+        if (event.message.role === "assistant") {
+          setSending(false);
+          scheduleSetupStatusClear();
         }
       }
-    };
-    return () => source.close();
-  }, []);
+      if (event.type === "activity") {
+        setActivities((current) => [...current.slice(-79), event]);
+      }
+    }
+  });
 
   useEffect(() => () => cancelSetupStatusClear(), []);
 
   const debugCount = useMemo(() => countDebugItems(messages, activities), [messages, activities]);
-
-  useEffect(() => {
-    if (!activeSessionId || messages.length > 0 || loadingMore || emptyReloadKey === activeSessionId) return;
-    setEmptyReloadKey(activeSessionId);
-    setLoadingMore(true);
-    void getSessionMessages({
-      data: { conversationId: activeSessionId, beforeId: null, limit: 10 },
-    }).then((page) => {
-      if (page.items.length === 0) return;
-      setMessages(page.items);
-      setOldestMessageId(page.oldestId);
-      setHasMoreBefore(page.hasMoreBefore);
-    }).finally(() => setLoadingMore(false));
-  }, [activeSessionId, messages.length, loadingMore, emptyReloadKey]);
-
-  const loadMoreMessages = useCallback(async (): Promise<boolean> => {
-    if (!activeSessionId || !oldestMessageId || loadingMore || !hasMoreBefore) return false;
-    setLoadingMore(true);
-    try {
-      const page = await getSessionMessages({
-        data: { conversationId: activeSessionId, beforeId: oldestMessageId, limit: 10 },
-      });
-      if (page.items.length === 0) {
-        setHasMoreBefore(false);
-        return false;
-      }
-      setMessages((current) => prependUnique(current, page.items));
-      setOldestMessageId(page.oldestId);
-      setHasMoreBefore(page.hasMoreBefore);
-      return true;
-    } finally {
-      setLoadingMore(false);
-    }
-  }, [activeSessionId, oldestMessageId, loadingMore, hasMoreBefore]);
 
   async function submit() {
     const text = input.trim();
@@ -233,9 +195,7 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
         await navigate({ to: "/chat/$sessionId", params: { sessionId: next.conversationId } });
       } else {
         setActiveSessionId(null);
-        setMessages([]);
-        setOldestMessageId(null);
-        setHasMoreBefore(false);
+        clearMessages();
         await navigate({ to: "/sessions" });
       }
     } finally {
@@ -325,173 +285,5 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
         onClose={() => setPreviewSessionId(null)}
       />
     </section>
-  );
-}
-
-function queueStatusToSetup(event: QueueStatusEvent): SetupStatusEvent {
-  const queue = event.queue;
-  const waiting = queue.blockedReason ?? (
-    queue.depth && queue.depth > 0 ? `queued (${queue.depth} waiting)` : "chat queue idle"
-  );
-  const active = queue.state === "blocked" || queue.state === "running";
-  return {
-    type: "setup-status",
-    id: event.id,
-    createdAt: event.createdAt,
-    key: "agent.dispatcher",
-    label: waiting,
-    active,
-    tone: queue.state === "failed" ? "danger" : active ? "neutral" : "neutral",
-  };
-}
-
-function sessionIdFromPath(pathname: string): string | null {
-  const match = /^\/chat\/([^/]+)/.exec(pathname);
-  return match ? decodeURIComponent(match[1]) : null;
-}
-
-function appendSetupStatus(
-  current: SetupStatusEvent[],
-  event: SetupStatusEvent,
-): SetupStatusEvent[] {
-  return compactSetupStatuses([...current, event]);
-}
-
-function compactSetupStatuses(current: SetupStatusEvent[]): SetupStatusEvent[] {
-  const byKey = new Map<string, SetupStatusEvent>();
-  for (const event of current) {
-    const key = event.key ?? event.id;
-    if (event.key === "agent" && !event.active) {
-      byKey.delete(key);
-      continue;
-    }
-    if (event.key === "agent.dispatcher" && !event.active) {
-      byKey.delete(key);
-      continue;
-    }
-    if (!event.active && event.tone !== "danger" && event.tone !== "success") {
-      byKey.delete(key);
-      continue;
-    }
-    byKey.set(key, event);
-  }
-  return [...byKey.values()].slice(-8);
-}
-
-function SubSessionDrawer({
-  session,
-  onClose,
-}: {
-  session: SessionSummaryDto | null;
-  onClose: () => void;
-}) {
-  const [messages, setMessages] = useState<ChatMessageItem[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!session) {
-      setMessages([]);
-      setError(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    void getSessionMessages({
-      data: { conversationId: session.conversationId, beforeId: null, limit: 30 },
-    }).then((page) => {
-      if (!cancelled) setMessages(page.items);
-    }).catch((err: unknown) => {
-      if (!cancelled) setError(err instanceof Error ? err.message : "Could not load session");
-    }).finally(() => {
-      if (!cancelled) setLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [session]);
-
-  if (!session) return null;
-
-  return (
-    <div className="fixed inset-0 z-50 flex justify-end bg-black/20" role="dialog" aria-modal="true">
-      <button
-        type="button"
-        className="absolute inset-0 cursor-default"
-        aria-label="Close sub-session"
-        onClick={onClose}
-      />
-      <aside className="relative flex h-full w-full max-w-xl flex-col border-l border-[rgb(var(--border))] bg-[rgb(var(--panel))] shadow-2xl">
-        <header className="flex items-start justify-between gap-4 border-b border-[rgb(var(--border))] px-5 py-4">
-          <div className="min-w-0">
-            <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-[rgb(var(--muted-foreground))]">
-              sub-session
-            </div>
-            <h2 className="mt-1 truncate text-xl font-normal">{session.name}</h2>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Link
-              to="/chat/$sessionId"
-              params={{ sessionId: session.conversationId }}
-              onClick={onClose}
-              aria-label="Open full session"
-              title="Open full session"
-              className="grid h-9 w-9 place-items-center rounded-full border border-[rgb(var(--border))] text-[rgb(var(--muted-foreground))] transition hover:text-[rgb(var(--foreground))]"
-            >
-              <ExternalLink className="h-4 w-4" />
-            </Link>
-            <button
-              type="button"
-              onClick={onClose}
-              aria-label="Close sub-session"
-              className="grid h-9 w-9 place-items-center rounded-full border border-[rgb(var(--border))] text-[rgb(var(--muted-foreground))] transition hover:text-[rgb(var(--foreground))]"
-            >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-        </header>
-        <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4">
-          {loading ? (
-            <div className="font-mono text-xs uppercase tracking-[0.18em] text-[rgb(var(--muted-foreground))]">
-              Loading session
-            </div>
-          ) : error ? (
-            <div className="text-sm text-red-600 dark:text-red-300">{error}</div>
-          ) : messages.length === 0 ? (
-            <div className="text-sm text-[rgb(var(--muted-foreground))]">No messages yet.</div>
-          ) : (
-            <div className="flex flex-col gap-3">
-              {messages.map((item) => (
-                <PreviewMessage key={item.id} item={item} />
-              ))}
-            </div>
-          )}
-        </div>
-      </aside>
-    </div>
-  );
-}
-
-function PreviewMessage({ item }: { item: ChatMessageItem }) {
-  const { message } = item;
-  if (message.role === "user") {
-    return (
-      <div className="ml-auto max-w-[88%] rounded-2xl rounded-br-md bg-[rgb(var(--accent))] px-4 py-2 text-sm leading-relaxed text-[rgb(var(--accent-foreground))]">
-        <Markdown text={message.content} />
-      </div>
-    );
-  }
-  if (message.kind === "text") {
-    return (
-      <div className="max-w-[88%] rounded-2xl rounded-bl-md bg-[rgb(var(--bubble-bot))] px-4 py-2 text-sm leading-relaxed">
-        <Markdown text={message.content} />
-      </div>
-    );
-  }
-  return (
-    <div className="max-w-[88%] rounded-2xl rounded-bl-md bg-[rgb(var(--muted))] px-4 py-2 font-mono text-xs text-[rgb(var(--muted-foreground))]">
-      tool · {message.toolName}
-    </div>
   );
 }

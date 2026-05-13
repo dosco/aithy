@@ -14,7 +14,7 @@ import {
   listMemoriesPaged,
   upsertMemory,
 } from "@/server/skills-memory.functions";
-import type { MemoriesCursor, MemoryDto, WebStateDto } from "@/server/dto";
+import type { MemoriesCursor, MemoryDto, MemoryPageStateDto } from "@/server/dto";
 import type { MemoryKind, MemoryLabel } from "../../src/memory/types";
 import { AnimatedCount } from "./mind/animated-count";
 import { LivenessRibbon } from "./mind/liveness-ribbon";
@@ -26,7 +26,7 @@ import { emptyMemoryForm, type MemoryForm } from "./mind/memory-tile";
 import { KIND_GLYPH, KIND_TINT_TEXT } from "./mind/kind-glyph";
 import { MEMORY_KINDS, MEMORY_LABELS } from "../../src/memory/types";
 
-export function MemoryPage({ initialState }: { initialState: WebStateDto }) {
+export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [form, setForm] = useState<MemoryForm>(emptyMemoryForm);
   const [error, setError] = useState<string | null>(null);

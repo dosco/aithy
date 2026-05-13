@@ -16,6 +16,7 @@ describe("createAithyAgent", () => {
         sessionTtlMs: 1000,
         idleParkMs: 60_000,
         parallelAgents: 1,
+        parallelSearchMcpUrl: "https://search.parallel.ai/mcp",
         workspaceRoot: "/tmp/aithy-create-agent-test",
         botId: "default",
         stateDir: "/tmp/aithy-state",
@@ -34,11 +35,6 @@ describe("createAithyAgent", () => {
         responderDescription: "Speak with warm precision.",
         updatedAt: "2026-05-02T12:00:00.000Z",
       },
-      profile: {
-        userName: "Violet",
-        userLocation: "Vancouver",
-        updatedAt: "2026-05-02T12:00:00.000Z",
-      },
       tools: [],
       events: new EventBus(),
       conversationId: "probe",
@@ -48,9 +44,13 @@ describe("createAithyAgent", () => {
     expect(typeof created.program.getState).toBe("function");
     expect(executorDescription(created.program)).toContain("Bun Shell");
     expect(responderDescription(created.program)).toContain("Speak with warm precision.");
-    expect(responderDescription(created.program)).toContain("## User Profile Context");
-    expect(responderDescription(created.program)).toContain("Name: Violet");
-    expect(responderDescription(created.program)).toContain("Location: Vancouver");
+    expect(responderDescription(created.program)).not.toContain("User Profile");
+    expect(responderDescription(created.program)).not.toContain("Violet");
+    expect(inputFields(created.program)[0]).toMatchObject({
+      name: "userProfile",
+      isCached: true,
+      isOptional: true,
+    });
   });
 
   test("uses a local Bun Shell actor prompt for disabled sandbox mode", () => {
@@ -77,6 +77,24 @@ describe("createAithyAgent", () => {
     expect(description).not.toContain("/cache");
     expect(description).not.toContain("per-session");
   });
+
+  test("describes context distillation for resolving clarification follow-ups", () => {
+    const created = createAithyAgent({
+      config: configFixture("disabled"),
+      tools: [],
+      events: new EventBus(),
+      conversationId: "probe",
+    });
+
+    const description = distillerDescription(created.program);
+
+    expect(description).toContain("context distiller");
+    expect(description).toContain("inputs.conversationHistory");
+    expect(description).toContain("resolvedRequest");
+    expect(description).toContain("yes yes yes");
+    expect(description).toContain("downtown Vancouver");
+    expect(contextHistoryPromptChars(created.program)).toBe(2_000);
+  });
 });
 
 function configFixture(sandboxProvider: "microsandbox" | "disabled") {
@@ -91,6 +109,7 @@ function configFixture(sandboxProvider: "microsandbox" | "disabled") {
     sessionTtlMs: 1000,
     idleParkMs: 60_000,
     parallelAgents: 1,
+    parallelSearchMcpUrl: "https://search.parallel.ai/mcp",
     workspaceRoot: "/tmp/aithy-create-agent-test",
     botId: "default",
     stateDir: "/tmp/aithy-state",
@@ -107,4 +126,16 @@ function responderDescription(program: any): string {
 
 function executorDescription(program: any): string {
   return program.executor._buildActorInstruction();
+}
+
+function distillerDescription(program: any): string {
+  return program.distiller.options.description;
+}
+
+function contextHistoryPromptChars(program: any): number {
+  return program.options.contextFields[0].keepInPromptChars;
+}
+
+function inputFields(program: any): any[] {
+  return program.fullSignature.getInputFields();
 }

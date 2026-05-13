@@ -74,6 +74,10 @@ interface RuntimeGlobalState {
   resetPromise?: Promise<AithyRuntime>;
 }
 
+type ViteHotContext = {
+  dispose(callback: () => void): void;
+};
+
 const runtimeGlobal = globalThis as typeof globalThis & {
   __aithyRuntimeState?: RuntimeGlobalState;
 };
@@ -81,6 +85,19 @@ const runtimeGlobal = globalThis as typeof globalThis & {
 function runtimeState(): RuntimeGlobalState {
   runtimeGlobal.__aithyRuntimeState ??= {};
   return runtimeGlobal.__aithyRuntimeState;
+}
+
+const hot = (import.meta as ImportMeta & { hot?: ViteHotContext }).hot;
+if (hot) {
+  hot.dispose(() => {
+    const state = runtimeState();
+    const runtimePromise = state.runtimePromise;
+    state.runtimePromise = undefined;
+    state.resetPromise = undefined;
+    void runtimePromise?.then((runtime) => runtime.shutdown()).catch((error) => {
+      console.error(`[hmr] failed to shut down runtime: ${describe(error)}`);
+    });
+  });
 }
 
 export function getAithyRuntime(): Promise<AithyRuntime> {
@@ -100,6 +117,7 @@ class RuntimeImpl implements AithyRuntime {
   private sweepTimer?: Timer;
   private shutdownPromise?: Promise<void>;
   private resetting = false;
+  private storesClosed = false;
   private queueHandle?: QueueServiceHandle;
   private workerSupervisor?: RuntimeServiceSupervisor;
 
@@ -338,6 +356,7 @@ class RuntimeImpl implements AithyRuntime {
         message: `[shutdown] bunqueue manager: ${describe(error)}`,
       });
     }
+    this.closeStores();
   }
 
   private startSweep(): void {
@@ -370,6 +389,8 @@ class RuntimeImpl implements AithyRuntime {
   }
 
   private closeStores(): void {
+    if (this.storesClosed) return;
+    this.storesClosed = true;
     this.sessions.closeState();
     this.soulStore.close();
     this.profileStore.close();

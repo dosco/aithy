@@ -20,6 +20,9 @@ describe("memory agents", () => {
     expect(generatorDescription(program)).toContain("include an explicit frequency");
     expect(generatorDescription(program)).toContain("validFrom, validUntil, durationDays, and evidence");
     expect(generatorDescription(program)).toContain("I like coffee, really like it");
+    expect(generatorDescription(program)).toContain("I might try cold brew someday");
+    expect(generatorDescription(program)).toContain("I like this answer");
+    expect(generatorDescription(program)).toContain("0.3-0.45 for tentative interests");
     memory.close();
   });
 
@@ -147,6 +150,7 @@ async function fixture(): Promise<{ config: AppConfig; memory: SqliteMemoryStore
     sessionTtlMs: 1000,
     idleParkMs: 60_000,
     parallelAgents: 1,
+    parallelSearchMcpUrl: "https://search.parallel.ai/mcp",
     workspaceRoot: dir,
     botId: "default",
     stateDir: dir,

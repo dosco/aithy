@@ -1,7 +1,7 @@
 import { createFileRoute, redirect } from "@tanstack/react-router";
 import { SetupPage } from "@/components/setup-page";
 import { sanitizeSetupRedirect } from "@/lib/setup-redirect";
-import { getWebState } from "@/server/actions.functions";
+import { getSetupPageState } from "@/server/state.functions";
 
 export const Route = createFileRoute("/setup")({
   validateSearch: (search) => ({
@@ -9,7 +9,7 @@ export const Route = createFileRoute("/setup")({
   }),
   loaderDeps: ({ search: { redirect } }) => ({ redirect }),
   loader: async ({ deps }) => {
-    const state = await getWebState({ data: {} });
+    const state = await getSetupPageState();
     if (state.aiConfigured && state.profile.userName.trim()) {
       throw redirect({ href: deps.redirect, replace: true });
     }

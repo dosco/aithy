@@ -53,6 +53,32 @@ describe("RuntimeStore", () => {
     store.close();
   });
 
+  test("prunes expired runtime events from sqlite", async () => {
+    const { store, dbPath } = await makeStore();
+    const now = new Date("2026-05-12T12:00:00.000Z");
+    store.appendEvent({
+      type: "activity",
+      id: "expired",
+      conversationId: "c1",
+      createdAt: now.toISOString(),
+      label: "expired",
+    }, "2026-05-12T11:59:59.000Z");
+    store.appendEvent({
+      type: "activity",
+      id: "live",
+      conversationId: "c1",
+      createdAt: now.toISOString(),
+      label: "live",
+    }, "2026-05-12T12:00:01.000Z");
+
+    expect(store.pruneExpiredEvents(now)).toBe(1);
+    const db = new Database(dbPath, { readonly: true });
+    const row = db.query(`SELECT COUNT(*) AS count FROM runtime_events`).get() as { count: number };
+    expect(row.count).toBe(1);
+    db.close();
+    store.close();
+  });
+
   test("records service heartbeats for split runtime roles", async () => {
     const { store } = await makeStore();
     store.heartbeat("sandbox-worker", "ready", { provider: "disabled" });
@@ -61,6 +87,23 @@ describe("RuntimeStore", () => {
     expect(store.service("sandbox-worker")).toMatchObject({ role: "sandbox-worker", state: "ready" });
     expect(store.services().map((service) => service.role)).toContain("embedding-worker");
     expect(store.recentEvents({ kinds: ["service-status"] })).toHaveLength(2);
+    store.close();
+  });
+
+  test("can update service heartbeat rows without emitting live events", async () => {
+    const { store } = await makeStore();
+    store.heartbeat("agent-worker", "ready", { parallelAgents: 3 }, {
+      emitEvent: false,
+      pid: 1234,
+    });
+
+    expect(store.service("agent-worker")).toMatchObject({
+      role: "agent-worker",
+      state: "ready",
+      pid: 1234,
+      detail: { parallelAgents: 3 },
+    });
+    expect(store.recentEvents({ kinds: ["service-status"] })).toHaveLength(0);
     store.close();
   });
 

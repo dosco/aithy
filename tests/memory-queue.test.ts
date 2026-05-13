@@ -6,7 +6,12 @@ import { shutdownManager } from "bunqueue/client";
 import type { AppConfig } from "../src/config/env";
 import { SqliteMemoryStore } from "../src/memory/memory-store";
 import { SqliteMemoryRunsStore } from "../src/memory/memory-runs";
-import { MemoryQueue } from "../src/memory/memory-queue";
+import {
+  AUTO_MEMORY_BATCH_DELAY_MS,
+  AUTO_MEMORY_DEDUP_TTL_MS,
+  MemoryQueue,
+  autoMemoryJobOptions,
+} from "../src/memory/memory-queue";
 import type { SessionManager } from "../src/session/session-manager";
 
 const queues: MemoryQueue[] = [];
@@ -75,6 +80,19 @@ describe("MemoryQueue", () => {
     await queue.enqueueAuto("session-x");
     // Close before the worker actually runs the job to avoid invoking the LLM.
     await queue.close();
+  });
+
+  test("auto memory jobs are delayed and debounced per session", () => {
+    const opts = autoMemoryJobOptions("session-x", "run-y");
+
+    expect(opts.delay).toBe(AUTO_MEMORY_BATCH_DELAY_MS);
+    expect(opts.deduplication).toEqual({
+      id: "auto:session-x",
+      ttl: AUTO_MEMORY_DEDUP_TTL_MS,
+      extend: true,
+      replace: true,
+    });
+    expect(opts.jobId).toBe("memory:auto:run-y");
   });
 
   test("worker error events are captured instead of thrown", async () => {

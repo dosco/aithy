@@ -13,6 +13,8 @@ describe("loadConfig", () => {
     expect(config.sandboxMemoryMb).toBe(512);
     expect(config.sandboxNetwork).toBe("none");
     expect(config.parallelAgents).toBe(3);
+    expect(config.parallelSearchMcpUrl).toBe("https://search.parallel.ai/mcp");
+    expect(config.parallelApiKey).toBeUndefined();
     expect(config.botId).toBe("default");
     expect(config.stateDbPath.endsWith("/.config/aithy/default/state.db")).toBe(true);
   });
@@ -77,6 +79,21 @@ describe("loadConfig", () => {
     expect(config.botId).toBe("team-bot");
     expect(config.stateDir).toBe("/tmp/aithy-state");
     expect(config.stateDbPath).toBe("/tmp/aithy-state/team-bot/state.db");
+  });
+
+  test("parses Parallel search overrides", () => {
+    const config = loadConfig({
+      AITHY_PARALLEL_SEARCH_MCP_URL: " https://search.example.test/mcp ",
+      PARALLEL_API_KEY: " pk-fallback ",
+    });
+    expect(config.parallelSearchMcpUrl).toBe("https://search.example.test/mcp");
+    expect(config.parallelApiKey).toBe("pk-fallback");
+
+    const preferred = loadConfig({
+      AITHY_PARALLEL_API_KEY: " pk-aithy ",
+      PARALLEL_API_KEY: " pk-fallback ",
+    });
+    expect(preferred.parallelApiKey).toBe("pk-aithy");
   });
 
   test("rejects startup without explicit AI model and credentials", () => {

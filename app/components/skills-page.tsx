@@ -14,12 +14,12 @@ import {
   listSkillsPaged,
   upsertSkill,
 } from "@/server/skills-memory.functions";
-import type { SkillDto, SkillsCursor, WebStateDto } from "@/server/dto";
+import type { SkillDto, SkillsCursor, SkillsPageStateDto } from "@/server/dto";
 import { AnimatedCount } from "./mind/animated-count";
 import { SkillDeck, NEW_SKILL_ID } from "./mind/skill-deck";
 import { emptySkillForm, type SkillForm } from "./mind/skill-card";
 
-export function SkillsPage({ initialState }: { initialState: WebStateDto }) {
+export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto }) {
   const [openId, setOpenId] = useState<string | null>(null);
   const [form, setForm] = useState<SkillForm>(emptySkillForm);
   const [error, setError] = useState<string | null>(null);

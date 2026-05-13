@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import * as Popover from "@radix-ui/react-popover";
 import { Bell, Check, ChevronRight } from "lucide-react";
+import { useLiveEvent } from "@/components/live-events";
 import { cn } from "@/lib/utils";
 import {
   listNotifications,
@@ -22,17 +23,12 @@ export function NotificationBell() {
     void refresh();
   }, []);
 
-  useEffect(() => {
-    const source = new EventSource("/api/events");
-    source.onmessage = (msg) => {
-      const event = JSON.parse(msg.data) as WebLiveEvent | { type: "connected" };
-      if (event.type !== "notification") return;
-      const incoming = event.notification;
-      setItems((prev) => mergeIncoming(prev, incoming));
-      setUnread((n) => n + 1);
-    };
-    return () => source.close();
-  }, []);
+  useLiveEvent((event) => {
+    if (event.type !== "notification") return;
+    const incoming = event.notification;
+    setItems((prev) => mergeIncoming(prev, incoming));
+    setUnread((n) => n + 1);
+  });
 
   async function refresh() {
     const result = await listNotifications();

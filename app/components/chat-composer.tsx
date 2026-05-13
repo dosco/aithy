@@ -40,6 +40,7 @@ export function ChatComposer({
   const [skillResults, setSkillResults] = useState<SkillDto[]>([]);
   const [skillResultsTitle, setSkillResultsTitle] = useState("Top retrieved skills");
   const trimmed = input.trim();
+  const canSubmit = trimmed.length > 0;
   const commandQuery = trimmed.startsWith("/") && !trimmed.includes(" ") ? trimmed : "";
   const commands = useMemo(() => visibleWebSlashCommands(commandQuery), [commandQuery]);
   const showCommands = commandQuery.length > 0 && commands.length > 0 && !skillsOpen;
@@ -194,7 +195,7 @@ export function ChatComposer({
 
         <SetupStatusLog statuses={setupStatuses} />
 
-        <div className="app-chat-composer flex flex-col gap-2 rounded-[28px] border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-5 py-2 shadow-md shadow-black/5">
+        <div className="app-chat-composer group flex flex-col gap-2 rounded-[24px] border border-[rgb(var(--border))]/90 bg-[rgb(var(--panel))]/95 px-4 py-2.5 shadow-[0_14px_40px_rgb(0_0_0/0.07),0_1px_2px_rgb(0_0_0/0.08)] backdrop-blur transition focus-within:border-[rgb(var(--foreground))]/30 focus-within:shadow-[0_18px_48px_rgb(0_0_0/0.1),0_0_0_3px_rgb(var(--accent)/0.12)] sm:px-5">
           {selectedSkills.length > 0 ? (
             <div className="flex flex-wrap gap-2 pt-2">
               {selectedSkills.map((skill) => (
@@ -222,17 +223,22 @@ export function ChatComposer({
                   submit();
                 }
               }}
-              placeholder="Message Aithy"
-              className="max-h-60 min-h-10 overflow-y-auto rounded-none border-0 bg-transparent px-0 py-2 text-base leading-6 shadow-none focus:border-0"
+              placeholder="Hey Aithy"
+              className="max-h-60 min-h-11 overflow-y-auto rounded-none border-0 bg-transparent px-0 py-2.5 text-[1.0625rem] leading-6 shadow-none placeholder:text-[rgb(var(--muted-foreground))]/80 focus:border-0"
             />
             <button
               type="button"
               onClick={sending ? onStop : submit}
-              disabled={!sending && !input.trim()}
+              disabled={!sending && !canSubmit}
               aria-label={sending ? "Stop" : "Send"}
-              className="mb-0.5 flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] transition hover:opacity-90 disabled:pointer-events-none disabled:opacity-40"
+              className={cn(
+                "mb-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-full border transition duration-200 focus:outline-none focus:ring-2 focus:ring-[rgb(var(--accent))]/35 focus:ring-offset-2 focus:ring-offset-[rgb(var(--panel))]",
+                sending || canSubmit
+                  ? "border-transparent bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-[0_8px_22px_rgb(var(--accent)/0.24)] hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgb(var(--accent)/0.28)]"
+                  : "border-[rgb(var(--border))]/80 bg-[rgb(var(--muted))]/55 text-[rgb(var(--muted-foreground))]/70 disabled:pointer-events-none",
+              )}
             >
-              {sending ? <Square className="h-3 w-3 fill-current" /> : <SendHorizontal className="h-4 w-4" />}
+              {sending ? <Square className="h-3.5 w-3.5 fill-current" /> : <SendHorizontal className="h-4.5 w-4.5" />}
             </button>
           </div>
         </div>

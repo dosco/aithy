@@ -2,10 +2,10 @@ import { useNavigate, useParams } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { getWebState } from "@/server/actions.functions";
+import { useLiveEvent } from "@/components/live-events";
+import { getSessionsPageState } from "@/server/state.functions";
 import type { SessionSummaryDto } from "@/server/dto";
 import { cn } from "@/lib/utils";
-import type { WebLiveEvent } from "../../src/web/live-events";
 
 const RAIL_WIDTH = 288;
 
@@ -19,7 +19,7 @@ export function SessionRail() {
 
   useEffect(() => {
     let cancelled = false;
-    void getWebState({ data: {} }).then((state) => {
+    void getSessionsPageState().then((state) => {
       if (!cancelled) setSessions(state.sessions);
     });
     return () => {
@@ -27,14 +27,9 @@ export function SessionRail() {
     };
   }, []);
 
-  useEffect(() => {
-    const source = new EventSource("/api/events");
-    source.onmessage = (message) => {
-      const event = JSON.parse(message.data) as WebLiveEvent | { type: "connected" };
-      if (event.type === "sessions") setSessions(event.sessions);
-    };
-    return () => source.close();
-  }, []);
+  useLiveEvent((event) => {
+    if (event.type === "sessions") setSessions(event.sessions);
+  });
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {

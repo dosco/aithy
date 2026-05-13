@@ -29,10 +29,6 @@ export function assertProfileImageInput(mimeType: string, byteLength: number): v
   }
 }
 
-export function hasNativeBunImage(): boolean {
-  return typeof (Bun as unknown as { Image?: unknown }).Image === "function";
-}
-
 export async function resizeProfileImage(
   bytes: Uint8Array,
   mimeType: string,
@@ -40,7 +36,7 @@ export async function resizeProfileImage(
   assertProfileImageInput(mimeType, bytes.byteLength);
   const ImageCtor = (Bun as unknown as { Image?: BunImageConstructor }).Image;
   if (!ImageCtor) {
-    throw new Error("Profile photo processing requires a Bun runtime with native image support.");
+    throw new Error("Profile photo processing requires Bun 1.3.14 or newer.");
   }
   const image = new ImageCtor(bytes);
   const resized = await image

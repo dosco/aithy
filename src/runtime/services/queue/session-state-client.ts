@@ -12,6 +12,7 @@ export class RemoteSessionStateStore implements SessionStateStore {
   private readonly summaries = new Map<string, BotSessionSummary>();
   private readonly sessions = new Map<string, StoredSession>();
   private readonly pages = new Map<string, MessagePage>();
+  private readonly lastMessageIds = new Map<string, number>();
   private readonly pending: Promise<unknown>[] = [];
   private readonly errors: Error[] = [];
   private loadedAll = false;
@@ -28,11 +29,13 @@ export class RemoteSessionStateStore implements SessionStateStore {
   async preloadSession(conversationId: string): Promise<void> {
     const session = await this.client.loadSession(conversationId);
     if (session) this.cacheSession(session);
+    this.rememberLastMessageId(conversationId, await this.client.lastMessageId(conversationId));
   }
 
   async preloadMessages(conversationId: string, input: MessagePageInput): Promise<void> {
     const page = await this.client.messagesPage(conversationId, input);
     this.pages.set(pageKey(conversationId, input), page);
+    this.rememberLastMessageIdFromPage(conversationId, page);
     const summary = await this.client.sessionSummary(conversationId);
     if (summary) this.summaries.set(conversationId, summary);
   }
@@ -102,6 +105,7 @@ export class RemoteSessionStateStore implements SessionStateStore {
     const existing = this.summaries.get(conversationId);
     if (existing) this.summaries.set(conversationId, { ...existing, updatedAt: now, tokenTotals: zeroTokens() });
     this.sessions.delete(conversationId);
+    this.lastMessageIds.delete(conversationId);
     this.clearPages(conversationId);
     this.track(this.client.clearSession(conversationId, now).then((summary) => {
       this.summaries.set(conversationId, summary);
@@ -111,6 +115,7 @@ export class RemoteSessionStateStore implements SessionStateStore {
   deleteSession(conversationId: string): void {
     this.summaries.delete(conversationId);
     this.sessions.delete(conversationId);
+    this.lastMessageIds.delete(conversationId);
     this.clearPages(conversationId);
     this.track(this.client.deleteSession(conversationId));
   }
@@ -119,6 +124,7 @@ export class RemoteSessionStateStore implements SessionStateStore {
     this.summaries.clear();
     this.sessions.clear();
     this.pages.clear();
+    this.lastMessageIds.clear();
     this.loadedAll = true;
     this.track(this.client.deleteAllSessions());
   }
@@ -128,7 +134,8 @@ export class RemoteSessionStateStore implements SessionStateStore {
     const loaded = this.sessions.get(conversationId);
     if (loaded) loaded.messages.push(...messages);
     this.clearPages(conversationId);
-    this.track(this.client.appendMessages(conversationId, messages).then(async () => {
+    this.track(this.client.appendMessages(conversationId, messages).then(async (page) => {
+      this.rememberLastMessageIdFromPage(conversationId, page);
       const session = await this.client.loadSession(conversationId);
       if (session) this.cacheSession(session);
     }));
@@ -147,8 +154,8 @@ export class RemoteSessionStateStore implements SessionStateStore {
     return this.listSessions().filter((session) => session.parentSessionId === parentId);
   }
 
-  lastMessageId(_conversationId: string): number | null {
-    return null;
+  lastMessageId(conversationId: string): number | null {
+    return this.lastMessageIds.get(conversationId) ?? null;
   }
 
   close(): void {}
@@ -160,6 +167,18 @@ export class RemoteSessionStateStore implements SessionStateStore {
   private cacheSession(session: StoredSession): void {
     this.sessions.set(session.conversationId, session);
     this.summaries.set(session.conversationId, session);
+  }
+
+  private rememberLastMessageId(conversationId: string, id: number | null): void {
+    if (id === null) {
+      this.lastMessageIds.delete(conversationId);
+      return;
+    }
+    this.lastMessageIds.set(conversationId, id);
+  }
+
+  private rememberLastMessageIdFromPage(conversationId: string, page: MessagePage): void {
+    if (page.newestId !== null) this.lastMessageIds.set(conversationId, page.newestId);
   }
 
   private track(promise: Promise<unknown>): void {

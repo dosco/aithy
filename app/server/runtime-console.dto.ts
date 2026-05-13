@@ -45,8 +45,14 @@ export interface RuntimeConsoleDto {
   queues: RuntimeQueueStatus[];
 }
 
-export async function runtimeConsoleDto(runtime: AithyRuntime): Promise<RuntimeConsoleDto> {
-  const snapshot = await runtime.queue.consoleSnapshot({ logLimit: 120, commandLimit: 120 });
+export async function runtimeConsoleDto(
+  runtime: AithyRuntime,
+  input: { logLimit?: number; commandLimit?: number } = {},
+): Promise<RuntimeConsoleDto> {
+  const snapshot = await runtime.queue.consoleSnapshot({
+    logLimit: input.logLimit ?? 120,
+    commandLimit: input.commandLimit ?? 120,
+  });
   return runtimeConsoleSnapshotDto(snapshot);
 }
 

@@ -4,15 +4,15 @@ import { smartScrape } from "../../scraper/smart-spider";
 import { argsPreview } from "../../security/capability-broker";
 import type { ToolContext } from "../tool-context";
 
-export function createWebScrapeTools(
+export function createWebFetchTools(
   ctx: ToolContext,
   config: AppConfig,
 ): AxAgentFunction[] {
   return [
-    fn("scrape")
+    fn("fetch")
       .namespace("web")
       .description(
-        "Render and smart-scrape a webpage for a specific task. Use this when a page may need browser rendering, when links may need to be followed, or when the final answer needs source citations.",
+        "Read a known http:// or https:// URL with Aithy's local web research sub-agent. It renders the starting page, can follow relevant links, and consolidates a cited answer from the pages it visits. Use this after web.search finds a candidate source, or whenever a specific page needs browser rendering, link-following, or source-cited synthesis.",
       )
       .arg("url", f.string("Starting http:// or https:// URL"))
       .arg("task", f.string("What to learn from the page or linked pages"))
@@ -33,22 +33,22 @@ export function createWebScrapeTools(
         text: f.string("Anchor text or label"),
         decision: f.string("follow or skip decision"),
       }).array("Links considered by the spider"))
-      .returnsField("errors", f.string("Non-fatal scrape error").array("Errors encountered while crawling"))
+      .returnsField("errors", f.string("Non-fatal fetch error").array("Errors encountered while crawling"))
       .example({
-        title: "Scrape a rendered docs page",
-        code: "await web.scrape({ url: 'https://example.com/docs', task: 'Find install requirements and cite the source pages.' });",
+        title: "Fetch and synthesize a rendered docs page",
+        code: "await web.fetch({ url: 'https://example.com/docs', task: 'Find install requirements and cite the source pages.' });",
       })
       .handler(async ({ url, task }) => {
         ctx.capabilities?.require({
           conversationId: ctx.session.conversationId,
           capability: "web.scrape",
-          toolName: "web.scrape",
+          toolName: "web.fetch",
           argsPreview: argsPreview({ url, task }),
         });
         ctx.events.emit({
           type: "agent.turn",
           conversationId: ctx.session.conversationId,
-          summary: `Scraping ${url}`,
+          summary: `Fetching ${url}`,
         });
         return smartScrape({ url, task }, { config });
       })

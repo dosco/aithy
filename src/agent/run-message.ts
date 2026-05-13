@@ -2,9 +2,9 @@ import {
   AxAIServiceAbortedError,
   type AxAgentSkillResult,
   type AxAgentSkillsSearchFn,
-  type AxFunctionCallTrace,
 } from "@ax-llm/ax";
 import type { ActiveRunRegistry } from "./active-runs";
+import type { StoppableProgram } from "./active-runs";
 import type { ChannelMessage, ChannelReply } from "../channel/types";
 import type { AppConfig } from "../config/env";
 import type { EventBus } from "../events/bus";
@@ -17,24 +17,28 @@ import { captureProgramUsage } from "../usage/capture";
 import type { SandboxProvider } from "../sandbox/provider";
 import type { SessionManager } from "../session/session-manager";
 import type { UserProfile } from "../profile/types";
+import { userProfileForAgent } from "../profile/service";
 import type { SoulProfile } from "../soul/types";
+import { shouldQueueAutoMemory } from "../memory/auto-gate";
 import type {
-  AssistantTextMessage,
   AssistantToolCallMessage,
-  BotMessage,
-  BotSession,
-  UserMessage,
 } from "../session/types";
-import {
-  MAX_CONVERSATION_HISTORY_TEXT_CHARS,
-} from "../config/limits";
 import { isClarificationPause } from "./clarification";
 import { createAithyAgent, type AxAgentMemoriesSearchFn } from "./create-agent";
-import { isTrivialUserTurn } from "./triage-filter";
+import {
+  assistantTextMessage,
+  compactPreview,
+  conversationHistoryForAgent,
+  priorMessagesForAutoMemory,
+  safeGetChatLog,
+  toChannelContext,
+  toolCallMessage,
+  turnMessages,
+  wrapSkillsSearch,
+} from "./run-message-helpers";
 import type { ToolContext } from "./tool-context";
 import { createAgentTools } from "./tools";
 import type { CapabilityBroker } from "../security/capability-broker";
-import type { TurnTraceChatLog } from "./trace-writer";
 import { appendChatLogToTraces } from "./trace-writer";
 
 export interface RunMessageDeps {
@@ -54,6 +58,7 @@ export interface RunMessageDeps {
   notify?: (input: NotificationCreate) => void;
   userMessagePersisted?: boolean;
   capabilities?: CapabilityBroker;
+  flushSessionState?: () => Promise<void>;
 }
 
 export async function runMessage(
@@ -83,19 +88,46 @@ export async function runMessage(
   };
   const toolCallMessages: AssistantToolCallMessage[] = [];
   const agentFactory = deps.agentFactory ?? createAithyAgent;
-  const onSkillsSearch = wrapSkillsSearch(deps.skillsSearch, toolCallMessages);
+  const publishToolCall = (toolMessage: AssistantToolCallMessage) => {
+    deps.events.emit({
+      type: "agent.tool_call",
+      conversationId: message.conversationId,
+      message: toolMessage,
+    });
+  };
+  const onSkillsSearch = wrapSkillsSearch(deps.skillsSearch, toolCallMessages, publishToolCall);
   const memoryStore = deps.memory;
   const onMemoriesSearch: AxAgentMemoriesSearchFn | undefined = memoryStore
     ? async (searches, alreadyLoaded) => {
-        const hits = await memoryStore.search([...searches], {
-          limit: 5,
+      const hits = await memoryStore.search([...searches], {
+        limit: 5,
+        excludeIds: alreadyLoaded.map((m) => m.id),
+      });
+      const results = hits.map((m) => ({
+        id: m.id,
+        content: formatMemoryForRecall(m),
+      }));
+      const toolMessage: AssistantToolCallMessage = {
+        role: "assistant",
+        kind: "tool_call",
+        toolName: "memory.recall",
+        toolArgs: {
+          queries: [...searches],
           excludeIds: alreadyLoaded.map((m) => m.id),
-        });
-        return hits.map((m) => ({
-          id: m.id,
-          content: formatMemoryForRecall(m),
-        }));
-      }
+        },
+        toolResult: {
+          matches: results.map((m) => ({
+            id: m.id,
+            contentBytes: m.content.length,
+            contentPreview: compactPreview(m.content),
+          })),
+        },
+        createdAt: new Date().toISOString(),
+      };
+      toolCallMessages.push(toolMessage);
+      publishToolCall(toolMessage);
+      return results;
+    }
     : undefined;
   const { program, llm } = agentFactory({
     config: deps.config,
@@ -103,15 +135,17 @@ export async function runMessage(
     events: deps.events,
     conversationId: message.conversationId,
     soul: deps.soul,
-    profile: deps.profile,
     onSkillsSearch,
     onMemoriesSearch,
     onFunctionCall: (call) => {
-      toolCallMessages.push(toolCallMessage(call));
+      if (!shouldRecordFunctionCall(call)) return;
+      const toolMessage = toolCallMessage(call);
+      toolCallMessages.push(toolMessage);
+      publishToolCall(toolMessage);
     },
   });
 
-  deps.activeRuns?.register(message.conversationId, program);
+  if (program.stop) deps.activeRuns?.register(message.conversationId, program as StoppableProgram);
   deps.events.emit({
     type: "agent.started",
     conversationId: message.conversationId,
@@ -120,7 +154,9 @@ export async function runMessage(
   });
 
   try {
+    const userProfile = userProfileForAgent(deps.profile);
     const input = {
+      ...(userProfile ? { userProfile } : {}),
       userRequest: message.text,
       channelContext: toChannelContext(message),
       conversationHistory: conversationHistoryForAgent(
@@ -133,10 +169,15 @@ export async function runMessage(
       ? await program.forward(llm, input, options)
       : await program.forward(llm, input);
     const agentResponse = String(result.agentResponse ?? "");
+    const shouldQueueMemory = shouldQueueAutoMemory({
+      userText: message.text,
+      priorMessages: priorMessagesForAutoMemory(session, message, deps.userMessagePersisted),
+    });
     deps.sessions.appendMessages(
       message.conversationId,
       turnMessages(message, toolCallMessages, assistantTextMessage(agentResponse), deps),
     );
+    await deps.flushSessionState?.();
     if (deps.usage) {
       captureProgramUsage(program, {
         store: deps.usage,
@@ -144,7 +185,7 @@ export async function runMessage(
         sessionId: message.conversationId,
       });
     }
-    if (!isTrivialUserTurn(message.text)) {
+    if (shouldQueueMemory) {
       enqueueAutoMemoryTask(deps, message.conversationId);
     }
     deps.events.emit({
@@ -217,138 +258,9 @@ export async function runMessage(
   }
 }
 
-function safeGetChatLog(program: unknown): TurnTraceChatLog {
-  const empty: TurnTraceChatLog = { actor: [], responder: [] };
-  const fn = (program as { getChatLog?: () => TurnTraceChatLog })?.getChatLog;
-  if (typeof fn !== "function") return empty;
-  try {
-    const log = fn.call(program);
-    return {
-      actor: Array.isArray(log?.actor) ? log.actor : [],
-      responder: Array.isArray(log?.responder) ? log.responder : [],
-    };
-  } catch {
-    return empty;
-  }
-}
-
-function toChannelContext(message: ChannelMessage) {
-  return {
-    channelId: message.channelId,
-    conversationId: message.conversationId,
-    senderId: message.senderId,
-    createdAt: message.createdAt.toISOString(),
-  };
-}
-
-interface AgentHistoryEntry {
-  role: "user" | "assistant";
-  content: string;
-  createdAt: string;
-}
-
-function conversationHistoryForAgent(
-  session: BotSession,
-  currentMessage?: ChannelMessage,
-): string | undefined {
-  const lines: string[] = [];
-  for (const message of session.messages) {
-    if (currentMessage && isCurrentUserMessage(message, currentMessage)) continue;
-    const entry = historyEntryFor(message);
-    if (entry) lines.push(`[${entry.createdAt}] ${entry.role}: ${entry.content}`);
-  }
-  return lines.length > 0 ? lines.join("\n") : undefined;
-}
-
-function isCurrentUserMessage(message: BotMessage, current: ChannelMessage): boolean {
-  return message.role === "user"
-    && message.content === trimHistoryText(current.text)
-    && message.createdAt === current.createdAt.toISOString();
-}
-
-function historyEntryFor(message: BotMessage): AgentHistoryEntry | undefined {
-  if (message.role === "user") {
-    return { role: "user", content: message.content, createdAt: message.createdAt };
-  }
-  if (message.kind === "text") {
-    return { role: "assistant", content: message.content, createdAt: message.createdAt };
-  }
-  return undefined;
-}
-
-function userMessage(message: ChannelMessage): UserMessage {
-  return {
-    role: "user",
-    content: trimHistoryText(message.text),
-    createdAt: message.createdAt.toISOString(),
-  };
-}
-
-function toolCallMessage(call: Readonly<AxFunctionCallTrace>): AssistantToolCallMessage {
-  return {
-    role: "assistant",
-    kind: "tool_call",
-    toolName: call.fn,
-    toolArgs: call.args ?? null,
-    toolResult: { ok: call.ok, value: serializeToolResult(call.result) },
-    createdAt: new Date().toISOString(),
-  };
-}
-
-function serializeToolResult(value: unknown): unknown {
-  if (value instanceof Error) return { name: value.name, message: value.message };
-  return value;
-}
-
-function wrapSkillsSearch(
-  inner: AxAgentSkillsSearchFn | undefined,
-  sink: AssistantToolCallMessage[],
-): AxAgentSkillsSearchFn | undefined {
-  if (!inner) return undefined;
-  return async (queries) => {
-    const results = await inner(queries);
-    sink.push({
-      role: "assistant",
-      kind: "tool_call",
-      toolName: "skills.search",
-      toolArgs: { queries: [...queries] },
-      toolResult: {
-        matches: results.map((r) => ({
-          name: r.name,
-          contentBytes: r.content.length,
-        })),
-      },
-      createdAt: new Date().toISOString(),
-    });
-    return results;
-  };
-}
-
-function assistantTextMessage(text: string): AssistantTextMessage {
-  return {
-    role: "assistant",
-    kind: "text",
-    content: trimHistoryText(text),
-    createdAt: new Date().toISOString(),
-  };
-}
-
-function turnMessages(
-  message: ChannelMessage,
-  toolCallMessages: AssistantToolCallMessage[],
-  assistant: AssistantTextMessage,
-  deps: RunMessageDeps,
-): BotMessage[] {
-  return [
-    ...(deps.userMessagePersisted ? [] : [userMessage(message)]),
-    ...toolCallMessages,
-    assistant,
-  ];
-}
-
-function trimHistoryText(text: string): string {
-  if (text.length <= MAX_CONVERSATION_HISTORY_TEXT_CHARS) return text;
-  return `${text.slice(0, MAX_CONVERSATION_HISTORY_TEXT_CHARS)}\n[truncated]`;
+function shouldRecordFunctionCall(call: unknown): boolean {
+  if (!call || typeof call !== "object" || !("kind" in call)) return true;
+  return (call as { kind?: unknown }).kind === "external";
 }
 
 function enqueueAutoMemoryTask(deps: RunMessageDeps, conversationId: string): void {
