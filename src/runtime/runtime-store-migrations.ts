@@ -74,6 +74,27 @@ const migrations: readonly SqliteMigration[] = [
       ALTER TABLE runtime_commands ADD COLUMN detail_json TEXT;
     `,
   },
+  {
+    version: 3,
+    sql: `
+      CREATE TABLE IF NOT EXISTS permission_requests (
+        id TEXT PRIMARY KEY,
+        conversation_id TEXT NOT NULL,
+        capability TEXT NOT NULL,
+        tool_name TEXT NOT NULL,
+        command TEXT NOT NULL,
+        cwd TEXT NOT NULL,
+        reason TEXT NOT NULL,
+        args_preview TEXT,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        decided_at TEXT,
+        decision_reason TEXT
+      );
+      CREATE INDEX IF NOT EXISTS permission_requests_lookup_idx
+        ON permission_requests(conversation_id, status, created_at);
+    `,
+  },
 ];
 
 export function applyRuntimeStoreMigrations(db: Database): void {

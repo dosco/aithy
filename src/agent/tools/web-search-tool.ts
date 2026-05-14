@@ -12,7 +12,7 @@ export function createWebSearchTools(
     fn("search")
       .namespace("web")
       .description(
-        "Search the public web with Parallel Search MCP to discover current or relevant source URLs. Use this for source discovery before calling web.fetch on specific pages. Do not use this to read a known URL in depth.",
+        "Search the public web with Parallel Search MCP to discover current or relevant source URLs. Use this for recent scores, news, weather, prices, and explicit user requests like 'search it up' or 'look it up'. Use it for source discovery before calling web.fetch on specific pages. Do not use this to read a known URL in depth.",
       )
       .arg("query", f.string("Natural-language web search query"))
       .arg("task", f.string("What the search is meant to help answer"))

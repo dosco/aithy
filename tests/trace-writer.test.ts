@@ -27,6 +27,7 @@ function makeConfig(tracesDir: string): AppConfig {
     botId: "default",
     stateDir: "/tmp/state",
     stateDbPath: "/tmp/state/default/state.db",
+    systemBashEnabled: true,
     traceEnabled: true,
     tracesDir,
     globalMounts: [],

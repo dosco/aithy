@@ -5,9 +5,9 @@ runtime.start();
 
 let shuttingDown = false;
 const shutdown = (signal: NodeJS.Signals) => {
-  if (shuttingDown) process.exit(1);
+  if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`[queue-service] received ${signal}, shutting down`);
+  console.log(`[queue-service] shutting down, please wait... received ${signal}`);
   const killer = setTimeout(() => process.exit(1), 10_000);
   killer.unref();
   try {

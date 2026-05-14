@@ -72,7 +72,11 @@ export function ApiKeyInput({
   onClear?: () => void;
   clearLabel?: string;
 }) {
-  const placeholder = secret?.configured ? `Stored in ${secret.source}` : fallback;
+  const placeholder = secret?.configured
+    ? secret.source === "environment"
+      ? "Configured by environment"
+      : `Stored in ${secret.source}`
+    : fallback;
   const canClear = Boolean(onClear) && (secret?.configured || value.length > 0);
   return (
     <div
@@ -95,7 +99,7 @@ export function ApiKeyInput({
       />
       {secret?.configured ? (
         <span className="flex shrink-0 items-center gap-1 border-l border-[rgb(var(--border))] px-3 text-[10px] font-medium uppercase tracking-wider text-[rgb(var(--muted-foreground))]">
-          <Check className="h-3 w-3" /> {secret.source}
+          <Check className="h-3 w-3" /> {secret.source === "environment" ? "env" : secret.source}
         </span>
       ) : null}
       {onClear ? (

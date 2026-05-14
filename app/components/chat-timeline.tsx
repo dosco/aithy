@@ -1,21 +1,12 @@
-import {
-  useCallback,
-  useEffect,
-  useLayoutEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { GitBranch } from "lucide-react";
 import { AsciiSplash } from "@/components/ascii-splash";
 import { Markdown } from "@/components/markdown";
+import { PermissionCard } from "@/components/permission-card";
 import type { SessionSummaryDto } from "@/server/dto";
-import type {
-  SerializableBotMessage,
-  WebLiveEvent,
-} from "../../src/web/live-events";
+import type { SerializableBotMessage, SerializableSystemPermissionRequest, WebLiveEvent } from "../../src/web/live-events";
 
 type ActivityEvent = Extract<WebLiveEvent, { type: "activity" }>;
 type Usage = { input: number; output: number; thought: number; total: number };
@@ -28,6 +19,8 @@ export interface ChatMessageItem {
 type TimelineEntry =
   | { kind: "user"; key: string; content: string }
   | { kind: "assistant"; key: string; content: string; usage?: Usage }
+  | { kind: "permission"; key: string; message: Extract<SerializableBotMessage, { kind: "permission" }> }
+  | { kind: "permission-request"; key: string; request: SerializableSystemPermissionRequest }
   | { kind: "thought"; key: string; content: string }
   | { kind: "tool"; key: string; toolName: string; toolArgs: unknown; toolResult?: unknown; usage?: Usage }
   | { kind: "sub-session"; key: string; session: SessionSummaryDto }
@@ -44,6 +37,7 @@ export function ChatTimeline({
   messages,
   subSessions,
   activities,
+  permissionRequests,
   details,
   sending,
   resetKey,
@@ -51,10 +45,12 @@ export function ChatTimeline({
   loadingMore,
   onLoadMore,
   onOpenSession,
+  onPermissionDecision,
 }: {
   messages: ChatMessageItem[];
   subSessions: SessionSummaryDto[];
   activities: ActivityEvent[];
+  permissionRequests: SerializableSystemPermissionRequest[];
   details: boolean;
   sending: boolean;
   resetKey: string | null;
@@ -62,6 +58,7 @@ export function ChatTimeline({
   loadingMore: boolean;
   onLoadMore: () => Promise<boolean>;
   onOpenSession: (session: SessionSummaryDto) => void;
+  onPermissionDecision: (requestId: string, decision: "allow" | "deny") => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   const wasNearBottomRef = useRef(true);
@@ -69,8 +66,8 @@ export function ChatTimeline({
   const [viewport, setViewport] = useState(() => currentViewport());
   const [heightVersion, setHeightVersion] = useState(0);
   const timeline = useMemo(
-    () => buildTimeline(messages, subSessions, activities, details, sending),
-    [messages, subSessions, activities, details, sending],
+    () => buildTimeline(messages, subSessions, activities, permissionRequests, details, sending),
+    [messages, subSessions, activities, permissionRequests, details, sending],
   );
 
   useEffect(() => {
@@ -150,7 +147,13 @@ export function ChatTimeline({
           <MeasuredRow key={item.key} itemKey={item.key} onHeight={recordHeight}>
             {item.kind === "typing"
               ? <TypingIndicator />
-              : <TimelineItem item={item} onOpenSession={onOpenSession} />}
+              : (
+                  <TimelineItem
+                    item={item}
+                    onOpenSession={onOpenSession}
+                    onPermissionDecision={onPermissionDecision}
+                  />
+                )}
           </MeasuredRow>
         ))}
       </AnimatePresence>
@@ -166,9 +169,9 @@ export function countDebugItems(
   let count = activities.length;
   for (const { message } of messages) {
     if (message.role !== "assistant") continue;
-    if (message.thought) count += 1;
+    if (message.kind !== "permission" && message.thought) count += 1;
     if (message.kind === "tool_call") count += 1;
-    if (message.usage) count += 1;
+    if (message.kind !== "permission" && message.usage) count += 1;
   }
   return count;
 }
@@ -177,6 +180,7 @@ function buildTimeline(
   messages: ChatMessageItem[],
   subSessions: SessionSummaryDto[],
   activities: ActivityEvent[],
+  permissionRequests: SerializableSystemPermissionRequest[],
   details: boolean,
   sending: boolean,
 ): TimelineEntry[] {
@@ -190,7 +194,7 @@ function buildTimeline(
       }
       return;
     }
-    if (details && message.thought && message.thought.trim().length > 0) {
+    if (details && message.kind !== "permission" && message.thought && message.thought.trim().length > 0) {
       entries.push({ at, entry: { kind: "thought", key: `${baseKey}-thought`, content: message.thought } });
     }
     if (message.kind === "text") {
@@ -205,6 +209,11 @@ function buildTimeline(
           },
         });
       }
+    } else if (message.kind === "permission") {
+      entries.push({
+        at,
+        entry: { kind: "permission", key: baseKey, message },
+      });
     } else if (details) {
       entries.push({
         at,
@@ -218,6 +227,12 @@ function buildTimeline(
         },
       });
     }
+  });
+  permissionRequests.forEach((request) => {
+    entries.push({
+      at: request.createdAt,
+      entry: { kind: "permission-request", key: `permission-${request.id}`, request },
+    });
   });
   subSessions.forEach((session) => {
     entries.push({
@@ -296,9 +311,11 @@ function MeasuredRow({
 function TimelineItem({
   item,
   onOpenSession,
+  onPermissionDecision,
 }: {
   item: Exclude<TimelineEntry, { kind: "typing" }>;
   onOpenSession: (session: SessionSummaryDto) => void;
+  onPermissionDecision: (requestId: string, decision: "allow" | "deny") => void;
 }) {
   const reduce = useReducedMotion();
   const motionProps = reduce
@@ -341,6 +358,8 @@ function TimelineItem({
       </motion.div>
     );
   }
+  if (item.kind === "permission") return <motion.div {...motionProps}><PermissionCard message={item.message} /></motion.div>;
+  if (item.kind === "permission-request") return <motion.div {...motionProps}><PermissionCard request={item.request} onDecision={onPermissionDecision} /></motion.div>;
   if (item.kind === "tool") {
     return (
       <motion.div

@@ -15,6 +15,7 @@ import type { SoulProfile } from "../soul/types";
 import { formatSkillContent } from "../skills/skills-store";
 import type { SqliteSkillsStore } from "../skills/skills-store";
 import type { SqliteUsageStore } from "../usage/usage-store";
+import type { RuntimeStore } from "./runtime-store";
 
 interface RuntimeForUserChat {
   config: AppConfig;
@@ -29,6 +30,7 @@ interface RuntimeForUserChat {
   activeRuns: ActiveRunRegistry;
   skills: SqliteSkillsStore;
   capabilities?: CapabilityBroker;
+  runtimeStore?: RuntimeStore;
   notify(input: NotificationCreate): NotificationEntry;
   flushSessionState?(): Promise<void>;
 }
@@ -60,6 +62,7 @@ export async function processUserChatJob(
     usage: runtime.usage,
     activeRuns: runtime.activeRuns,
     capabilities: runtime.capabilities,
+    runtimeStore: runtime.runtimeStore,
     notify: (input) => runtime.notify(input),
     flushSessionState: runtime.flushSessionState ? () => runtime.flushSessionState?.() ?? Promise.resolve() : undefined,
     skills,

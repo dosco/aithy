@@ -62,7 +62,7 @@ class ServiceProcess {
     }
     const proc = this.proc;
     this.proc = null;
-    void this.queue.heartbeat(this.config.role, "stopping");
+    await sendBestEffort(this.queue.heartbeat(this.config.role, "stopping"));
     if (!proc) return;
     proc.kill("SIGTERM");
     const exited = proc.exited.catch(() => undefined);
@@ -71,12 +71,12 @@ class ServiceProcess {
       delay(this.config.shutdownGraceMs ?? DEFAULT_SHUTDOWN_GRACE_MS).then(() => false),
     ]);
     if (!graceful) {
-      void this.queue.appendLog({
+      void sendBestEffort(this.queue.appendLog({
         role: "web",
         level: "warn",
         source: "supervisor",
         message: `${this.config.role} did not stop gracefully; sending SIGKILL`,
-      });
+      }));
       proc.kill("SIGKILL");
       await exited;
     }
@@ -84,14 +84,14 @@ class ServiceProcess {
 
   private spawn(): void {
     const entry = path.join(process.cwd(), this.config.entry);
-    void this.queue.heartbeat(this.config.role, "starting", { entry });
-    void this.queue.appendLog({
+    void sendBestEffort(this.queue.heartbeat(this.config.role, "starting", { entry }));
+    void sendBestEffort(this.queue.appendLog({
       role: "web",
       level: "info",
       source: "supervisor",
       message: `starting ${this.config.role}`,
       detail: { entry },
-    });
+    }));
     const proc = Bun.spawn([process.execPath, "run", entry], {
       cwd: process.cwd(),
       stdout: "pipe",
@@ -109,16 +109,20 @@ class ServiceProcess {
     void proc.exited.then((code) => {
       if (this.proc === proc) this.proc = null;
       const level = code === 0 ? "info" : "error";
-      void this.queue.appendLog({
+      void sendBestEffort(this.queue.appendLog({
         role: "web",
         level,
         source: "supervisor",
         message: `${this.config.role} exited with code ${code}`,
-      });
+      }));
       if (this.closing) return;
       const delayMs = Math.min(30_000, 500 * 2 ** Math.min(this.restarts, 6));
       this.restarts += 1;
-      void this.queue.heartbeat(this.config.role, "failed", { code, restartInMs: delayMs });
+      void sendBestEffort(this.queue.heartbeat(
+        this.config.role,
+        "failed",
+        { code, restartInMs: delayMs },
+      ));
       this.restartTimer = setTimeout(() => {
         this.restartTimer = undefined;
         this.spawn();
@@ -150,12 +154,12 @@ async function captureLines(
     pending += decoder.decode();
     if (pending.trim()) recordLine(queue, role, source, pending);
   } catch (error) {
-    void queue.appendLog({
+    void sendBestEffort(queue.appendLog({
       role: "web",
       level: "warn",
       source: "supervisor",
-      message: `failed to capture ${role} ${source}: ${error instanceof Error ? error.message : String(error)}`,
-    });
+      message: `failed to capture ${role} ${source}: ${errorMessage(error)}`,
+    }));
   }
 }
 
@@ -169,14 +173,24 @@ function recordLine(
   if (!message) return;
   if (source === "stderr") console.error(`[${role}] ${message}`);
   else console.log(`[${role}] ${message}`);
-  void queue.appendLog({
+  void sendBestEffort(queue.appendLog({
     role,
     level: source === "stderr" ? "error" : "info",
     source,
     message,
-  });
+  }));
 }
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function sendBestEffort(promise: Promise<unknown>): Promise<void> {
+  try {
+    await promise;
+  } catch {}
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

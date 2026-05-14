@@ -39,7 +39,18 @@ import {
 import type { ToolContext } from "./tool-context";
 import { createAgentTools } from "./tools";
 import type { CapabilityBroker } from "../security/capability-broker";
+import type { RuntimeStore } from "../runtime/runtime-store";
 import { appendChatLogToTraces } from "./trace-writer";
+import {
+  prefetchUrlsForMessage,
+  type UrlPrefetcher,
+  type UrlPrefetchOutput,
+} from "./url-prefetch";
+import {
+  prefetchSearchForMessage,
+  type SearchPrefetcher,
+  type SearchPrefetchOutput,
+} from "./search-prefetch";
 
 export interface RunMessageDeps {
   config: AppConfig;
@@ -58,7 +69,10 @@ export interface RunMessageDeps {
   notify?: (input: NotificationCreate) => void;
   userMessagePersisted?: boolean;
   capabilities?: CapabilityBroker;
+  runtimeStore?: RuntimeStore;
   flushSessionState?: () => Promise<void>;
+  urlPrefetcher?: UrlPrefetcher;
+  searchPrefetcher?: SearchPrefetcher;
 }
 
 export async function runMessage(
@@ -85,6 +99,8 @@ export async function runMessage(
       : undefined,
     notify: deps.notify,
     capabilities: deps.capabilities,
+    runtimeStore: deps.runtimeStore,
+    flushSessionState: deps.flushSessionState,
   };
   const toolCallMessages: AssistantToolCallMessage[] = [];
   const agentFactory = deps.agentFactory ?? createAithyAgent;
@@ -94,6 +110,10 @@ export async function runMessage(
       conversationId: message.conversationId,
       message: toolMessage,
     });
+  };
+  const recordToolCall = (toolMessage: AssistantToolCallMessage) => {
+    toolCallMessages.push(toolMessage);
+    publishToolCall(toolMessage);
   };
   const onSkillsSearch = wrapSkillsSearch(deps.skillsSearch, toolCallMessages, publishToolCall);
   const memoryStore = deps.memory;
@@ -153,11 +173,31 @@ export async function runMessage(
     model: deps.config.aiModel ?? "provider default",
   });
 
+  let urlPrefetch: UrlPrefetchOutput | undefined;
+  let searchPrefetch: SearchPrefetchOutput | undefined;
   try {
+    const urlPrefetcher = deps.urlPrefetcher ?? prefetchUrlsForMessage;
+    urlPrefetch = await urlPrefetcher({
+      message,
+      config: deps.config,
+      toolContext,
+      onToolCall: recordToolCall,
+    });
+    if (!urlPrefetch?.context) {
+      const searchPrefetcher = deps.searchPrefetcher ?? prefetchSearchForMessage;
+      searchPrefetch = await searchPrefetcher({
+        message,
+        config: deps.config,
+        toolContext,
+        onToolCall: recordToolCall,
+      });
+    }
     const userProfile = userProfileForAgent(deps.profile);
     const input = {
       ...(userProfile ? { userProfile } : {}),
       userRequest: message.text,
+      ...(urlPrefetch?.context ? { urlContext: urlPrefetch.context } : {}),
+      ...(searchPrefetch?.context ? { searchContext: searchPrefetch.context } : {}),
       channelContext: toChannelContext(message),
       conversationHistory: conversationHistoryForAgent(
         session,
@@ -217,6 +257,24 @@ export async function runMessage(
       };
     }
     if (isClarificationPause(error)) {
+      const fallbackAnswer = urlPrefetch?.fallbackAnswer ?? searchPrefetch?.fallbackAnswer;
+      if (fallbackAnswer) {
+        deps.sessions.appendMessages(
+          message.conversationId,
+          turnMessages(message, toolCallMessages, assistantTextMessage(fallbackAnswer), deps),
+        );
+        await deps.flushSessionState?.();
+        deps.events.emit({
+          type: "agent.completed",
+          conversationId: message.conversationId,
+          agentResponse: fallbackAnswer,
+        });
+        return {
+          channelId: message.channelId,
+          conversationId: message.conversationId,
+          text: fallbackAnswer,
+        };
+      }
       const question = error.question;
       deps.events.emit({
         type: "agent.clarification",

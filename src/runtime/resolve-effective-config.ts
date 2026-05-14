@@ -1,9 +1,13 @@
 import { loadConfig, type AppConfig } from "../config/env";
 import { applyRuntimeSettings } from "../settings/resolve";
-import { readProviderApiKey } from "../settings/secrets";
+import { readParallelApiKey, readProviderApiKey } from "../settings/secrets";
 import type { StoredSettings } from "../settings/types";
 
-export type RuntimeSecretOverrides = { apiKey?: string; fastApiKey?: string };
+export type RuntimeSecretOverrides = {
+  apiKey?: string;
+  fastApiKey?: string;
+  parallelApiKey?: string;
+};
 
 export async function resolveEffectiveConfig(
   baseConfig: AppConfig,
@@ -19,7 +23,11 @@ export async function resolveEffectiveConfig(
   const fastApiKey = fastProvider
     ? (fastProvider === provider ? apiKey : secrets.fastApiKey ?? await readProviderApiKey(fastProvider, baseConfig.botId))
     : undefined;
-  return applyRuntimeSettings(baseConfig, settings.runtime, apiKey, fastApiKey);
+  const parallelApiKey =
+    settings.runtime.parallelApiKey === null
+      ? null
+      : secrets.parallelApiKey ?? await readParallelApiKey(baseConfig.botId) ?? baseConfig.parallelApiKey;
+  return applyRuntimeSettings(baseConfig, settings.runtime, apiKey, fastApiKey, parallelApiKey);
 }
 
 export function loadBaseConfig(): AppConfig {

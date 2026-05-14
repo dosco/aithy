@@ -4,6 +4,7 @@ import type {
   RuntimeQueueStatus,
   RuntimeServiceStatus,
 } from "../runtime/protocol/types";
+import type { SystemPermissionRequest } from "../runtime/runtime-store";
 import type { BotMessage, BotSessionSummary } from "../session/types";
 import type { SetupStatusInput, SetupStatusTone } from "../setup/status";
 
@@ -34,7 +35,32 @@ export type SerializableBotMessage =
       thought?: string;
       usage?: { input: number; output: number; thought: number; total: number };
       createdAt: string;
+    }
+  | {
+      role: "assistant";
+      kind: "permission";
+      requestId: string;
+      toolName: string;
+      status: "allowed" | "denied" | "timed_out";
+      command: string;
+      cwd: string;
+      reason: string;
+      decidedAt: string;
+      createdAt: string;
     };
+
+export interface SerializableSystemPermissionRequest {
+  id: string;
+  conversationId: string;
+  toolName: string;
+  capability: string;
+  command: string;
+  cwd: string;
+  reason: string;
+  status: SystemPermissionRequest["status"];
+  createdAt: string;
+  decidedAt: string | null;
+}
 
 export interface SerializableSessionSummary {
   conversationId: string;
@@ -96,6 +122,14 @@ export type WebLiveEvent =
         link: string | null;
         createdAt: string;
       };
+    }
+  | {
+      type: "permission-request";
+      id: string;
+      conversationId: string;
+      createdAt: string;
+      streamId?: string;
+      request: SerializableSystemPermissionRequest;
     }
   | ({
       type: "log";
@@ -182,6 +216,7 @@ export function userMessageEvent(
 export function serializableMessage(message: BotMessage): SerializableBotMessage {
   if (message.role === "user") return message;
   if (message.kind === "text") return message;
+  if (message.kind === "permission") return message;
   const { toolResult, toolArgs, ...rest } = message;
   return {
     ...rest,
@@ -233,6 +268,12 @@ function liveEventFromBotEvent(event: BotEvent): WebLiveEvent | undefined {
   if (event.type === "sandbox.exec") {
     return activity(event.conversationId, `$ ${event.command}`, { command: event.command });
   }
+  if (event.type === "system.exec") {
+    return activity(event.conversationId, `host $ ${event.command}`, { command: event.command });
+  }
+  if (event.type === "system.permission_request") {
+    return permissionRequestEvent(event.request);
+  }
   if (event.type === "sandbox.destroyed") {
     return activity(event.conversationId, `sandbox stopped: ${event.sessionId}`);
   }
@@ -249,6 +290,33 @@ function liveEventFromBotEvent(event: BotEvent): WebLiveEvent | undefined {
     return activity(event.conversationId, event.message, event.cause, "danger");
   }
   return undefined;
+}
+
+export function permissionRequestEvent(request: SystemPermissionRequest): WebLiveEvent {
+  return {
+    type: "permission-request",
+    id: crypto.randomUUID(),
+    conversationId: request.conversationId,
+    createdAt: new Date().toISOString(),
+    request: serializablePermissionRequest(request),
+  };
+}
+
+export function serializablePermissionRequest(
+  request: SystemPermissionRequest,
+): SerializableSystemPermissionRequest {
+  return {
+    id: request.id,
+    conversationId: request.conversationId,
+    toolName: request.toolName,
+    capability: request.capability,
+    command: request.command,
+    cwd: request.cwd,
+    reason: request.reason,
+    status: request.status,
+    createdAt: request.createdAt,
+    decidedAt: request.decidedAt,
+  };
 }
 
 function setupStatus(status: SetupStatusInput): WebLiveEvent {

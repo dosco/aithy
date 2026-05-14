@@ -4,6 +4,7 @@ import { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import type { AithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import { serializableMessage } from "../../src/web/live-events";
 import type { MessagePageDto } from "./dto";
+import { preloadExistingSessionMessagePage } from "./session-message-loading";
 
 const messagePageInput = z.object({
   conversationId: z.string().min(1),
@@ -26,10 +27,8 @@ export async function sessionMessagesPageState(
     beforeId: data.beforeId ?? null,
     limit: data.limit ?? 10,
   };
-  await runtime.sessionState.preloadSession(data.conversationId);
-  if (!runtime.sessions.getSummary(data.conversationId)) return emptyMessagePageDto();
-  await runtime.sessionState.preloadMessages(data.conversationId, input);
-  const page = runtime.sessions.messagesPage(data.conversationId, input);
+  const page = await preloadExistingSessionMessagePage(runtime, data.conversationId, input);
+  if (!page) return emptyMessagePageDto();
   return {
     ...page,
     items: page.items.map((item) => ({

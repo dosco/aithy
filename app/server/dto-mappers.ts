@@ -39,6 +39,8 @@ export function configDto(config: AppConfig): ConfigDto {
     sandboxNetwork: config.sandboxNetwork,
     sessionTtlMs: config.sessionTtlMs,
     parallelAgents: config.parallelAgents,
+    parallelSearchMcpUrl: config.parallelSearchMcpUrl,
+    systemBashEnabled: config.systemBashEnabled,
     traceEnabled: config.traceEnabled,
     botId: config.botId,
     stateDbPath: config.stateDbPath,

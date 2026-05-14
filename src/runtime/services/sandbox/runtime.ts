@@ -168,6 +168,7 @@ export class SandboxWorkerRuntime {
 
   private async doShutdown(): Promise<void> {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.queue.beginShutdown();
     this.heartbeat("stopping");
     this.settings.close();
     this.queue.close();

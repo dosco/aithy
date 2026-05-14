@@ -57,6 +57,21 @@ describe("QueueSessionCache", () => {
     expect(second.load("persisted")?.messages).toHaveLength(1);
     second.close();
   });
+
+  test("does not publish a child session until its first message is readable", async () => {
+    const { cache, events } = await testCache();
+    cache.ensure(logicalSession("parent", "Parent"));
+    events.length = 0;
+
+    cache.ensure(logicalSession("child", "Child", { parentSessionId: "parent" }));
+    expect(events.filter((event) => event.type === "sessions")).toHaveLength(0);
+
+    cache.appendMessages("child", [assistantMessage("ready")]);
+    const sessionEvents = events.filter((event) => event.type === "sessions");
+    expect(sessionEvents).toHaveLength(1);
+    expect(sessionEvents[0].sessions.some((session) => session.conversationId === "child")).toBe(true);
+    expect(cache.messagesPage("child", { limit: 50 }).items).toHaveLength(1);
+  });
 });
 
 class CountingSessionStore implements SessionStateStore {
@@ -131,13 +146,18 @@ async function testCache() {
   return { cache, store, events };
 }
 
-function logicalSession(conversationId: string, name: string): LogicalSessionInput {
+function logicalSession(
+  conversationId: string,
+  name: string,
+  options: { parentSessionId?: string | null } = {},
+): LogicalSessionInput {
   const now = new Date().toISOString();
   return {
     conversationId,
     name,
     nameSource: "generated",
     source: "web",
+    parentSessionId: options.parentSessionId ?? null,
     now,
     expiresAt: new Date(Date.now() + 60_000),
   };

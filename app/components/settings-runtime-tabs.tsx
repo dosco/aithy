@@ -166,6 +166,17 @@ function RuntimeFields({ config, setConfig }: Pick<RuntimeTabProps, "config" | "
   return (
     <Section title="Javascript Runtime" subtitle="Session lifecycle and tracing.">
       <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Host shell">
+          <div className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5">
+            <span className="text-sm text-[rgb(var(--muted-foreground))]">
+              {config.systemBashEnabled ? "system.bash available with approval" : "system.bash disabled"}
+            </span>
+            <Switch
+              checked={config.systemBashEnabled}
+              onCheckedChange={(value) => setConfigValue(setConfig, "systemBashEnabled", value)}
+            />
+          </div>
+        </Field>
         <Field label="Session TTL (ms)">
           <input className={fieldClass} type="number" value={config.sessionTtlMs} onChange={(event) => setConfigValue(setConfig, "sessionTtlMs", Number(event.target.value))} />
         </Field>

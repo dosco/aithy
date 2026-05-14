@@ -37,6 +37,9 @@ export interface RuntimeSettings {
   sandboxNetwork?: AppConfig["sandboxNetwork"];
   sessionTtlMs?: number;
   parallelAgents?: number;
+  parallelSearchMcpUrl?: string | null;
+  parallelApiKey?: string | null;
+  systemBashEnabled?: boolean;
   traceEnabled?: boolean;
   globalMounts?: GlobalMount[];
 }

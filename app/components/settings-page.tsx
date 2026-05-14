@@ -13,6 +13,7 @@ import {
   UserProfileSection,
 } from "@/components/settings-identity-sections";
 import { ModelSettingsTab, SandboxSettingsTab } from "@/components/settings-runtime-tabs";
+import { SearchSettingsTab } from "@/components/settings-search-tab";
 import { ThemeSync } from "@/components/theme-sync";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { saveSettingsWithSetupGateRefresh } from "@/lib/setup-gate";
@@ -30,8 +31,10 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
   const [fastSecret, setFastSecret] = useState<SecretStatusDto | null>(
     initialState.fastSecret,
   );
+  const [parallelSearch, setParallelSearch] = useState(initialState.parallelSearch);
   const [apiKey, setApiKey] = useState("");
   const [fastApiKey, setFastApiKey] = useState("");
+  const [parallelApiKey, setParallelApiKey] = useState("");
   const [saved, setSaved] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -46,6 +49,7 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
   async function save(options?: {
     clearApiKey?: boolean;
     clearAiModel?: boolean;
+    clearParallelApiKey?: boolean;
   }) {
     const clearAiModel =
       options?.clearAiModel ?? config.aiModel.trim().length === 0;
@@ -69,6 +73,8 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
             sandboxNetwork: networkValue(config.sandboxNetwork),
             sessionTtlMs: Number(config.sessionTtlMs),
             parallelAgents: Number(config.parallelAgents),
+            parallelSearchMcpUrl: config.parallelSearchMcpUrl.trim() || null,
+            systemBashEnabled: config.systemBashEnabled,
             traceEnabled: config.traceEnabled,
             globalMounts: config.globalMounts
               .map((m) => ({ hostPath: m.hostPath.trim() }))
@@ -81,14 +87,18 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
           clearApiKey: options?.clearApiKey,
           clearAiModel,
           fastApiKey: fastApiKey || undefined,
+          parallelApiKey: options?.clearParallelApiKey ? undefined : parallelApiKey || undefined,
+          clearParallelApiKey: options?.clearParallelApiKey,
         },
       });
       setConfig(result.config);
       setUi(result.settings.ui);
       setSecret(result.secret);
       setFastSecret(result.fastSecret);
+      setParallelSearch(result.parallelSearch);
       setApiKey("");
       setFastApiKey("");
+      setParallelApiKey("");
       setSkippedPaths(result.skippedPaths ?? []);
       if (!result.aiConfigured && (options?.clearApiKey || clearAiModel)) {
         await router.navigate({ to: "/chat" });
@@ -126,6 +136,7 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
       <Tabs defaultValue="model">
         <TabsList className="mb-6">
           <TabsTrigger value="model">Model</TabsTrigger>
+          <TabsTrigger value="search">Search</TabsTrigger>
           <TabsTrigger value="sandbox">Sandbox</TabsTrigger>
           <TabsTrigger value="profile">User</TabsTrigger>
           <TabsTrigger value="agent">Agent</TabsTrigger>
@@ -155,6 +166,20 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
             saved={saved}
             saveBusy={saveBusy}
             onSave={() => void save()}
+          />
+        </TabsContent>
+
+        <TabsContent value="search">
+          <SearchSettingsTab
+            config={config}
+            setConfig={setConfig}
+            parallelSearch={parallelSearch}
+            parallelApiKey={parallelApiKey}
+            setParallelApiKey={setParallelApiKey}
+            saved={saved}
+            saveBusy={saveBusy}
+            onSave={() => void save()}
+            onClearApiKey={() => void save({ clearParallelApiKey: true })}
           />
         </TabsContent>
 
@@ -188,11 +213,13 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
               setConfig(state.config);
               setSecret(state.secret);
               setFastSecret(state.fastSecret);
+              setParallelSearch(state.parallelSearch);
               setSoul(state.soul);
               setProfile(state.profile);
               setUi(state.settings.ui);
               setApiKey("");
               setFastApiKey("");
+              setParallelApiKey("");
               setSkippedPaths([]);
             }}
           />

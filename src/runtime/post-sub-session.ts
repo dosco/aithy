@@ -17,6 +17,15 @@ export function postToSubSession(
   notify: (input: NotificationCreate) => NotificationEntry,
   input: PostToSubSessionInput,
 ): { sessionId: string; messageId: number | null } {
+  const result = createSubSessionMessage(sessions, input);
+  publishSubSession(sessions, live, notify, input, result.sessionId);
+  return result;
+}
+
+function createSubSessionMessage(
+  sessions: SessionManager,
+  input: PostToSubSessionInput,
+): { sessionId: string; messageId: number | null } {
   const sub = sessions.createSubSession({
     parentSessionId: input.parentSessionId,
     parentMessageId: input.parentMessageId ?? null,
@@ -31,6 +40,19 @@ export function postToSubSession(
       createdAt: new Date().toISOString(),
     },
   ]);
+  return {
+    sessionId: sub.conversationId,
+    messageId: sessions.lastMessageId(sub.conversationId),
+  };
+}
+
+function publishSubSession(
+  sessions: SessionManager,
+  live: LiveEventHub,
+  notify: (input: NotificationCreate) => NotificationEntry,
+  input: PostToSubSessionInput,
+  sessionId: string,
+): void {
   live.publish({
     type: "sessions",
     id: crypto.randomUUID(),
@@ -42,13 +64,9 @@ export function postToSubSession(
       kind: "session.message",
       title: input.name ?? "New message in a sub-session",
       body: input.text.slice(0, 200),
-      link: `/chat/${sub.conversationId}`,
+      link: `/chat/${sessionId}`,
     });
   }
-  return {
-    sessionId: sub.conversationId,
-    messageId: sessions.lastMessageId(sub.conversationId),
-  };
 }
 
 export async function postToSubSessionAndFlush(
@@ -58,8 +76,9 @@ export async function postToSubSessionAndFlush(
   input: PostToSubSessionInput,
   flushSessionState?: () => Promise<void>,
 ): Promise<{ sessionId: string; messageId: number | null }> {
-  const result = postToSubSession(sessions, live, notify, input);
+  const result = createSubSessionMessage(sessions, input);
   await flushSessionState?.();
+  publishSubSession(sessions, live, notify, input, result.sessionId);
   return {
     sessionId: result.sessionId,
     messageId: sessions.lastMessageId(result.sessionId),

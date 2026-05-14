@@ -45,6 +45,22 @@ function rowToMessage(row: MessageRow): BotMessage {
     };
   }
 
+  if (row.message_kind === "permission") {
+    const metadata = parseMetadata(row.metadata_json);
+    return {
+      role: "assistant",
+      kind: "permission",
+      requestId: stringField(metadata, "requestId"),
+      toolName: stringField(metadata, "toolName"),
+      status: permissionStatusField(metadata),
+      command: stringField(metadata, "command"),
+      cwd: stringField(metadata, "cwd"),
+      reason: stringField(metadata, "reason"),
+      decidedAt: stringField(metadata, "decidedAt"),
+      createdAt: row.created_at,
+    };
+  }
+
   if (row.tool_name !== null || row.tool_args !== null || row.tool_result !== null) {
     const toolArgs = row.tool_args ? JSON.parse(row.tool_args) : null;
     return {
@@ -78,6 +94,27 @@ function inferToolName(toolArgs: unknown): string {
   return "unknown";
 }
 
+function parseMetadata(value: string | null): Record<string, unknown> {
+  if (!value) return {};
+  try {
+    const parsed = JSON.parse(value);
+    return parsed && typeof parsed === "object" ? parsed as Record<string, unknown> : {};
+  } catch {
+    return {};
+  }
+}
+
+function stringField(value: Record<string, unknown>, key: string): string {
+  const field = value[key];
+  return typeof field === "string" ? field : "";
+}
+
+function permissionStatusField(value: Record<string, unknown>) {
+  const status = value.status;
+  if (status === "allowed" || status === "denied" || status === "timed_out") return status;
+  return "denied";
+}
+
 function hasKeys(value: unknown, keys: string[]): boolean {
   if (!value || typeof value !== "object") return false;
   return keys.every((key) => key in value);
@@ -87,7 +124,9 @@ export function messageToBindings(message: BotMessage) {
   if (message.role === "user") {
     return {
       $role: "user",
+      $messageKind: null,
       $content: message.content,
+      $metadataJson: null,
       $thought: null,
       $toolName: null,
       $toolArgs: null,
@@ -100,10 +139,11 @@ export function messageToBindings(message: BotMessage) {
     };
   }
 
-  const usage = message.usage;
+  const usage = message.kind === "permission" ? undefined : message.usage;
   const base = {
     $role: "assistant" as const,
-    $thought: message.thought ?? null,
+    $messageKind: message.kind,
+    $thought: message.kind === "permission" ? null : message.thought ?? null,
     $inputTokens: usage?.input ?? null,
     $outputTokens: usage?.output ?? null,
     $thoughtTokens: usage?.thought ?? null,
@@ -115,6 +155,7 @@ export function messageToBindings(message: BotMessage) {
     return {
       ...base,
       $content: null,
+      $metadataJson: null,
       $toolName: message.toolName,
       $toolArgs: JSON.stringify(message.toolArgs ?? null),
       $toolResult:
@@ -124,9 +165,29 @@ export function messageToBindings(message: BotMessage) {
     };
   }
 
+  if (message.kind === "permission") {
+    return {
+      ...base,
+      $content: null,
+      $metadataJson: JSON.stringify({
+        requestId: message.requestId,
+        toolName: message.toolName,
+        status: message.status,
+        command: message.command,
+        cwd: message.cwd,
+        reason: message.reason,
+        decidedAt: message.decidedAt,
+      }),
+      $toolName: null,
+      $toolArgs: null,
+      $toolResult: null,
+    };
+  }
+
   return {
     ...base,
     $content: message.content,
+    $metadataJson: null,
     $toolName: null,
     $toolArgs: null,
     $toolResult: null,

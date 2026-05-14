@@ -40,7 +40,25 @@ export interface AssistantToolCallMessage {
   createdAt: string;
 }
 
-export type AssistantMessage = AssistantTextMessage | AssistantToolCallMessage;
+export type PermissionDecisionStatus = "allowed" | "denied" | "timed_out";
+
+export interface AssistantPermissionMessage {
+  role: "assistant";
+  kind: "permission";
+  requestId: string;
+  toolName: string;
+  status: PermissionDecisionStatus;
+  command: string;
+  cwd: string;
+  reason: string;
+  decidedAt: string;
+  createdAt: string;
+}
+
+export type AssistantMessage =
+  | AssistantTextMessage
+  | AssistantToolCallMessage
+  | AssistantPermissionMessage;
 export type BotMessage = UserMessage | AssistantMessage;
 
 export interface BotSessionSummary {

@@ -13,6 +13,8 @@ interface Row {
   input_tokens: number;
   output_tokens: number;
   thought_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
   total_tokens: number;
   session_id: string | null;
   run_id: string | null;
@@ -27,6 +29,8 @@ interface BucketRow {
   input_tokens: number;
   output_tokens: number;
   thought_tokens: number;
+  cache_creation_tokens: number;
+  cache_read_tokens: number;
   total_tokens: number;
   calls: number;
 }
@@ -52,11 +56,12 @@ export class SqliteUsageStore {
       .query(
         `INSERT INTO llm_usage (
            provider, model, purpose,
-           input_tokens, output_tokens, thought_tokens, total_tokens,
+           input_tokens, output_tokens, thought_tokens,
+           cache_creation_tokens, cache_read_tokens, total_tokens,
            session_id, run_id, occurred_at
          ) VALUES (
            $provider, $model, $purpose,
-           $in, $out, $thought, $total,
+           $in, $out, $thought, $cacheCreation, $cacheRead, $total,
            $sessionId, $runId, $now
          )
          RETURNING *`,
@@ -68,6 +73,8 @@ export class SqliteUsageStore {
         $in: input.inputTokens,
         $out: input.outputTokens,
         $thought: input.thoughtTokens ?? 0,
+        $cacheCreation: input.cacheCreationTokens ?? 0,
+        $cacheRead: input.cacheReadTokens ?? 0,
         $total: total,
         $sessionId: input.sessionId ?? null,
         $runId: input.runId ?? null,
@@ -96,6 +103,8 @@ export class SqliteUsageStore {
                 SUM(input_tokens) AS input_tokens,
                 SUM(output_tokens) AS output_tokens,
                 SUM(thought_tokens) AS thought_tokens,
+                SUM(cache_creation_tokens) AS cache_creation_tokens,
+                SUM(cache_read_tokens) AS cache_read_tokens,
                 SUM(total_tokens) AS total_tokens,
                 COUNT(*) AS calls
          FROM llm_usage
@@ -148,6 +157,8 @@ function rowToRecord(row: Row): UsageRecord {
     inputTokens: row.input_tokens,
     outputTokens: row.output_tokens,
     thoughtTokens: row.thought_tokens,
+    cacheCreationTokens: row.cache_creation_tokens,
+    cacheReadTokens: row.cache_read_tokens,
     totalTokens: row.total_tokens,
     sessionId: row.session_id,
     runId: row.run_id,
@@ -164,6 +175,8 @@ function bucketRow(row: BucketRow): UsageBucket {
     inputTokens: row.input_tokens,
     outputTokens: row.output_tokens,
     thoughtTokens: row.thought_tokens,
+    cacheCreationTokens: row.cache_creation_tokens,
+    cacheReadTokens: row.cache_read_tokens,
     totalTokens: row.total_tokens,
     calls: row.calls,
   };

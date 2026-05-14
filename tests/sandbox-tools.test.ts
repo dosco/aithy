@@ -50,6 +50,7 @@ describe("agent sandbox tools", () => {
 
     expect(names).toContain("sandbox.bash");
     expect(names).toContain("sandbox.edit");
+    expect(names).toContain("system.bash");
     expect(names).toContain("web.search");
     expect(names).toContain("web.fetch");
     expect(names).not.toContain("web.scrape");
@@ -66,9 +67,22 @@ describe("agent sandbox tools", () => {
 
     expect(names).toContain("sandbox.mount");
     expect(names).toContain("sandbox.getPath");
+    expect(names).toContain("system.bash");
     expect(names).toContain("web.search");
     expect(names).toContain("web.fetch");
     expect(names).not.toContain("web.scrape");
+  });
+
+  test("omits system.bash when host shell is disabled", () => {
+    const config = {
+      ...loadConfig({ AITHY_SANDBOX_PROVIDER: "microsandbox" }),
+      systemBashEnabled: false,
+    };
+    const names = createAgentTools({} as any, config)
+      .map((tool: any) => `${tool.namespace}.${tool.name}`);
+
+    expect(names).not.toContain("system.bash");
+    expect(names).toContain("sandbox.bash");
   });
 
   test("getPath resolves files under mounted folders", async () => {

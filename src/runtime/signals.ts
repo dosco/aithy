@@ -15,7 +15,7 @@ export function registerSignalHandlers(runtime: AithyRuntime): void {
       console.error(`[shutdown] received ${signal} during shutdown - forcing exit`);
       process.exit(1);
     }
-    console.log(`[shutdown] received ${signal} - gracing for ${SHUTDOWN_TIMEOUT_MS}ms`);
+    console.log(`[shutdown] shutting down, please wait... received ${signal}; grace period ${SHUTDOWN_TIMEOUT_MS}ms`);
     const killer = setTimeout(() => {
       console.error("[shutdown] timeout - forcing exit");
       process.exit(1);

@@ -22,6 +22,7 @@ import { ThemeSync } from "@/components/theme-sync";
 import { useChatMessages } from "@/components/use-chat-messages";
 import {
   deleteSession,
+  respondSystemPermission,
   sendChatMessage,
   stopChatMessage,
 } from "@/server/actions.functions";
@@ -65,6 +66,7 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
   );
   const [activities, setActivities] =
     useState<Array<Extract<WebLiveEvent, { type: "activity" }>>>(initialActivities);
+  const [permissionRequests, setPermissionRequests] = useState(initialState.pendingPermissions);
   const [setupStatuses, setSetupStatuses] = useState<SetupStatusEvent[]>([]);
   const [input, setInput] = useState("");
   const [selectedSkills, setSelectedSkills] = useState<SelectedSkill[]>([]);
@@ -93,9 +95,10 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
   useEffect(() => {
     setActiveSessionId(resolvedInitialSessionId);
     setActivities(initialActivities);
+    setPermissionRequests(initialState.pendingPermissions);
     clearSetupStatusLog();
     setPreviewSessionId(null);
-  }, [resolvedInitialSessionId, initialPage, initialActivities]);
+  }, [resolvedInitialSessionId, initialPage, initialActivities, initialState.pendingPermissions]);
   const { details } = useChatUi();
   const visibleSetupStatuses = useMemo(() => compactSetupStatuses(setupStatuses), [setupStatuses]);
 
@@ -113,10 +116,18 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
       if (event.type === "message") {
         setMessages((current) =>
           appendUnique(current, { id: event.id, message: event.message }));
+        if (event.message.role === "assistant" && event.message.kind === "permission") {
+          const requestId = event.message.requestId;
+          setPermissionRequests((current) =>
+            current.filter((request) => request.id !== requestId));
+        }
         if (event.message.role === "assistant") {
           setSending(false);
           scheduleSetupStatusClear();
         }
+      }
+      if (event.type === "permission-request") {
+        setPermissionRequests((current) => updatePermissionRequests(current, event.request));
       }
       if (event.type === "activity") {
         setActivities((current) => [...current.slice(-79), event]);
@@ -245,6 +256,7 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
         <ChatTimeline
           messages={messages}
           activities={activities}
+          permissionRequests={permissionRequests}
           details={details}
           sending={sending}
           resetKey={activeSessionId}
@@ -253,6 +265,13 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
           onLoadMore={loadMoreMessages}
           subSessions={childSessions}
           onOpenSession={(session) => setPreviewSessionId(session.conversationId)}
+          onPermissionDecision={(requestId, decision) => {
+            setPermissionRequests((current) =>
+              current.map((request) =>
+                request.id === requestId ? { ...request, status: decision === "allow" ? "allowed" : "denied" } : request
+              ));
+            void respondSystemPermission({ data: { requestId, decision } });
+          }}
         />
       </div>
 
@@ -286,4 +305,13 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
       />
     </section>
   );
+}
+
+function updatePermissionRequests(
+  current: WebStateDto["pendingPermissions"],
+  request: WebStateDto["pendingPermissions"][number],
+) {
+  const index = current.findIndex((item) => item.id === request.id);
+  if (index === -1) return [...current, request];
+  return current.map((item) => item.id === request.id ? request : item);
 }

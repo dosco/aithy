@@ -3,7 +3,12 @@ import type { MemoryKind, MemoryLabel } from "../../src/memory/types";
 import type { MemoryRunStatus, MemoryRunTrigger } from "../../src/memory/memory-runs";
 import type { NotificationKind } from "../../src/notifications/types";
 import type { UsagePurpose } from "../../src/usage/types";
-import type { JsonValue, SerializableBotMessage, SerializableSessionSummary } from "../../src/web/live-events";
+import type {
+  JsonValue,
+  SerializableBotMessage,
+  SerializableSessionSummary,
+  SerializableSystemPermissionRequest,
+} from "../../src/web/live-events";
 
 export type SessionSummaryDto = SerializableSessionSummary;
 
@@ -23,6 +28,8 @@ export interface ConfigDto {
   sandboxNetwork: string;
   sessionTtlMs: number;
   parallelAgents: number;
+  parallelSearchMcpUrl: string;
+  systemBashEnabled: boolean;
   traceEnabled: boolean;
   botId: string;
   stateDbPath: string;
@@ -33,7 +40,20 @@ export interface ConfigDto {
 export interface SecretStatusDto {
   provider: string;
   configured: boolean;
-  source: "bun.secrets" | null;
+  source: "bun.secrets" | "environment" | null;
+}
+
+export interface ParallelSearchStatusDto extends SecretStatusDto {
+  provider: "parallel";
+  mode: "anonymous" | "api-key";
+  url: string;
+}
+
+export interface ParallelSearchTestDto {
+  provider: "parallel";
+  mode: "anonymous" | "api-key";
+  url: string;
+  answer: string;
 }
 
 export interface SoulDto {
@@ -119,6 +139,8 @@ export interface UsageBucketDto {
   inputTokens: number;
   outputTokens: number;
   thoughtTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
   totalTokens: number;
   calls: number;
 }
@@ -169,11 +191,13 @@ export interface WebStateDto {
   messages: SerializableBotMessage[];
   messagePage: MessagePageDto;
   activities: ActivityDto[];
+  pendingPermissions: SerializableSystemPermissionRequest[];
   sessions: SessionSummaryDto[];
   settings: StoredSettings;
   config: ConfigDto;
   secret: SecretStatusDto;
   fastSecret: SecretStatusDto | null;
+  parallelSearch: ParallelSearchStatusDto;
   soul: SoulDto;
   profile: ProfileDto;
   skills: SkillDto[];
@@ -208,7 +232,7 @@ export type SkillsPageStateDto = Pick<
 
 export type SettingsPageStateDto = Pick<
   WebStateDto,
-  "settings" | "config" | "secret" | "fastSecret" | "soul" | "profile" | "runtimeCapabilities"
+  "settings" | "config" | "secret" | "fastSecret" | "parallelSearch" | "soul" | "profile" | "runtimeCapabilities"
 >;
 
 export type SetupPageStateDto = Pick<

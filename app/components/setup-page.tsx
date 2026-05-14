@@ -119,6 +119,8 @@ export function SetupPage({
       </h1>
       <p className="mb-10 text-center text-sm text-[rgb(var(--muted-foreground))]">
         One-time setup. Tell Aithy who it is helping, then connect a model.
+        Public web search already works anonymously through Parallel; add a key
+        later in Settings for higher limits.
       </p>
 
       <div className="grid w-full gap-4 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/40 p-6">

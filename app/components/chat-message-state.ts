@@ -27,5 +27,6 @@ export function prependUnique(
 function contentOf(message: SerializableBotMessage): string {
   if (message.role === "user") return message.content;
   if (message.kind === "text") return message.content;
+  if (message.kind === "permission") return `${message.requestId}:${message.status}`;
   return `${message.toolName}:${JSON.stringify(message.toolArgs)}`;
 }

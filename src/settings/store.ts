@@ -98,6 +98,9 @@ function normalizeRuntimeSettings(runtime: StoredSettings["runtime"]): StoredSet
   const sandboxProvider = normalizeSandboxProvider(next.sandboxProvider);
   if (sandboxProvider) next.sandboxProvider = sandboxProvider;
   else delete next.sandboxProvider;
+  if (typeof next.systemBashEnabled !== "boolean") {
+    delete next.systemBashEnabled;
+  }
   return next;
 }
 

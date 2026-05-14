@@ -28,6 +28,7 @@ function configFixture(globalMounts: AppConfig["globalMounts"] = []): AppConfig 
     botId: "default",
     stateDir: "/tmp",
     stateDbPath: "/tmp/x.db",
+    systemBashEnabled: true,
     traceEnabled: false,
     tracesDir: "/tmp/traces",
     globalMounts,

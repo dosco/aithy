@@ -36,7 +36,7 @@ export class QueueSessionCache {
       expiresAt: input.expiresAt,
     };
     this.summaries.set(input.conversationId, summary);
-    this.publishSessions();
+    if (!input.parentSessionId) this.publishSessions();
     return summary;
   }
 
@@ -112,7 +112,7 @@ export class QueueSessionCache {
     this.clearMessageCache(conversationId);
     const page = this.messagesPage(conversationId, { limit: DEFAULT_PAGE_LIMIT });
     for (const message of messages) {
-      if (message.role === "user" || message.kind === "text") {
+      if (message.role === "user" || message.kind === "text" || message.kind === "permission") {
         this.publish(messageEvent(conversationId, message));
       }
     }

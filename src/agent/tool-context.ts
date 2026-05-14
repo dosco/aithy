@@ -5,6 +5,7 @@ import type { SqliteMemoryStore } from "../memory/memory-store";
 import type { NotificationCreate } from "../notifications/types";
 import type { SessionManager } from "../session/session-manager";
 import type { CapabilityBroker } from "../security/capability-broker";
+import type { RuntimeStore } from "../runtime/runtime-store";
 
 export interface RememberRequest {
   hint: string;
@@ -24,4 +25,8 @@ export interface ToolContext {
   notify?: (input: NotificationCreate) => void;
   /** Capability checks and audit logging for sensitive tools. */
   capabilities?: CapabilityBroker;
+  /** Runtime store for approval requests and other cross-process state. */
+  runtimeStore?: RuntimeStore;
+  /** Flush queued remote session writes when a tool emits durable chat state. */
+  flushSessionState?: () => Promise<void>;
 }

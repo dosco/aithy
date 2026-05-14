@@ -1,7 +1,7 @@
 import type { AppConfig } from "../../src/config/env";
-import { readProviderApiKey } from "../../src/settings/secrets";
+import { readParallelApiKey, readProviderApiKey } from "../../src/settings/secrets";
 import type { StoredSettings } from "../../src/settings/types";
-import type { SecretStatusDto } from "./dto-types";
+import type { ParallelSearchStatusDto, SecretStatusDto } from "./dto-types";
 
 export async function secretStatus(
   config: AppConfig,
@@ -22,5 +22,29 @@ export async function secretStatusForProvider(
     provider,
     configured: Boolean(secret),
     source: secret ? "bun.secrets" : null,
+  };
+}
+
+export async function parallelSearchStatus(
+  config: AppConfig,
+  settings?: StoredSettings,
+): Promise<ParallelSearchStatusDto> {
+  if (settings?.runtime.parallelApiKey === null) {
+    return {
+      provider: "parallel",
+      configured: false,
+      source: null,
+      mode: "anonymous",
+      url: config.parallelSearchMcpUrl,
+    };
+  }
+  const stored = await readParallelApiKey(config.botId);
+  const source = stored ? "bun.secrets" : config.parallelApiKey ? "environment" : null;
+  return {
+    provider: "parallel",
+    configured: Boolean(source),
+    source,
+    mode: source ? "api-key" : "anonymous",
+    url: config.parallelSearchMcpUrl,
   };
 }

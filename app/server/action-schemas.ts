@@ -8,6 +8,11 @@ export const conversationIdInput = z.object({
   conversationId: z.string().min(1),
 });
 
+export const permissionResponseInput = z.object({
+  requestId: z.string().min(1),
+  decision: z.enum(["allow", "deny"]),
+});
+
 export const sendInput = z.object({
   conversationId: z.string().min(1),
   text: z.string().min(1),
@@ -38,6 +43,8 @@ export const settingsInput = z.object({
     sandboxNetwork: z.enum(["none", "public", "allow-all"]).optional(),
     sessionTtlMs: z.number().positive().optional(),
     parallelAgents: z.number().int().min(1).max(8).optional(),
+    parallelSearchMcpUrl: z.string().max(500).optional().nullable(),
+    systemBashEnabled: z.boolean().optional(),
     traceEnabled: z.boolean().optional(),
     globalMounts: z.array(z.object({ hostPath: z.string().min(1) })).optional(),
   }).optional(),
@@ -64,6 +71,14 @@ export const settingsInput = z.object({
   clearAiModel: z.boolean().optional(),
   fastApiKey: z.string().optional(),
   clearFastApiKey: z.boolean().optional(),
+  parallelApiKey: z.string().max(500).optional(),
+  clearParallelApiKey: z.boolean().optional(),
+});
+
+export const parallelSearchTestInput = z.object({
+  query: z.string().trim().min(2).max(200),
+  url: z.string().trim().min(1).max(500).optional(),
+  apiKey: z.string().max(500).optional(),
 });
 
 export const soulInput = z.object({

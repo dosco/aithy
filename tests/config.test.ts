@@ -15,8 +15,15 @@ describe("loadConfig", () => {
     expect(config.parallelAgents).toBe(3);
     expect(config.parallelSearchMcpUrl).toBe("https://search.parallel.ai/mcp");
     expect(config.parallelApiKey).toBeUndefined();
+    expect(config.systemBashEnabled).toBe(true);
     expect(config.botId).toBe("default");
     expect(config.stateDbPath.endsWith("/.config/aithy/default/state.db")).toBe(true);
+  });
+
+  test("parses system bash feature override", () => {
+    expect(loadConfig({ AITHY_SYSTEM_BASH_ENABLED: "false" }).systemBashEnabled).toBe(false);
+    expect(loadConfig({ AITHY_SYSTEM_BASH_ENABLED: "0" }).systemBashEnabled).toBe(false);
+    expect(loadConfig({ AITHY_SYSTEM_BASH_ENABLED: "true" }).systemBashEnabled).toBe(true);
   });
 
   test("supports disabled sandbox override", () => {

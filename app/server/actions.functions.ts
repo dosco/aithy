@@ -6,7 +6,7 @@ export {
   getChildSessions,
   renameSession,
 } from "./session.actions";
-export { saveSettings } from "./settings.actions";
+export { saveSettings, testParallelSearch } from "./settings.actions";
 export { resetSystemOptions } from "./system.actions";
 export { listMemoryRuns, resetMemories, runMemoryConsolidate } from "./memory.actions";
 export {
@@ -17,3 +17,4 @@ export {
 export { getUsageStats } from "./usage.actions";
 export { saveSoul } from "./soul.actions";
 export { getWebState } from "./web-state.actions";
+export { respondSystemPermission } from "./permission.actions";

@@ -154,12 +154,14 @@ export class SqliteSessionStateStore implements SessionStateStore {
     if (messages.length === 0) return;
     const insert = this.db.query(`
       INSERT INTO messages (
-        session_id, role, content, thought, tool_name, tool_args, tool_result,
+        session_id, role, message_kind, content, metadata_json, thought,
+        tool_name, tool_args, tool_result,
         input_tokens, output_tokens, thought_tokens, total_tokens,
         created_at
       )
       VALUES (
-        $sessionId, $role, $content, $thought, $toolName, $toolArgs, $toolResult,
+        $sessionId, $role, $messageKind, $content, $metadataJson, $thought,
+        $toolName, $toolArgs, $toolResult,
         $inputTokens, $outputTokens, $thoughtTokens, $totalTokens,
         $createdAt
       )
@@ -172,7 +174,7 @@ export class SqliteSessionStateStore implements SessionStateStore {
     for (const message of messages) {
       insert.run({ $sessionId: conversationId, ...messageToBindings(message) });
       updatedAt = message.createdAt;
-      if (message.role === "assistant" && message.usage) {
+      if (message.role === "assistant" && message.kind !== "permission" && message.usage) {
         inputTokens += message.usage.input;
         outputTokens += message.usage.output;
         thoughtTokens += message.usage.thought;
@@ -201,7 +203,8 @@ export class SqliteSessionStateStore implements SessionStateStore {
     const limit = Math.max(1, Math.floor(input.limit));
     const beforeId = input.beforeId ?? null;
     const rows = this.db.query(`
-      SELECT id, role, content, thought, tool_name, tool_args, tool_result,
+      SELECT id, role, message_kind, content, metadata_json, thought,
+             tool_name, tool_args, tool_result,
              input_tokens, output_tokens, thought_tokens, total_tokens,
              created_at
       FROM messages
@@ -249,7 +252,8 @@ export class SqliteSessionStateStore implements SessionStateStore {
 
   private messageRowsWithIds(conversationId: string): MessageRowWithId[] {
     return this.db.query(`
-      SELECT id, role, content, thought, tool_name, tool_args, tool_result,
+      SELECT id, role, message_kind, content, metadata_json, thought,
+             tool_name, tool_args, tool_result,
              input_tokens, output_tokens, thought_tokens, total_tokens,
              created_at
       FROM messages

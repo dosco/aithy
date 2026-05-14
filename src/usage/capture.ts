@@ -14,6 +14,9 @@ interface ProgramUsageEntry {
     completionTokens?: number;
     totalTokens?: number;
     thoughtsTokens?: number;
+    reasoningTokens?: number;
+    cacheCreationTokens?: number;
+    cacheReadTokens?: number;
   };
 }
 
@@ -44,7 +47,9 @@ export function captureProgramUsage(program: unknown, opts: CaptureOpts): void {
     if (!tokens) continue;
     const input = tokens.promptTokens ?? 0;
     const output = tokens.completionTokens ?? 0;
-    const thought = tokens.thoughtsTokens ?? 0;
+    const thought = tokens.thoughtsTokens ?? tokens.reasoningTokens ?? 0;
+    const cacheCreation = tokens.cacheCreationTokens ?? 0;
+    const cacheRead = tokens.cacheReadTokens ?? 0;
     const total = tokens.totalTokens ?? input + output + thought;
     if (total <= 0) continue;
     opts.store.record({
@@ -54,6 +59,8 @@ export function captureProgramUsage(program: unknown, opts: CaptureOpts): void {
       inputTokens: input,
       outputTokens: output,
       thoughtTokens: thought,
+      cacheCreationTokens: cacheCreation,
+      cacheReadTokens: cacheRead,
       totalTokens: total,
       sessionId: opts.sessionId ?? null,
       runId: opts.runId ?? null,

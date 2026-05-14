@@ -7,6 +7,7 @@ export function applyRuntimeSettings(
   settings: RuntimeSettings,
   apiKey?: string | null,
   fastApiKey?: string | null,
+  parallelApiKey?: string | null,
 ): AppConfig {
   const fastProvider = cleanString(settings.fastAiProvider);
   return {
@@ -24,6 +25,13 @@ export function applyRuntimeSettings(
     sandboxNetwork: settings.sandboxNetwork ?? config.sandboxNetwork,
     sessionTtlMs: settings.sessionTtlMs ?? config.sessionTtlMs,
     parallelAgents: clampParallelAgents(settings.parallelAgents) ?? config.parallelAgents,
+    parallelSearchMcpUrl: settings.parallelSearchMcpUrl === null
+      ? config.parallelSearchMcpUrl
+      : cleanString(settings.parallelSearchMcpUrl) ?? config.parallelSearchMcpUrl,
+    parallelApiKey: parallelApiKey === null
+      ? undefined
+      : parallelApiKey ?? config.parallelApiKey,
+    systemBashEnabled: settings.systemBashEnabled ?? config.systemBashEnabled,
     traceEnabled: settings.traceEnabled ?? config.traceEnabled,
     globalMounts: settings.globalMounts ?? config.globalMounts ?? [],
   };

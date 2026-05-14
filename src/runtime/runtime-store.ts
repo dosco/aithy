@@ -34,6 +34,15 @@ import {
   ensureGrant as ensureRuntimeGrant,
   grantDecision as runtimeGrantDecision,
 } from "./runtime-grants-store";
+import {
+  createPermissionRequest as createRuntimePermissionRequest,
+  decidePermissionRequest as decideRuntimePermissionRequest,
+  pendingPermissionRequests as pendingRuntimePermissionRequests,
+  permissionRequest as runtimePermissionRequest,
+  type CreateSystemPermissionRequestInput,
+  type SystemPermissionRequest,
+  type SystemPermissionStatus,
+} from "./permission-requests";
 import { applyRuntimeStoreMigrations } from "./runtime-store-migrations";
 import { heartbeat as runtimeHeartbeat, service as runtimeService, services as runtimeServices } from "./runtime-service-store";
 import type {
@@ -51,6 +60,11 @@ export type {
   RuntimeEventRow,
   ToolAuditInput,
 } from "./runtime-store-types";
+export type {
+  CreateSystemPermissionRequestInput,
+  SystemPermissionRequest,
+  SystemPermissionStatus,
+} from "./permission-requests";
 
 const EXPIRED_EVENT_PRUNE_INTERVAL_MS = 60_000;
 
@@ -167,6 +181,26 @@ export class RuntimeStore {
 
   auditTool(input: ToolAuditInput): void {
     auditRuntimeTool(this.db, input);
+  }
+
+  createPermissionRequest(input: CreateSystemPermissionRequestInput): SystemPermissionRequest {
+    return createRuntimePermissionRequest(this.db, input);
+  }
+
+  permissionRequest(id: string): SystemPermissionRequest | null {
+    return runtimePermissionRequest(this.db, id);
+  }
+
+  pendingPermissionRequests(conversationId: string): SystemPermissionRequest[] {
+    return pendingRuntimePermissionRequests(this.db, conversationId);
+  }
+
+  decidePermissionRequest(
+    id: string,
+    status: Extract<SystemPermissionStatus, "allowed" | "denied" | "timed_out">,
+    reason: string,
+  ): SystemPermissionRequest | null {
+    return decideRuntimePermissionRequest(this.db, id, status, reason);
   }
 
   close(): void {

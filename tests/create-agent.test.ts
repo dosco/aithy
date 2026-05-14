@@ -17,6 +17,7 @@ describe("createAithyAgent", () => {
         idleParkMs: 60_000,
         parallelAgents: 1,
         parallelSearchMcpUrl: "https://search.parallel.ai/mcp",
+        systemBashEnabled: true,
         workspaceRoot: "/tmp/aithy-create-agent-test",
         botId: "default",
         stateDir: "/tmp/aithy-state",
@@ -57,18 +58,23 @@ describe("createAithyAgent", () => {
     const description = actorDescriptionForSandbox(configFixture("disabled"));
 
     expect(description).toContain("Bun Shell");
+    expect(description).toContain("When the user's request includes a URL");
+    expect(description).toContain("call web.fetch on the URL before answering");
     expect(description).toContain("bot-shared");
     expect(description).not.toContain("microVM");
     expect(description).not.toContain("/cache");
     expect(description).not.toContain("Mounting policy");
-    expect(description).not.toContain("mount");
+    expect(description).not.toContain("/mounts/");
     expect(description).not.toContain("per-session");
+    expect(description).toContain("system.bash");
   });
 
   test("uses the microVM actor prompt for microsandbox mode", () => {
     const description = actorDescriptionForSandbox(configFixture("microsandbox"));
 
     expect(description).toContain("Linux microVM");
+    expect(description).toContain("When the user's request includes a URL");
+    expect(description).toContain("call web.fetch on the URL before answering");
     expect(description).toContain("Mounting policy");
     // New topology: top-level /mounts/<name> + bot-shared /workspace, no /cache
     // mount, no "per-session" framing.
@@ -76,6 +82,17 @@ describe("createAithyAgent", () => {
     expect(description).toContain("bot-shared");
     expect(description).not.toContain("/cache");
     expect(description).not.toContain("per-session");
+    expect(description).toContain("system.bash");
+  });
+
+  test("omits host shell actor prompt when system.bash is disabled", () => {
+    const description = actorDescriptionForSandbox({
+      ...configFixture("microsandbox"),
+      systemBashEnabled: false,
+    });
+
+    expect(description).not.toContain("system.bash");
+    expect(description).not.toContain("base computer outside the VM");
   });
 
   test("describes context distillation for resolving clarification follow-ups", () => {
@@ -93,6 +110,7 @@ describe("createAithyAgent", () => {
     expect(description).toContain("resolvedRequest");
     expect(description).toContain("yes yes yes");
     expect(description).toContain("downtown Vancouver");
+    expect(description).toContain("treat that URL as concrete context");
     expect(contextHistoryPromptChars(created.program)).toBe(2_000);
   });
 });
@@ -110,6 +128,7 @@ function configFixture(sandboxProvider: "microsandbox" | "disabled") {
     idleParkMs: 60_000,
     parallelAgents: 1,
     parallelSearchMcpUrl: "https://search.parallel.ai/mcp",
+    systemBashEnabled: true,
     workspaceRoot: "/tmp/aithy-create-agent-test",
     botId: "default",
     stateDir: "/tmp/aithy-state",

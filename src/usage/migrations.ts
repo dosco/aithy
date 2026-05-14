@@ -34,4 +34,14 @@ export const usageMigrations: readonly SqliteMigration[] = [
         ON llm_usage(date(occurred_at), provider, model, purpose);
     `,
   },
+  {
+    version: 3,
+    sql: `
+      ALTER TABLE llm_usage
+        ADD COLUMN cache_creation_tokens INTEGER NOT NULL DEFAULT 0;
+
+      ALTER TABLE llm_usage
+        ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0;
+    `,
+  },
 ];

@@ -20,6 +20,10 @@ export function apiKeySecretName(provider: string): string {
   return `ai.${provider}.api-key`;
 }
 
+export function parallelApiKeySecretName(): string {
+  return "parallel.search-api-key";
+}
+
 export function aithySecretService(botId: string): string {
   return `aithy.${botId}`;
 }
@@ -81,6 +85,40 @@ export async function deleteProviderApiKey(
     name,
   });
   return next || legacy;
+}
+
+export async function readParallelApiKey(
+  botId: string,
+  secrets: SecretStore = BunSecretStore,
+): Promise<string | undefined> {
+  return (await safeSecretGet(secrets, {
+    service: aithySecretService(botId),
+    name: parallelApiKeySecretName(),
+  })) ?? undefined;
+}
+
+export async function writeParallelApiKey(
+  value: string,
+  botId: string,
+  secrets: SecretStore = BunSecretStore,
+): Promise<void> {
+  const service = aithySecretService(botId);
+  const name = parallelApiKeySecretName();
+  await secrets.set({ service, name, value });
+  const saved = await secrets.get({ service, name });
+  if (saved !== value) {
+    throw new Error("Could not read back the saved Parallel API key from Bun.secrets.");
+  }
+}
+
+export async function deleteParallelApiKey(
+  botId: string,
+  secrets: SecretStore = BunSecretStore,
+): Promise<boolean> {
+  return secrets.delete({
+    service: aithySecretService(botId),
+    name: parallelApiKeySecretName(),
+  });
 }
 
 function isQuoted(value: string): boolean {

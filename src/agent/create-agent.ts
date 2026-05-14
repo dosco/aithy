@@ -48,16 +48,23 @@ const contextDescription = `You are the context distiller for the agent pipeline
 
 conversationHistory is a plain-text transcript of prior turns, one per line, formatted as "[<ISO timestamp>] <role>: <content>". Entries are in chronological order — oldest first, most recent last. The current user turn is delivered separately as userRequest, not inside history. The prompt may show only a tail excerpt; use inputs.conversationHistory in JavaScript as the source of truth.
 
+urlContext is optional. When present, it contains URL fetch attempts that were completed before agent execution for the latest userRequest. Use it as evidence, include the relevant fetched content in final(resolvedRequest, evidence), and do not ask the user to paste text for a URL that has usable fetched content.
+
+searchContext is optional. When present, it contains web search results fetched before agent execution for the latest userRequest. Use it as current evidence, especially for recent scores, news, prices, weather, or explicit "search/look it up" follow-ups.
+
 Efficient JavaScript strategy:
 - Parse inputs.conversationHistory into turns, for example with /^\\[(.*?)\\] (user|assistant): (.*)$/.
 - Inspect from newest to oldest to find the most recent assistant question, offered choices, and unresolved topic.
 - Also carry forward the latest concrete user-provided facts: target object, location, filters, names, ids, files, and requested action.
+- If inputs.urlContext is present, include its useful fetched answer, page content, sources, and errors in the evidence object.
+- If inputs.searchContext is present, include its useful result text, sources, and errors in the evidence object.
 - Build a compact evidence object such as { latestRequest, resolvedIntent, activeTopic, location, clarificationAnswer, supportingTurns }. Keep supportingTurns short and quote only the lines needed to justify the resolution.
 - Call final(...) as soon as the latest request is resolved; do not over-summarize the entire transcript.
 
 Resolving referential userRequests:
 - Treat conversationHistory as your primary tool for resolving ambiguity. Before answering, always re-read it.
 - When userRequest is short, ambiguous, or referential — one-word replies like "yes" / "no" / "do it" / "sure"; pronouns or deictics like "that" / "it" / "them" / "the other one" / "this"; partial answers; or any turn that doesn't make sense in isolation — scan history from most recent to oldest and bind the referent to the most recent open question, choice you offered, or topic under discussion.
+- If userRequest contains an http:// or https:// URL, treat that URL as concrete context for words like "this", "it", or "they". Resolve requests like "what do they mean by this <url>" as "fetch and explain the URL content" rather than asking the user to paste it.
 - Affirmations and negations, including repeated affirmations like "yes yes yes", are direct answers to the most recent question you (the assistant) asked. Act on that answer; do not re-ask the same question.
 - If the most recent assistant turn was a clarifying question or offered options, the next user turn almost certainly addresses it. Resolve from there first before considering anything else.
 - When the latest answer affirms an offered interpretation, choose the option that best matches the earlier concrete user request. Example: if the user asked for "near by cat food places", supplied "downtown vancouver" after a location question, and then says "yes yes yes" after you ask whether they mean nearby cat food stores/restaurants/etc., resolve this as "find nearby cat food places/stores near downtown Vancouver."
@@ -74,7 +81,24 @@ const durableMemoryDescription = `Durable memory:
 
 Keep your prompt focused on the user's request; do not narrate memory decisions.`;
 
-const microsandboxActorDescription = `You drive a Linux microVM rooted at /workspace. /workspace is the bot's shared workspace — every conversation with this bot sees the same files here, and anything you write lands on the user's host machine under ~/.config/aithy/<botId>/workspace/. Files persist across conversations and across VM restarts. Use the sandbox tools to do real work; do not paraphrase or simulate commands you could actually run.
+const urlResearchDescription = `URL and web research:
+- You have web.search for finding sources and web.fetch for reading a known http:// or https:// URL.
+- If urlContext is present, use that fetched content directly as evidence before deciding whether more tool calls are needed.
+- If searchContext is present, use that current search evidence directly before asking the user for more details.
+- For recent scores, news, weather, prices, and explicit "search it up" / "look it up" requests, use web.search before answering or asking for clarification.
+- When the user's request includes a URL and asks you to explain, summarize, inspect, interpret, quote, verify, or otherwise use that page, call web.fetch on the URL before answering.
+- Do not ask the user to paste page text, upload a screenshot, or say you cannot read the link until web.fetch has been attempted and did not provide enough usable content.`;
+
+const hostShellGuidance = `
+Shell tool choice:
+- Use sandbox.bash by default for normal repo work, /workspace files, mounted files, tests, builds, package managers, scripts, and ordinary shell inspection.
+- Use system.bash only when the task truly requires the user's base computer outside the VM: explicit host/base-computer requests, absolute host paths that are not mounted, host-installed tools, OS services, SSH/keychain/daemons/hardware, or commands impossible in the VM.
+- system.bash requires user approval for each command. Include a concise reason explaining why sandbox.bash is insufficient. If unsure, use sandbox.bash or ask.`;
+
+function microsandboxActorDescription(config: AppConfig): string {
+  return `You drive a Linux microVM rooted at /workspace. /workspace is the bot's shared workspace — every conversation with this bot sees the same files here, and anything you write lands on the user's host machine under ~/.config/aithy/<botId>/workspace/. Files persist across conversations and across VM restarts. Use the sandbox tools to do real work; do not paraphrase or simulate commands you could actually run.
+
+${urlResearchDescription}
 
 Mounting policy: host paths outside /workspace (e.g. /Users/..., /home/...) are only visible after a mount. Use sandbox.mount to expose them. The VM restarts on a folder mount, so do this BEFORE any command that uses the file. Mounting a file copies it (copy-on-write where supported) into /workspace/<filename>; mounting a folder bind-mounts it at /mounts/<name>.
 
@@ -83,10 +107,15 @@ Sandbox filesystem topology (this VM ⇄ the host):
   /mounts/<name>    ⇄  user-selected host folder            (read-write bind mount, top-level)
 
 Cross-conversation pollution is normal: if conversation A wrote /workspace/report.csv, conversation B sees the same file. Treat /workspace like a real shared workstation filesystem — namespace your scratch files when collisions matter.
+${config.systemBashEnabled ? hostShellGuidance : ""}
 
 ${durableMemoryDescription}`;
+}
 
-const disabledActorDescription = `Sandboxing is disabled. Shell commands run locally on the host through Bun Shell, rooted at the bot's shared workspace directory at ~/.config/aithy/<botId>/workspace/. Use the sandbox tools to do real work; do not paraphrase or simulate commands you could actually run.
+function disabledActorDescription(config: AppConfig): string {
+  return `Sandboxing is disabled. Shell commands run locally on the host through Bun Shell, rooted at the bot's shared workspace directory at ~/.config/aithy/<botId>/workspace/. Use the sandbox tools to do real work; do not paraphrase or simulate commands you could actually run.
+
+${urlResearchDescription}
 
 Filesystem topology:
   /workspace  ⇄  ~/.config/aithy/<botId>/workspace/   (bot-shared, persistent)
@@ -94,13 +123,15 @@ Filesystem topology:
 Cross-conversation pollution is normal — every conversation with this bot sees the same /workspace files, and they survive across restarts.
 
 No tool is available to expose arbitrary host paths in this mode. Work with files already in /workspace, or ask the user to place files there.
+${config.systemBashEnabled ? hostShellGuidance : ""}
 
 ${durableMemoryDescription}`;
+}
 
 export function actorDescriptionForSandbox(config: AppConfig): string {
   return config.sandboxProvider === "disabled"
-    ? disabledActorDescription
-    : microsandboxActorDescription;
+    ? disabledActorDescription(config)
+    : microsandboxActorDescription(config);
 }
 
 export function createAithyAgent({

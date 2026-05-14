@@ -30,17 +30,21 @@ export class CapabilityBroker {
 
   require(input: CapabilityCheck): void {
     const decision = this.store.grantDecision(input.capability);
+    this.audit({ ...input, allowed: decision.allowed, reason: decision.reason });
+    if (!decision.allowed) {
+      throw new Error(`Capability denied for ${input.toolName}: ${decision.reason}`);
+    }
+  }
+
+  audit(input: CapabilityCheck & { allowed: boolean; reason: string }): void {
     this.store.auditTool({
       conversationId: input.conversationId,
       capability: input.capability,
       toolName: input.toolName,
-      allowed: decision.allowed,
-      reason: decision.reason,
+      allowed: input.allowed,
+      reason: input.reason,
       argsPreview: input.argsPreview,
     });
-    if (!decision.allowed) {
-      throw new Error(`Capability denied for ${input.toolName}: ${decision.reason}`);
-    }
   }
 }
 

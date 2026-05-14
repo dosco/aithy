@@ -21,7 +21,9 @@ export interface SessionRow {
 
 export interface MessageRow {
   role: "user" | "assistant";
+  message_kind: string | null;
   content: string | null;
+  metadata_json: string | null;
   thought: string | null;
   tool_name: string | null;
   tool_args: string | null;
@@ -207,7 +209,27 @@ export const sessionMigrations = [
       ALTER TABLE skills RENAME COLUMN used_count TO retrieved_count;
     `,
   },
+  {
+    version: 6,
+    precondition: (db: Database) => hasMessageTable(db) && !hasMessageColumn(db, "message_kind"),
+    sql: `
+      ALTER TABLE messages ADD COLUMN message_kind TEXT;
+      ALTER TABLE messages ADD COLUMN metadata_json TEXT;
+    `,
+  },
 ];
+
+function hasMessageTable(db: Database): boolean {
+  const row = db.query(`
+    SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'messages'
+  `).get();
+  return Boolean(row);
+}
+
+function hasMessageColumn(db: Database, name: string): boolean {
+  const rows = db.query("PRAGMA table_info(messages)").all() as Array<{ name: string }>;
+  return rows.some((row) => row.name === name);
+}
 
 function hasSkillColumn(name: string): (db: Database) => boolean {
   return (db) => {

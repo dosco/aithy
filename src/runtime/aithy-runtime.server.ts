@@ -36,6 +36,8 @@ import { RuntimeServiceSupervisor } from "./supervisor/service-supervisor";
 import { startQueueService, type QueueServiceHandle } from "./supervisor/queue-supervisor";
 import { QueueServiceClient } from "./services/queue/client";
 import { RemoteSessionStateStore } from "./services/queue/session-state-client";
+import { RuntimeStore, type SystemPermissionRequest } from "./runtime-store";
+import { permissionRequestEvent } from "../web/live-events";
 export interface AithyRuntime {
   config: AppConfig;
   events: EventBus;
@@ -58,6 +60,10 @@ export interface AithyRuntime {
   dispatcher: UserChatQueueClient;
   queue: QueueServiceClient;
   sessionState: RemoteSessionStateStore;
+  respondSystemPermission(
+    requestId: string,
+    decision: "allowed" | "denied",
+  ): SystemPermissionRequest;
   assertReady(): void;
   updateSettings(patch: SettingsPatch, secrets?: RuntimeSecretOverrides): Promise<StoredSettings>;
   updateSoul(fields: SoulFields): SoulProfile;
@@ -143,6 +149,7 @@ class RuntimeImpl implements AithyRuntime {
     public dispatcher: UserChatQueueClient,
     public queue: QueueServiceClient,
     public sessionState: RemoteSessionStateStore,
+    private readonly runtimeStore: RuntimeStore,
   ) {}
 
   notify(input: NotificationCreate): NotificationEntry {
@@ -183,6 +190,7 @@ class RuntimeImpl implements AithyRuntime {
     const memoryRuns = new SqliteMemoryRunsStore(config.stateDbPath);
     const notifications = new SqliteNotificationStore(config.stateDbPath);
     const usage = new SqliteUsageStore(config.stateDbPath);
+    const runtimeStore = new RuntimeStore(config.stateDbPath);
 
     const soulStore = new SqliteSoulStore(config.stateDbPath);
     const soul = loadOrSeedSoul(soulStore);
@@ -239,6 +247,7 @@ class RuntimeImpl implements AithyRuntime {
       dispatcher,
       queue,
       sessionState,
+      runtimeStore,
     );
     runtimeRef = runtime;
     runtime.queueHandle = queueHandle;
@@ -261,6 +270,20 @@ class RuntimeImpl implements AithyRuntime {
   assertReady(): void {
     if (this.resetting) throw new Error("Aithy is resetting. Try again in a moment.");
     assertStartupConfig(this.config);
+  }
+
+  respondSystemPermission(
+    requestId: string,
+    decision: "allowed" | "denied",
+  ): SystemPermissionRequest {
+    const request = this.runtimeStore.decidePermissionRequest(
+      requestId,
+      decision,
+      decision === "allowed" ? "user allowed once" : "user denied",
+    );
+    if (!request) throw new Error(`Permission request not found: ${requestId}`);
+    this.live.publish(permissionRequestEvent(request));
+    return request;
   }
 
   async updateSettings(patch: SettingsPatch, secrets?: RuntimeSecretOverrides): Promise<StoredSettings> {
@@ -337,6 +360,7 @@ class RuntimeImpl implements AithyRuntime {
       clearInterval(this.sweepTimer);
       this.sweepTimer = undefined;
     }
+    this.queue.beginShutdown();
 
     const stopped = this.activeRuns.stopAll();
     if (stopped > 0) {
@@ -401,6 +425,7 @@ class RuntimeImpl implements AithyRuntime {
     this.memoryRuns.close();
     this.notifications.close();
     this.usage.close();
+    this.runtimeStore.close();
   }
 }
 async function doResetAithyRuntimeSystem(): Promise<AithyRuntime> {

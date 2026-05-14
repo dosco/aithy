@@ -28,12 +28,20 @@ interface PendingRequest {
   timer: Timer;
 }
 
+export class QueueServiceConnectionClosedError extends Error {
+  constructor(message = "queue-service connection closed") {
+    super(message);
+    this.name = "QueueServiceConnectionClosedError";
+  }
+}
+
 export class QueueServiceClient {
   private readonly pending = new Map<string, PendingRequest>();
   private readonly eventListeners = new Set<EventListener>();
   private readonly serviceCache = new Map<RuntimeServiceRole, RuntimeServiceStatus>();
   private commandHandler?: CommandHandler;
   private closedError?: Error;
+  private shuttingDown = false;
 
   private constructor(
     private readonly socket: WebSocket,
@@ -69,13 +77,17 @@ export class QueueServiceClient {
         resolve();
       };
       socket.onerror = () => {
-        const error = new Error("Failed to connect to queue-service");
+        const error = opened
+          ? new QueueServiceConnectionClosedError("queue-service connection failed")
+          : new Error("Failed to connect to queue-service");
         if (opened) client.markClosed(error);
         else fail(error);
       };
     });
-    socket.onmessage = (message) => void client.receive(message.data);
-    socket.onclose = () => client.markClosed(new Error("queue-service connection closed"));
+    socket.onmessage = (message) => {
+      void client.receive(message.data).catch((error) => client.handleReceiveError(error));
+    };
+    socket.onclose = () => client.markClosed(new QueueServiceConnectionClosedError());
     client.send({ type: "hello", role: input.role, pid: process.pid, instanceId: crypto.randomUUID() });
     return client;
   }
@@ -90,7 +102,12 @@ export class QueueServiceClient {
   }
 
   close(): void {
+    this.beginShutdown();
     this.socket.close();
+  }
+
+  beginShutdown(): void {
+    this.shuttingDown = true;
   }
 
   async submitCommand(targetRole: RuntimeServiceRole, kind: string, payload: unknown = {}): Promise<string> {
@@ -114,19 +131,19 @@ export class QueueServiceClient {
   }
 
   async appendLog(input: RuntimeLogEventPayload): Promise<void> {
-    await this.request("runtime.log", input);
+    await this.notify("runtime.log", input);
   }
 
   async appendEvent(event: WebLiveEvent): Promise<void> {
-    await this.request("runtime.event", { event });
+    await this.notify("runtime.event", { event });
   }
 
   async appendQueueStatus(queue: RuntimeQueueStatus): Promise<void> {
-    await this.request("runtime.queueStatus", { queue });
+    await this.notify("runtime.queueStatus", { queue });
   }
 
   async heartbeat(role: RuntimeServiceRole, state: RuntimeServiceState, detail?: unknown): Promise<void> {
-    await this.request("runtime.serviceStatus", { role, state, detail, pid: process.pid });
+    await this.notify("runtime.serviceStatus", { role, state, detail, pid: process.pid });
   }
 
   async service(role: RuntimeServiceRole): Promise<RuntimeServiceStatus | null> {
@@ -210,7 +227,7 @@ export class QueueServiceClient {
   private request(method: RuntimeBusMethod, params: unknown, timeoutMs = this.requestTimeoutMs): Promise<unknown> {
     if (this.closedError) return Promise.reject(this.closedError);
     if (this.socket.readyState !== WebSocket.OPEN) {
-      return Promise.reject(new Error("queue-service connection is not open"));
+      return Promise.reject(new QueueServiceConnectionClosedError("queue-service connection is not open"));
     }
     const id = crypto.randomUUID();
     return new Promise((resolve, reject) => {
@@ -228,6 +245,15 @@ export class QueueServiceClient {
         reject(error instanceof Error ? error : new Error(String(error)));
       }
     });
+  }
+
+  private async notify(method: RuntimeBusMethod, params: unknown): Promise<void> {
+    try {
+      await this.request(method, params);
+    } catch (error) {
+      if (this.shouldIgnoreConnectionClosed(error)) return;
+      throw error;
+    }
   }
 
   private async receive(data: unknown): Promise<void> {
@@ -273,8 +299,18 @@ export class QueueServiceClient {
   }
 
   private markClosed(error: Error): void {
+    if (this.closedError) return;
     this.closedError = error;
     this.rejectAll(error);
+  }
+
+  private handleReceiveError(error: unknown): void {
+    if (this.shouldIgnoreConnectionClosed(error)) return;
+    console.error(`[${this.role}] queue-service message handling failed:`, error);
+  }
+
+  private shouldIgnoreConnectionClosed(error: unknown): boolean {
+    return this.shuttingDown && error instanceof QueueServiceConnectionClosedError;
   }
 
   private rejectAll(error: Error): void {

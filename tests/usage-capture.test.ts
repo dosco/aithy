@@ -32,14 +32,20 @@ describe("captureProgramUsage", () => {
             {
               ai: "openai",
               model: "gpt-test",
-              tokens: { promptTokens: 3, completionTokens: 2, totalTokens: 5 },
+              tokens: {
+                promptTokens: 3,
+                completionTokens: 2,
+                cacheCreationTokens: 1,
+                cacheReadTokens: 2,
+                totalTokens: 5,
+              },
             },
           ],
           responder: [
             {
               ai: "openai",
               model: "gpt-test-fast",
-              tokens: { promptTokens: 1, completionTokens: 4, thoughtsTokens: 2 },
+              tokens: { promptTokens: 1, completionTokens: 4, reasoningTokens: 2 },
             },
           ],
         }),
@@ -58,6 +64,8 @@ describe("captureProgramUsage", () => {
         inputTokens: 3,
         outputTokens: 2,
         thoughtTokens: 0,
+        cacheCreationTokens: 1,
+        cacheReadTokens: 2,
         totalTokens: 5,
       },
       {
@@ -66,6 +74,8 @@ describe("captureProgramUsage", () => {
         inputTokens: 1,
         outputTokens: 4,
         thoughtTokens: 2,
+        cacheCreationTokens: 0,
+        cacheReadTokens: 0,
         totalTokens: 7,
       },
     ]);

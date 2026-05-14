@@ -3,12 +3,14 @@ import type { ToolContext } from "../tool-context";
 import { createMemoryTools } from "./memory-tools";
 import { createMountTools } from "./mount-tools";
 import { createSandboxTools } from "./sandbox-tools";
+import { createSystemTools } from "./system-tools";
 import { createWebFetchTools } from "./web-fetch-tool";
 import { createWebSearchTools } from "./web-search-tool";
 
 export function createAgentTools(ctx: ToolContext, config: AppConfig) {
   const tools = [
     ...createSandboxTools(ctx, config.sandboxProvider),
+    ...(config.systemBashEnabled ? createSystemTools(ctx) : []),
     ...createWebSearchTools(ctx, config),
     ...createWebFetchTools(ctx, config),
     ...createMemoryTools(ctx),

@@ -12,7 +12,7 @@ export function createWebFetchTools(
     fn("fetch")
       .namespace("web")
       .description(
-        "Read a known http:// or https:// URL with Aithy's local web research sub-agent. It renders the starting page, can follow relevant links, and consolidates a cited answer from the pages it visits. Use this after web.search finds a candidate source, or whenever a specific page needs browser rendering, link-following, or source-cited synthesis.",
+        "Read a known http:// or https:// URL with Aithy's local web research sub-agent. It renders the starting page, can follow relevant links, and consolidates a cited answer from the pages it visits. Use this after web.search finds a candidate source, or whenever the user gives a specific URL and asks you to explain, summarize, inspect, interpret, verify, or cite it. Prefer this over asking the user to paste page text unless fetching does not provide usable content.",
       )
       .arg("url", f.string("Starting http:// or https:// URL"))
       .arg("task", f.string("What to learn from the page or linked pages"))

@@ -53,6 +53,7 @@ export class AgentWorkerRuntime {
     public readonly usage: SqliteUsageStore,
     public readonly activeRuns: ActiveRunRegistry,
     public readonly skills: SqliteSkillsStore,
+    public readonly runtimeStore: RuntimeStore,
     public readonly capabilities: CapabilityBroker,
     public readonly notifications: SqliteNotificationStore,
     private readonly dispatcher: AgentDispatcher,
@@ -202,6 +203,7 @@ export class AgentWorkerRuntime {
       usage,
       activeRuns,
       skills,
+      runtimeStore,
       capabilities,
       notifications,
       dispatcher,
@@ -309,6 +311,7 @@ export class AgentWorkerRuntime {
 
   private async doShutdown(): Promise<void> {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.queue.beginShutdown();
     this.heartbeat("stopping");
     await Promise.allSettled([
       this.dispatcher.close(),
@@ -327,6 +330,7 @@ export class AgentWorkerRuntime {
         store.close();
       } catch {}
     }
+    this.queue.close();
   }
 
   private appendLog(input: Parameters<RuntimeStore["appendLog"]>[0]): void {

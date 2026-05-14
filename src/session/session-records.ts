@@ -192,7 +192,7 @@ export function appendSessionMessages(
     session.messages.splice(0, session.messages.length - MAX_CONVERSATION_HISTORY_MESSAGES);
   }
   for (const message of messages) {
-    if (message.role === "assistant" && message.usage) {
+    if (message.role === "assistant" && message.kind !== "permission" && message.usage) {
       session.tokenTotals.input += message.usage.input;
       session.tokenTotals.output += message.usage.output;
       session.tokenTotals.thought += message.usage.thought;

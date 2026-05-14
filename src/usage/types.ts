@@ -13,6 +13,8 @@ export interface UsageRecord {
   inputTokens: number;
   outputTokens: number;
   thoughtTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
   totalTokens: number;
   sessionId: string | null;
   runId: string | null;
@@ -26,6 +28,8 @@ export interface UsageInsert {
   inputTokens: number;
   outputTokens: number;
   thoughtTokens?: number;
+  cacheCreationTokens?: number;
+  cacheReadTokens?: number;
   totalTokens?: number;
   sessionId?: string | null;
   runId?: string | null;
@@ -39,6 +43,8 @@ export interface UsageBucket {
   inputTokens: number;
   outputTokens: number;
   thoughtTokens: number;
+  cacheCreationTokens: number;
+  cacheReadTokens: number;
   totalTokens: number;
   calls: number;
 }

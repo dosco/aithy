@@ -7,9 +7,10 @@ runtime.start();
 
 let shuttingDown = false;
 const shutdown = (signal: NodeJS.Signals) => {
-  if (shuttingDown) process.exit(1);
+  if (shuttingDown) return;
   shuttingDown = true;
-  console.log(`[sandbox-worker] received ${signal}, shutting down`);
+  queue.beginShutdown();
+  console.log(`[sandbox-worker] shutting down, please wait... received ${signal}`);
   const killer = setTimeout(() => process.exit(1), 10_000);
   killer.unref();
   runtime

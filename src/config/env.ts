@@ -29,6 +29,7 @@ export interface AppConfig {
   parallelAgents: number;
   parallelSearchMcpUrl: string;
   parallelApiKey?: string;
+  systemBashEnabled: boolean;
   workspaceRoot: string;
   botId: string;
   stateDir: string;
@@ -71,6 +72,7 @@ export function loadConfig(
     parallelApiKey:
       cleanString(env.AITHY_PARALLEL_API_KEY)
       ?? cleanString(env.PARALLEL_API_KEY),
+    systemBashEnabled: parseBoolean(env.AITHY_SYSTEM_BASH_ENABLED, true),
     workspaceRoot:
       env.AITHY_WORKSPACE_ROOT ?? path.join(stateDir, botId, "workspace"),
     botId,
@@ -96,6 +98,14 @@ function parsePositiveInt(value: string | undefined, fallback: number): number {
   if (!value) return fallback;
   const parsed = Number.parseInt(value, 10);
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function parseBoolean(value: string | undefined, fallback: boolean): boolean {
+  if (value === undefined) return fallback;
+  const normalized = value.trim().toLowerCase();
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return fallback;
 }
 
 function cleanString(value: string | undefined): string | undefined {

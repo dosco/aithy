@@ -82,6 +82,7 @@ describe("SqliteSessionStateStore", () => {
       { scope: "session", version: 3 },
       { scope: "session", version: 4 },
       { scope: "session", version: 5 },
+      { scope: "session", version: 6 },
     ]);
     expect(new Database(dbPath).query(`
       SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'messages'
@@ -89,6 +90,40 @@ describe("SqliteSessionStateStore", () => {
     expect(new Database(dbPath).query(`
       SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_items'
     `).get()).toBeFalsy();
+  });
+
+  test("persists permission messages without token usage", async () => {
+    const dbPath = await tempDbPath();
+    const store = new SqliteSessionStateStore(dbPath);
+    seedSession(store);
+
+    store.appendMessages("conversation", [{
+      role: "assistant",
+      kind: "permission",
+      requestId: "req-1",
+      toolName: "system.bash",
+      status: "allowed",
+      command: "id",
+      cwd: "/Users/vr/src/axbot",
+      reason: "Needs host identity.",
+      decidedAt: "2026-05-02T12:01:00.000Z",
+      createdAt: "2026-05-02T12:01:00.000Z",
+    }]);
+
+    const loaded = new SqliteSessionStateStore(dbPath).loadSession("conversation");
+    expect(loaded?.tokenTotals).toEqual({ input: 0, output: 0, thought: 0, total: 0 });
+    expect(loaded?.messages).toMatchObject([
+      {
+        role: "assistant",
+        kind: "permission",
+        requestId: "req-1",
+        toolName: "system.bash",
+        status: "allowed",
+        command: "id",
+        cwd: "/Users/vr/src/axbot",
+        reason: "Needs host identity.",
+      },
+    ]);
   });
 
   test("recovers legacy tool rows that are missing tool_name", async () => {

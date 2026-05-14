@@ -16,7 +16,7 @@ export {
   soulDto,
   usageBucketDto,
 } from "./dto-mappers";
-export { secretStatus, secretStatusForProvider } from "./secret.dto";
+export { parallelSearchStatus, secretStatus, secretStatusForProvider } from "./secret.dto";
 export {
   memoryPageStateDto,
   notificationsPageStateDto,

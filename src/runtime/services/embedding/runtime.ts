@@ -194,6 +194,7 @@ export class EmbeddingWorkerRuntime {
   private async doShutdown(): Promise<void> {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     if (this.backfillTimer) clearInterval(this.backfillTimer);
+    this.queue.beginShutdown();
     this.heartbeat("stopping");
     this.memory.close();
     this.settings.close();

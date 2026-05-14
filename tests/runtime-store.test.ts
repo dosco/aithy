@@ -159,6 +159,31 @@ describe("RuntimeStore", () => {
     db.close();
     store.close();
   });
+
+  test("tracks per-command system permission requests", async () => {
+    const { store } = await makeStore();
+    const request = store.createPermissionRequest({
+      conversationId: "c1",
+      capability: "system.bash",
+      toolName: "system.bash",
+      command: "id",
+      cwd: "/tmp",
+      reason: "Needs host user identity.",
+      argsPreview: "{\"command\":\"id\"}",
+    });
+
+    expect(store.pendingPermissionRequests("c1")).toMatchObject([
+      { id: request.id, status: "pending", command: "id" },
+    ]);
+    const allowed = store.decidePermissionRequest(request.id, "allowed", "user allowed once");
+    expect(allowed).toMatchObject({
+      id: request.id,
+      status: "allowed",
+      decisionReason: "user allowed once",
+    });
+    expect(store.pendingPermissionRequests("c1")).toEqual([]);
+    store.close();
+  });
 });
 
 async function makeStore(): Promise<{ store: RuntimeStore; dbPath: string }> {

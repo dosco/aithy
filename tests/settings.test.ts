@@ -7,8 +7,12 @@ import { isLoopbackRequest } from "../src/settings/localhost";
 import {
   apiKeySecretName,
   normalizePostedSecret,
+  parallelApiKeySecretName,
+  readParallelApiKey,
   readProviderApiKey,
+  writeParallelApiKey,
   writeProviderApiKey,
+  deleteParallelApiKey,
   deleteProviderApiKey,
   type SecretStore,
 } from "../src/settings/secrets";
@@ -25,6 +29,7 @@ describe("web settings", () => {
         aiProvider: "ollama",
         aiModel: "llama3.2",
         sandboxProvider: "disabled",
+        systemBashEnabled: false,
       },
       ui: {
         theme: "terminal-glow",
@@ -49,12 +54,30 @@ describe("web settings", () => {
       aiModel: "gpt-next",
       sandboxProvider: "disabled",
       sandboxImage: "ubuntu:24.04",
+      systemBashEnabled: false,
+      parallelSearchMcpUrl: "https://search.example.test/mcp",
     });
 
     expect(next.aiModel).toBe("gpt-next");
     expect(next.aiApiKey).toBeUndefined();
     expect(next.sandboxProvider).toBe("disabled");
+    expect(next.systemBashEnabled).toBe(false);
+    expect(next.parallelSearchMcpUrl).toBe("https://search.example.test/mcp");
     expect(runtimeSandboxChanged(base, next)).toBe(true);
+  });
+
+  test("merges Parallel search key overrides without requiring one", () => {
+    const base = loadConfig({
+      AITHY_PARALLEL_API_KEY: "pk-env",
+    });
+    const anonymous = applyRuntimeSettings(base, {
+      parallelApiKey: null,
+    }, undefined, undefined, null);
+    const keyed = applyRuntimeSettings(base, {}, undefined, undefined, "pk-settings");
+
+    expect(applyRuntimeSettings(loadConfig({}), {}).parallelApiKey).toBeUndefined();
+    expect(anonymous.parallelApiKey).toBeUndefined();
+    expect(keyed.parallelApiKey).toBe("pk-settings");
   });
 
   test("clear model settings remove persisted model", () => {
@@ -120,6 +143,20 @@ describe("web settings", () => {
     });
     expect(await deleteProviderApiKey("openai", "alpha", fake)).toBe(true);
     expect(await readProviderApiKey("openai", "alpha", fake)).toBeUndefined();
+  });
+
+  test("stores Parallel API keys in the bot secret namespace", async () => {
+    const fake = new MemorySecretStore();
+    await writeParallelApiKey("pk-test", "alpha", fake);
+
+    expect(await readParallelApiKey("alpha", fake)).toBe("pk-test");
+    expect(fake.lastSet).toEqual({
+      service: "aithy.alpha",
+      name: parallelApiKeySecretName(),
+      value: "pk-test",
+    });
+    expect(await deleteParallelApiKey("alpha", fake)).toBe(true);
+    expect(await readParallelApiKey("alpha", fake)).toBeUndefined();
   });
 
   test("reads legacy shared secrets after bot namespace migration", async () => {

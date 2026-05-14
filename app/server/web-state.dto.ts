@@ -1,7 +1,7 @@
 import { isAiConfigured } from "../../src/config/validate";
 import type { AithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import { RuntimeStore } from "../../src/runtime/runtime-store";
-import { serializableMessage } from "../../src/web/live-events";
+import { serializableMessage, serializablePermissionRequest } from "../../src/web/live-events";
 import type { JsonValue, WebLiveEvent } from "../../src/web/live-events";
 import {
   configDto,
@@ -14,7 +14,8 @@ import {
   skillDto,
   soulDto,
 } from "./dto-mappers";
-import { secretStatus, secretStatusForProvider } from "./secret.dto";
+import { parallelSearchStatus, secretStatus, secretStatusForProvider } from "./secret.dto";
+import { preloadExistingSessionMessagePage } from "./session-message-loading";
 import {
   MEMORIES_PAGE_SIZE,
   type ActivityDto,
@@ -38,8 +39,7 @@ export async function webStateDto(
 ): Promise<WebStateDto> {
   if (!isSessionStateLoadedAll(runtime)) await runtime.sessionState.preloadAll();
   if (activeSessionId) {
-    await runtime.sessionState.preloadSession(activeSessionId);
-    await runtime.sessionState.preloadMessages(activeSessionId, { limit: 10 });
+    await preloadExistingSessionMessagePage(runtime, activeSessionId, { limit: 10 });
   }
   const settings = runtime.settings.load();
   const skillsPage = runtime.skills.page({ cursor: null, limit: SKILLS_PAGE_SIZE, sort: "retrieved" });
@@ -51,11 +51,13 @@ export async function webStateDto(
     messages: messagePage.items.map((item) => item.message),
     messagePage,
     activities: activeSessionId ? recentSessionActivities(runtime, activeSessionId) : [],
+    pendingPermissions: activeSessionId ? pendingPermissionRequests(runtime, activeSessionId) : [],
     sessions: runtime.sessions.listSessions().map(sessionDto),
     settings,
     config: configDto(runtime.config),
     secret: await secretStatus(runtime.config, settings),
     fastSecret: await fastSecretStatus(runtime, settings),
+    parallelSearch: await parallelSearchStatus(runtime.config, settings),
     soul: soulDto(runtime.soul),
     profile: profileDto(runtime.profile),
     skills: skillsPage.items.map(skillDto),
@@ -72,6 +74,18 @@ export async function webStateDto(
     aiConfigured: isAiConfigured(runtime.config),
     runtimeCapabilities: runtimeCapabilitiesDto(),
   };
+}
+
+function pendingPermissionRequests(
+  runtime: AithyRuntime,
+  conversationId: string,
+) {
+  const store = new RuntimeStore(runtime.config.stateDbPath);
+  try {
+    return store.pendingPermissionRequests(conversationId).map(serializablePermissionRequest);
+  } finally {
+    store.close();
+  }
 }
 
 function recentSessionActivities(
@@ -182,6 +196,7 @@ export async function settingsPageStateDto(runtime: AithyRuntime): Promise<Setti
     config: configDto(runtime.config),
     secret: await secretStatus(runtime.config, settings),
     fastSecret: await fastSecretStatus(runtime, settings),
+    parallelSearch: await parallelSearchStatus(runtime.config, settings),
     soul: soulDto(runtime.soul),
     profile: profileDto(runtime.profile),
     runtimeCapabilities: runtimeCapabilitiesDto(),
