@@ -27,7 +27,9 @@ import {
   stopChatMessage,
 } from "@/server/actions.functions";
 import type { WebStateDto } from "@/server/dto";
-import type { WebLiveEvent } from "../../src/web/live-events";
+import type { SerializableBotMessage, WebLiveEvent } from "../../src/web/live-events";
+
+type PermissionMessage = Extract<SerializableBotMessage, { kind: "permission" }>;
 
 export function ChatPage({ initialState }: { initialState: WebStateDto }) {
   const navigate = useNavigate();
@@ -139,10 +141,13 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
 
   const debugCount = useMemo(() => countDebugItems(messages, activities), [messages, activities]);
 
-  async function submit() {
-    const text = input.trim();
+  async function submitText(
+    rawText: string,
+    options: { clearInput?: boolean; useSelectedSkills?: boolean } = {},
+  ) {
+    const text = rawText.trim();
     if (!text || sending) return;
-    setInput("");
+    if (options.clearInput) setInput("");
     clearSetupStatusLog();
     setSending(true);
     const wasDraft = !activeSessionId;
@@ -157,12 +162,13 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
           message: { role: "user", content: text, createdAt },
         }));
     }
-    const skillIds = selectedSkills.map((skill) => skill.id);
+    const useSelectedSkills = options.useSelectedSkills ?? true;
+    const skillIds = useSelectedSkills ? selectedSkills.map((skill) => skill.id) : [];
     let keepSending = false;
     try {
       const result = await sendChatMessage({ data: { conversationId, text, createdAt, skillIds } });
       keepSending = Boolean(result.queued && !isCommand);
-      if (!isCommand) setSelectedSkills([]);
+      if (!isCommand && useSelectedSkills) setSelectedSkills([]);
       if (result.activeSessionId !== conversationId) {
         setActiveSessionId(result.activeSessionId);
         await navigate({ to: "/chat/$sessionId", params: { sessionId: result.activeSessionId } });
@@ -172,6 +178,14 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
     } finally {
       if (!keepSending) setSending(false);
     }
+  }
+
+  async function submit() {
+    await submitText(input, { clearInput: true });
+  }
+
+  async function retryPermission(message: PermissionMessage) {
+    await submitText(retryPermissionPrompt(message), { useSelectedSkills: false });
   }
 
   function cancelSetupStatusClear() {
@@ -267,11 +281,10 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
           onOpenSession={(session) => setPreviewSessionId(session.conversationId)}
           onPermissionDecision={(requestId, decision) => {
             setPermissionRequests((current) =>
-              current.map((request) =>
-                request.id === requestId ? { ...request, status: decision === "allow" ? "allowed" : "denied" } : request
-              ));
+              current.filter((request) => request.id !== requestId));
             void respondSystemPermission({ data: { requestId, decision } });
           }}
+          onPermissionRetry={(message) => void retryPermission(message)}
         />
       </div>
 
@@ -307,10 +320,28 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
   );
 }
 
+function retryPermissionPrompt(message: PermissionMessage): string {
+  return [
+    "Retry the expired command on my computer.",
+    "",
+    "Command:",
+    message.command,
+    "",
+    "Folder:",
+    message.cwd,
+    "",
+    "Reason:",
+    message.reason,
+  ].join("\n");
+}
+
 function updatePermissionRequests(
   current: WebStateDto["pendingPermissions"],
   request: WebStateDto["pendingPermissions"][number],
 ) {
+  if (request.status !== "pending") {
+    return current.filter((item) => item.id !== request.id);
+  }
   const index = current.findIndex((item) => item.id === request.id);
   if (index === -1) return [...current, request];
   return current.map((item) => item.id === request.id ? request : item);

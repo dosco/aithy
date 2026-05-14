@@ -1,65 +1,138 @@
-import { ShieldAlert, ShieldCheck, ShieldX } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, RotateCcw, ShieldAlert, ShieldX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import type {
   SerializableBotMessage,
   SerializableSystemPermissionRequest,
 } from "../../src/web/live-events";
 
-type PermissionMessage = Extract<SerializableBotMessage, { kind: "permission" }>;
+type PermissionMessage = Extract<
+  SerializableBotMessage,
+  { kind: "permission" }
+>;
 
 export function PermissionCard({
   request,
   message,
   busy = false,
   onDecision,
+  onRetry,
 }: {
   request?: SerializableSystemPermissionRequest;
   message?: PermissionMessage;
   busy?: boolean;
   onDecision?: (requestId: string, decision: "allow" | "deny") => void;
+  onRetry?: (message: PermissionMessage) => void;
 }) {
+  const [expanded, setExpanded] = useState(!message);
   const item = message ?? request;
   if (!item) return null;
   const status = message?.status ?? request?.status ?? "pending";
   const pending = status === "pending";
-  const Icon = status === "allowed" ? ShieldCheck : status === "denied" ? ShieldX : ShieldAlert;
+  const collapsible = Boolean(message) && !pending;
+  const retryable = message?.status === "timed_out" && onRetry;
+  const Icon = status === "denied" ? ShieldX : ShieldAlert;
   const tone = toneClasses(status);
+  const detailsId = message
+    ? `permission-details-${message.requestId}`
+    : undefined;
 
   return (
-    <div className={`app-chat-bubble-frame w-fit max-w-[min(78%,50rem)] rounded-[18px] border px-5 py-4 text-sm shadow-[0_14px_36px_rgba(80,52,14,0.10)] ${tone.card}`}>
+    <div
+      className={`app-chat-bubble-frame w-fit max-w-[min(68%,44rem)] rounded-[18px] border px-4 py-3 text-sm shadow-[0_14px_30px_rgba(24,24,27,0.08)] ${tone.card}`}
+    >
       <div className="flex items-start gap-3">
-        <div className={`mt-0.5 grid h-9 w-9 shrink-0 place-items-center rounded-full ${tone.icon}`}>
-          <Icon className="h-4 w-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="text-base font-medium">
-              {pending ? "Allow host command?" : statusLabel(status)}
-            </div>
-            <span className={`rounded-full border px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-[0.16em] ${tone.pill}`}>
-              {item.toolName}
-            </span>
+        {retryable ? (
+          <button
+            type="button"
+            aria-label="Retry expired command"
+            title="Retry expired command"
+            className={`grid h-8 w-8 shrink-0 place-items-center rounded-full transition hover:scale-105 focus:outline-none focus:ring-2 focus:ring-amber-500 focus:ring-offset-2 focus:ring-offset-[rgb(var(--background))] ${tone.icon}`}
+            onClick={() => onRetry(message)}
+          >
+            <RotateCcw className="h-4 w-4" />
+          </button>
+        ) : (
+          <div
+            className={`grid h-8 w-8 shrink-0 place-items-center rounded-full ${tone.icon}`}
+          >
+            {status === "allowed" ? (
+              <span className="text-lg font-semibold leading-none">✓</span>
+            ) : (
+              <Icon className="h-4 w-4" />
+            )}
           </div>
-          <p className="mt-1 leading-6 opacity-85">
-            {statusDescription(status)}
-          </p>
-          <dl className="mt-3 grid gap-2">
-            <PermissionField label="Reason" value={item.reason} />
-            <PermissionField label="Cwd" value={item.cwd} mono />
-            <PermissionField label="Command" value={item.command} mono block />
-          </dl>
-          {message ? (
-            <div className="mt-3 font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">
-              {message.decidedAt} · {message.requestId}
+        )}
+        <div className="min-w-0 flex-1">
+          <div className="flex min-w-0 items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <div className={`truncate text-base font-medium ${tone.title}`}>
+                  {pending
+                    ? "Allow command on your computer?"
+                    : statusLabel(status)}
+                </div>
+              </div>
+              {!expanded ? (
+                <div className="mt-1 min-w-0 font-mono text-xs opacity-80">
+                  <span className="inline-block max-w-full truncate align-bottom">
+                    {item.command}
+                  </span>
+                </div>
+              ) : null}
+            </div>
+            {collapsible ? (
+              <div className="-mr-1 flex shrink-0 items-center">
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  aria-controls={detailsId}
+                  aria-label={
+                    expanded
+                      ? "Collapse permission details"
+                      : "Expand permission details"
+                  }
+                  title={
+                    expanded
+                      ? "Collapse permission details"
+                      : "Expand permission details"
+                  }
+                  className={`grid h-8 w-8 place-items-center rounded-full transition-colors hover:bg-black/5 dark:hover:bg-white/10 ${tone.arrow}`}
+                  onClick={() => setExpanded((value) => !value)}
+                >
+                  <ChevronDown
+                    className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`}
+                  />
+                </button>
+              </div>
+            ) : null}
+          </div>
+
+          {expanded ? (
+            <div id={detailsId}>
+              <p className="mt-1 leading-6 opacity-85">
+                {statusDescription(status)}
+              </p>
+              <dl className="mt-3 grid gap-2">
+                <PermissionField label="Reason" value={item.reason} />
+                <PermissionField label="Folder" value={item.cwd} mono />
+                <PermissionField
+                  label="Command"
+                  value={item.command}
+                  mono
+                  block
+                />
+              </dl>
             </div>
           ) : null}
+
           {pending && request && onDecision ? (
             <div className="mt-4 flex flex-wrap justify-end gap-2">
               <Button
                 type="button"
                 variant="ghost"
                 size="sm"
-                className="border-stone-300/80 bg-white/70 text-stone-900 hover:bg-stone-100 dark:border-stone-700 dark:bg-stone-950/40 dark:text-stone-100 dark:hover:bg-stone-900"
+                className="border border-amber-300 bg-amber-200 text-amber-950 shadow-sm hover:bg-amber-200 dark:border-amber-300/25 dark:bg-amber-950/45 dark:text-amber-100 dark:hover:bg-amber-900/60"
                 disabled={busy}
                 onClick={() => onDecision(request.id, "deny")}
               >
@@ -69,7 +142,7 @@ export function PermissionCard({
                 type="button"
                 variant="default"
                 size="sm"
-                className="border-transparent bg-amber-700 text-white shadow-sm hover:bg-amber-800 dark:bg-amber-500 dark:text-stone-950 dark:hover:bg-amber-400"
+                className="border border-amber-300 bg-amber-300 text-amber-950 shadow-sm hover:bg-amber-400 dark:border-amber-300 dark:bg-amber-300 dark:text-amber-950 dark:hover:bg-amber-200"
                 disabled={busy}
                 onClick={() => onDecision(request.id, "allow")}
               >
@@ -96,8 +169,12 @@ function PermissionField({
 }) {
   return (
     <div>
-      <dt className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">{label}</dt>
-      <dd className={`${mono ? "font-mono text-xs" : ""} ${block ? "whitespace-pre-wrap break-all" : "break-words"}`}>
+      <dt className="font-mono text-[10px] uppercase tracking-[0.16em] opacity-70">
+        {label}
+      </dt>
+      <dd
+        className={`${mono ? "font-mono text-xs" : ""} ${block ? "whitespace-pre-wrap break-all" : "break-words"}`}
+      >
         {value}
       </dd>
     </div>
@@ -105,36 +182,40 @@ function PermissionField({
 }
 
 function statusLabel(status: string): string {
-  if (status === "allowed") return "Host command approved once";
-  if (status === "timed_out") return "Host command expired";
-  return "Host command denied";
+  if (status === "allowed") return "Command approved once";
+  if (status === "timed_out") return "Command expired";
+  return "Command denied";
 }
 
 function statusDescription(status: string): string {
-  if (status === "allowed") return "This host command was approved once and recorded for audit.";
-  if (status === "denied") return "This host command was denied and did not run.";
-  if (status === "timed_out") return "This host command was not approved before the request expired.";
-  return "This command will run on the base computer, outside the VM.";
+  if (status === "allowed") return "Approved once and recorded for audit.";
+  if (status === "denied") return "This command was denied and did not run.";
+  if (status === "timed_out")
+    return "This command was not approved before the request expired.";
+  return "This command runs on your computer, outside the sandbox.";
 }
 
 function toneClasses(status: string) {
   if (status === "allowed") {
     return {
-      card: "border-emerald-300 bg-emerald-50 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/35 dark:text-emerald-100",
-      icon: "bg-emerald-200 text-emerald-900 dark:bg-emerald-900 dark:text-emerald-100",
-      pill: "border-emerald-700/35 bg-emerald-100/70 text-emerald-900 dark:border-emerald-300/30 dark:bg-emerald-900/45 dark:text-emerald-100",
+      card: "border-emerald-700 bg-emerald-600 text-white dark:border-emerald-800 dark:bg-emerald-950/35 dark:text-emerald-100",
+      icon: "bg-emerald-800 text-white dark:bg-emerald-900 dark:text-emerald-100",
+      title: "text-white dark:text-emerald-100",
+      arrow: "text-white dark:text-emerald-100",
     };
   }
   if (status === "denied") {
     return {
-      card: "border-rose-300 bg-rose-50 text-rose-950 dark:border-rose-800 dark:bg-rose-950/35 dark:text-rose-100",
-      icon: "bg-rose-200 text-rose-900 dark:bg-rose-900 dark:text-rose-100",
-      pill: "border-rose-700/35 bg-rose-100/70 text-rose-900 dark:border-rose-300/30 dark:bg-rose-900/45 dark:text-rose-100",
+      card: "border-stone-200 bg-white/95 text-stone-950 dark:border-rose-800/70 dark:bg-stone-950/80 dark:text-stone-100",
+      icon: "bg-rose-100 text-rose-700 dark:bg-rose-950 dark:text-rose-300",
+      title: "text-rose-800 dark:text-rose-100",
+      arrow: "text-stone-600 dark:text-stone-300",
     };
   }
   return {
-    card: "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100",
-    icon: "bg-amber-200 text-amber-900 dark:bg-amber-900 dark:text-amber-100",
-    pill: "border-amber-800/40 bg-amber-100/70 text-amber-900 dark:border-amber-300/30 dark:bg-amber-900/45 dark:text-amber-100",
+    card: "border-amber-400 bg-amber-100 text-amber-950 shadow-[0_16px_34px_rgba(120,53,15,0.12)] dark:border-amber-800 dark:bg-amber-950/35 dark:text-amber-100",
+    icon: "bg-amber-300 text-amber-950 dark:bg-amber-900 dark:text-amber-100",
+    title: "text-amber-950 dark:text-amber-100",
+    arrow: "text-amber-950 dark:text-amber-100",
   };
 }

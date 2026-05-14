@@ -1,6 +1,8 @@
 import type { Database } from "bun:sqlite";
 
 export type SystemPermissionStatus = "pending" | "allowed" | "denied" | "timed_out";
+export const PERMISSION_REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
+const PERMISSION_REQUEST_RETENTION_MS = 24 * 60 * 60 * 1000;
 
 export interface SystemPermissionRequest {
   id: string;
@@ -68,12 +70,22 @@ export function pendingPermissionRequests(
   db: Database,
   conversationId: string,
 ): SystemPermissionRequest[] {
+  maintainPermissionRequests(db);
   const rows = db.query(`
     SELECT * FROM permission_requests
     WHERE conversation_id = $conversationId AND status = 'pending'
     ORDER BY created_at ASC
   `).all({ $conversationId: conversationId }) as PermissionRequestRow[];
   return rows.map(requestFromRow);
+}
+
+export function maintainPermissionRequests(db: Database, now = new Date()): {
+  expired: number;
+  pruned: number;
+} {
+  const expired = expireStalePermissionRequests(db, now);
+  const pruned = pruneOldPermissionRequests(db, now);
+  return { expired, pruned };
 }
 
 export function decidePermissionRequest(
@@ -99,6 +111,31 @@ export function decidePermissionRequest(
     $decisionReason: decisionReason,
   });
   return permissionRequest(db, id);
+}
+
+function expireStalePermissionRequests(db: Database, now: Date): number {
+  const cutoff = new Date(now.getTime() - PERMISSION_REQUEST_TIMEOUT_MS).toISOString();
+  const result = db.query(`
+    UPDATE permission_requests
+    SET status = 'timed_out',
+        decided_at = $now,
+        decision_reason = 'permission request expired'
+    WHERE status = 'pending' AND created_at <= $cutoff
+  `).run({
+    $now: now.toISOString(),
+    $cutoff: cutoff,
+  });
+  return result.changes;
+}
+
+function pruneOldPermissionRequests(db: Database, now: Date): number {
+  const cutoff = new Date(now.getTime() - PERMISSION_REQUEST_RETENTION_MS).toISOString();
+  const result = db.query(`
+    DELETE FROM permission_requests
+    WHERE status != 'pending'
+      AND COALESCE(decided_at, created_at) <= $cutoff
+  `).run({ $cutoff: cutoff });
+  return result.changes;
 }
 
 interface PermissionRequestRow {

@@ -46,6 +46,7 @@ export function ChatTimeline({
   onLoadMore,
   onOpenSession,
   onPermissionDecision,
+  onPermissionRetry,
 }: {
   messages: ChatMessageItem[];
   subSessions: SessionSummaryDto[];
@@ -59,6 +60,7 @@ export function ChatTimeline({
   onLoadMore: () => Promise<boolean>;
   onOpenSession: (session: SessionSummaryDto) => void;
   onPermissionDecision: (requestId: string, decision: "allow" | "deny") => void;
+  onPermissionRetry: (message: Extract<SerializableBotMessage, { kind: "permission" }>) => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   const wasNearBottomRef = useRef(true);
@@ -152,6 +154,7 @@ export function ChatTimeline({
                     item={item}
                     onOpenSession={onOpenSession}
                     onPermissionDecision={onPermissionDecision}
+                    onPermissionRetry={onPermissionRetry}
                   />
                 )}
           </MeasuredRow>
@@ -312,10 +315,12 @@ function TimelineItem({
   item,
   onOpenSession,
   onPermissionDecision,
+  onPermissionRetry,
 }: {
   item: Exclude<TimelineEntry, { kind: "typing" }>;
   onOpenSession: (session: SessionSummaryDto) => void;
   onPermissionDecision: (requestId: string, decision: "allow" | "deny") => void;
+  onPermissionRetry: (message: Extract<SerializableBotMessage, { kind: "permission" }>) => void;
 }) {
   const reduce = useReducedMotion();
   const motionProps = reduce
@@ -358,7 +363,7 @@ function TimelineItem({
       </motion.div>
     );
   }
-  if (item.kind === "permission") return <motion.div {...motionProps}><PermissionCard message={item.message} /></motion.div>;
+  if (item.kind === "permission") return <motion.div {...motionProps}><PermissionCard message={item.message} onRetry={onPermissionRetry} /></motion.div>;
   if (item.kind === "permission-request") return <motion.div {...motionProps}><PermissionCard request={item.request} onDecision={onPermissionDecision} /></motion.div>;
   if (item.kind === "tool") {
     return (

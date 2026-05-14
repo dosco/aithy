@@ -37,6 +37,7 @@ import {
 import {
   createPermissionRequest as createRuntimePermissionRequest,
   decidePermissionRequest as decideRuntimePermissionRequest,
+  maintainPermissionRequests as maintainRuntimePermissionRequests,
   pendingPermissionRequests as pendingRuntimePermissionRequests,
   permissionRequest as runtimePermissionRequest,
   type CreateSystemPermissionRequestInput,
@@ -65,6 +66,7 @@ export type {
   SystemPermissionRequest,
   SystemPermissionStatus,
 } from "./permission-requests";
+export { PERMISSION_REQUEST_TIMEOUT_MS } from "./permission-requests";
 
 const EXPIRED_EVENT_PRUNE_INTERVAL_MS = 60_000;
 
@@ -79,6 +81,7 @@ export class RuntimeStore {
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA synchronous = NORMAL;");
     applyRuntimeStoreMigrations(this.db);
+    this.maintainPermissionRequests();
   }
 
   appendEvent(event: WebLiveEvent, expiresAt?: string | null): number {
@@ -184,6 +187,7 @@ export class RuntimeStore {
   }
 
   createPermissionRequest(input: CreateSystemPermissionRequestInput): SystemPermissionRequest {
+    this.maintainPermissionRequests();
     return createRuntimePermissionRequest(this.db, input);
   }
 
@@ -193,6 +197,10 @@ export class RuntimeStore {
 
   pendingPermissionRequests(conversationId: string): SystemPermissionRequest[] {
     return pendingRuntimePermissionRequests(this.db, conversationId);
+  }
+
+  maintainPermissionRequests(now = new Date()): { expired: number; pruned: number } {
+    return maintainRuntimePermissionRequests(this.db, now);
   }
 
   decidePermissionRequest(

@@ -184,6 +184,33 @@ describe("RuntimeStore", () => {
     expect(store.pendingPermissionRequests("c1")).toEqual([]);
     store.close();
   });
+
+  test("expires stale pending system permission requests", async () => {
+    const { store, dbPath } = await makeStore();
+    const request = store.createPermissionRequest({
+      conversationId: "c1",
+      capability: "system.bash",
+      toolName: "system.bash",
+      command: "id",
+      cwd: "/tmp",
+      reason: "Needs host user identity.",
+      argsPreview: "{\"command\":\"id\"}",
+    });
+    const staleCreatedAt = new Date(Date.now() - 11 * 60 * 1000).toISOString();
+    const db = new Database(dbPath);
+    db.query(`
+      UPDATE permission_requests SET created_at = $createdAt WHERE id = $id
+    `).run({ $createdAt: staleCreatedAt, $id: request.id });
+    db.close();
+
+    expect(store.pendingPermissionRequests("c1")).toEqual([]);
+    expect(store.permissionRequest(request.id)).toMatchObject({
+      id: request.id,
+      status: "timed_out",
+      decisionReason: "permission request expired",
+    });
+    store.close();
+  });
 });
 
 async function makeStore(): Promise<{ store: RuntimeStore; dbPath: string }> {

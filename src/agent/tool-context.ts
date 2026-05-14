@@ -6,6 +6,7 @@ import type { NotificationCreate } from "../notifications/types";
 import type { SessionManager } from "../session/session-manager";
 import type { CapabilityBroker } from "../security/capability-broker";
 import type { RuntimeStore } from "../runtime/runtime-store";
+import type { PermissionDecisionStatus } from "../session/types";
 
 export interface RememberRequest {
   hint: string;
@@ -27,6 +28,8 @@ export interface ToolContext {
   capabilities?: CapabilityBroker;
   /** Runtime store for approval requests and other cross-process state. */
   runtimeStore?: RuntimeStore;
+  /** Per-run guard against automatically repeating expired/denied host prompts. */
+  systemPermissionDecisions?: Map<string, PermissionDecisionStatus | "pending">;
   /** Flush queued remote session writes when a tool emits durable chat state. */
   flushSessionState?: () => Promise<void>;
 }
