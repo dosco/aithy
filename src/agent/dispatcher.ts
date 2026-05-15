@@ -24,6 +24,7 @@ export interface UserChatJobData {
   text: string;
   createdAt: string;
   skillIds: readonly string[];
+  disableSystemBash?: boolean;
 }
 
 export interface UserChatJobResult {

@@ -5,6 +5,7 @@
     "": {
       "name": "aithy",
       "dependencies": {
+        "@agentclientprotocol/sdk": "0.21.0",
         "@ax-llm/ax": "21.0.4",
         "@modelcontextprotocol/sdk": "1.29.0",
         "@radix-ui/react-popover": "1.1.15",
@@ -52,6 +53,8 @@
     "protobufjs": "7.5.5",
   },
   "packages": {
+    "@agentclientprotocol/sdk": ["@agentclientprotocol/sdk@0.21.0", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-ONj+Q8qOdNQp5XbH5jnMwzT9IKZJsSN0p0lkceS4GtUtNOPVLpNzSS8gqQdGMKfBvA0ESbkL8BTaSN1Rc9miEw=="],
+
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw=="],
 
     "@ax-llm/ax": ["@ax-llm/ax@21.0.4", "", { "dependencies": { "@opentelemetry/api": "^1.9.0" }, "peerDependencies": { "zod": "^3.24.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "ax": "cli/index.mjs" } }, "sha512-sKMbvofzSrbZQOS4IVv/Bh+hNKADQe8fnmu9j6byq8tdeZAC1/2HxCSMCZcTN1Ib126nBUkESlMFClgBhxWJUg=="],

@@ -11,6 +11,8 @@
     "start": "bun --bun vite dev --host 127.0.0.1 --port 3000 --strictPort",
     "dev": "bun --bun vite dev --host 127.0.0.1 --port 3000 --strictPort",
     "agent:worker": "bun run src/runtime/services/agent/worker.ts",
+    "acp": "bun run src/acp/server.ts",
+    "acp:smoke": "bun run scripts/acp-smoke.ts",
     "build": "bun --bun vite build",
     "preview": "bun --bun vite preview --host 127.0.0.1 --port 3000 --strictPort",
     "memory": "bun run scripts/memory.ts",
@@ -25,6 +27,7 @@
     "ci": "bun ci && bun run check"
   },
   "dependencies": {
+    "@agentclientprotocol/sdk": "0.21.0",
     "@ax-llm/ax": "21.0.4",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@radix-ui/react-popover": "1.1.15",

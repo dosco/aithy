@@ -51,7 +51,9 @@ export async function processUserChatJob(
   runtime.skills.incrementRetrieved(selectedSkills.map(({ id }) => id));
   const skills = selectedSkills.map((skill) => ({ name: skill.name, content: formatSkillContent(skill) }));
   const reply = await runMessage(message, {
-    config: runtime.config,
+    config: data.disableSystemBash
+      ? { ...runtime.config, systemBashEnabled: false }
+      : runtime.config,
     events: runtime.events,
     sandbox: runtime.sandbox,
     sessions: runtime.sessions,
