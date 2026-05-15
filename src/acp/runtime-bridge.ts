@@ -69,12 +69,10 @@ export class AithyRuntimeAcpBridge implements AithyAcpBridge {
       createdAt: createdAt.toISOString(),
     }]);
     await runtime.sessionState.flush();
-    const afterUserMessageId = runtime.sessions.lastMessageId(session.conversationId);
     runtime.assertReady();
 
     return this.waitForAssistantText(runtime, {
       conversationId: session.conversationId,
-      afterUserMessageId,
       signal: input.signal,
       start: () => runtime.dispatcher.enqueueUserChat({
         conversationId: session.conversationId,
@@ -118,7 +116,6 @@ export class AithyRuntimeAcpBridge implements AithyAcpBridge {
 
   private waitForAssistantText(runtime: AithyRuntime, input: {
     conversationId: string;
-    afterUserMessageId: number | null;
     signal: AbortSignal | undefined;
     start: () => Promise<unknown>;
   }): Promise<AithyAcpRunPromptResult> {
@@ -136,9 +133,6 @@ export class AithyRuntimeAcpBridge implements AithyAcpBridge {
       const onAbort = () => finish({ cancelled: true });
       input.signal?.addEventListener("abort", onAbort, { once: true });
       unsubscribe = runtime.live.subscribe((event) => {
-        if (!eventIsAfterUserMessage(runtime, input.conversationId, input.afterUserMessageId)) {
-          return;
-        }
         const text = assistantTextFromEvent(event, input.conversationId);
         if (text !== undefined) finish({ text });
       });
@@ -190,14 +184,4 @@ function assistantTextFromEvent(
   const message = event.message;
   if (message.role !== "assistant" || message.kind !== "text") return undefined;
   return message.content;
-}
-
-function eventIsAfterUserMessage(
-  runtime: AithyRuntime,
-  conversationId: string,
-  afterUserMessageId: number | null,
-): boolean {
-  if (afterUserMessageId === null) return true;
-  const latest = runtime.sessions.lastMessageId(conversationId);
-  return latest !== null && latest > afterUserMessageId;
 }

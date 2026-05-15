@@ -131,7 +131,7 @@ describe("Aithy ACP agent", () => {
     await expect(prompt).resolves.toEqual({ text: "fresh reply" });
   });
 
-  test("runtime bridge ignores assistant events before the prompt row advances", async () => {
+  test("runtime bridge accepts assistant events before the local cache advances", async () => {
     const runtime = fakeRuntime({ autoReply: false });
     const bridge = new AithyRuntimeAcpBridge(async () => runtime as any);
     const session = await bridge.createSession({
@@ -145,10 +145,9 @@ describe("Aithy ACP agent", () => {
     });
     await waitUntil(() => runtime.enqueued.length === 1);
 
-    runtime.publishAssistant(conversationId, "too early", { advanceRow: false });
-    runtime.publishAssistant(conversationId, "position-gated reply");
+    runtime.publishAssistant(conversationId, "reply from queue event", { advanceRow: false });
 
-    await expect(prompt).resolves.toEqual({ text: "position-gated reply" });
+    await expect(prompt).resolves.toEqual({ text: "reply from queue event" });
   });
 
   test("runtime bridge shuts down a created runtime", async () => {
