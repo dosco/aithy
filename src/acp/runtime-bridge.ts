@@ -13,17 +13,20 @@ interface AcpSession {
   acpSessionId: string;
   conversationId: string;
   cwd: string;
+  generation: number;
+  needsFreshConversation: boolean;
 }
 
 type RuntimeFactory = () => Promise<AithyRuntime>;
 
 export class AithyRuntimeAcpBridge implements AithyAcpBridge {
   private readonly sessions = new Map<string, AcpSession>();
+  private runtimePromise?: Promise<AithyRuntime>;
 
   constructor(private readonly getRuntime: RuntimeFactory = getAithyRuntime) {}
 
   async createSession(params: Parameters<AithyAcpBridge["createSession"]>[0]) {
-    const runtime = await this.getRuntime();
+    const runtime = await this.runtime();
     const acpSessionId = crypto.randomUUID();
     const conversationId = `acp-${acpSessionId}`;
     runtime.sessions.ensureLogicalSession(conversationId, {
@@ -36,14 +39,20 @@ export class AithyRuntimeAcpBridge implements AithyAcpBridge {
       acpSessionId,
       conversationId,
       cwd: params.cwd,
+      generation: 0,
+      needsFreshConversation: false,
     });
     return { sessionId: acpSessionId };
   }
 
   async runPrompt(input: AithyAcpRunPromptInput): Promise<AithyAcpRunPromptResult> {
     const session = this.requireSession(input.sessionId);
-    const runtime = await this.getRuntime();
+    const runtime = await this.runtime();
     if (input.signal?.aborted) return { cancelled: true };
+    if (session.needsFreshConversation) {
+      this.rotateConversation(runtime, session);
+      await runtime.sessionState.flush();
+    }
 
     const text = input.text.trim();
     if (text.startsWith("/")) return this.runSlashCommand(runtime, session, text);
@@ -60,23 +69,36 @@ export class AithyRuntimeAcpBridge implements AithyAcpBridge {
       createdAt: createdAt.toISOString(),
     }]);
     await runtime.sessionState.flush();
+    const afterUserMessageId = runtime.sessions.lastMessageId(session.conversationId);
     runtime.assertReady();
 
-    return this.waitForAssistantText(runtime, session, input.signal, () =>
-      runtime.dispatcher.enqueueUserChat({
+    return this.waitForAssistantText(runtime, {
+      conversationId: session.conversationId,
+      afterUserMessageId,
+      signal: input.signal,
+      start: () => runtime.dispatcher.enqueueUserChat({
         conversationId: session.conversationId,
         text,
         createdAt: createdAt.toISOString(),
         skillIds: [],
         disableSystemBash: true,
-      }));
+      }),
+    });
   }
 
   async cancel(sessionId: string): Promise<void> {
     const session = this.sessions.get(sessionId);
     if (!session) return;
-    const runtime = await this.getRuntime();
+    session.needsFreshConversation = true;
+    const runtime = await this.runtime();
     await runtime.dispatcher.cancelByConversation(session.conversationId);
+  }
+
+  async shutdown(): Promise<void> {
+    if (!this.runtimePromise) return;
+    const runtime = await this.runtimePromise.catch(() => undefined);
+    this.runtimePromise = undefined;
+    await runtime?.shutdown();
   }
 
   private async runSlashCommand(
@@ -94,12 +116,12 @@ export class AithyRuntimeAcpBridge implements AithyAcpBridge {
     return { text: result.reply.text };
   }
 
-  private waitForAssistantText(
-    runtime: AithyRuntime,
-    session: AcpSession,
-    signal: AbortSignal | undefined,
-    start: () => Promise<unknown>,
-  ): Promise<AithyAcpRunPromptResult> {
+  private waitForAssistantText(runtime: AithyRuntime, input: {
+    conversationId: string;
+    afterUserMessageId: number | null;
+    signal: AbortSignal | undefined;
+    start: () => Promise<unknown>;
+  }): Promise<AithyAcpRunPromptResult> {
     return new Promise((resolve, reject) => {
       let unsubscribe = () => {};
       let settled = false;
@@ -107,17 +129,20 @@ export class AithyRuntimeAcpBridge implements AithyAcpBridge {
         if (settled) return;
         settled = true;
         unsubscribe();
-        signal?.removeEventListener("abort", onAbort);
+        input.signal?.removeEventListener("abort", onAbort);
         if (error) reject(error);
         else resolve(result);
       };
       const onAbort = () => finish({ cancelled: true });
-      signal?.addEventListener("abort", onAbort, { once: true });
+      input.signal?.addEventListener("abort", onAbort, { once: true });
       unsubscribe = runtime.live.subscribe((event) => {
-        const text = assistantTextFromEvent(event, session.conversationId);
+        if (!eventIsAfterUserMessage(runtime, input.conversationId, input.afterUserMessageId)) {
+          return;
+        }
+        const text = assistantTextFromEvent(event, input.conversationId);
         if (text !== undefined) finish({ text });
       });
-      start().catch((error) => finish({}, error));
+      input.start().catch((error) => finish({}, error));
     });
   }
 
@@ -125,6 +150,22 @@ export class AithyRuntimeAcpBridge implements AithyAcpBridge {
     const session = this.sessions.get(sessionId);
     if (!session) throw new Error(`ACP session not found: ${sessionId}`);
     return session;
+  }
+
+  private runtime(): Promise<AithyRuntime> {
+    this.runtimePromise ??= this.getRuntime();
+    return this.runtimePromise;
+  }
+
+  private rotateConversation(runtime: AithyRuntime, session: AcpSession): void {
+    session.generation += 1;
+    session.conversationId = `acp-${session.acpSessionId}-${session.generation}`;
+    session.needsFreshConversation = false;
+    runtime.sessions.ensureLogicalSession(session.conversationId, {
+      name: "ACP Session",
+      nameSource: "generated",
+      source: "acp",
+    });
   }
 }
 
@@ -149,4 +190,14 @@ function assistantTextFromEvent(
   const message = event.message;
   if (message.role !== "assistant" || message.kind !== "text") return undefined;
   return message.content;
+}
+
+function eventIsAfterUserMessage(
+  runtime: AithyRuntime,
+  conversationId: string,
+  afterUserMessageId: number | null,
+): boolean {
+  if (afterUserMessageId === null) return true;
+  const latest = runtime.sessions.lastMessageId(conversationId);
+  return latest !== null && latest > afterUserMessageId;
 }

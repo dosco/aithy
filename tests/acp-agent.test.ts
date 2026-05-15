@@ -108,6 +108,61 @@ describe("Aithy ACP agent", () => {
       content: "hello through runtime",
     });
   });
+
+  test("runtime bridge ignores stale assistant text after cancellation", async () => {
+    const runtime = fakeRuntime({ autoReply: false });
+    const bridge = new AithyRuntimeAcpBridge(async () => runtime as any);
+    const session = await bridge.createSession({
+      cwd: "/tmp/project",
+      mcpServers: [],
+    });
+    const oldConversationId = `acp-${session.sessionId}`;
+
+    await bridge.cancel(session.sessionId);
+    const prompt = bridge.runPrompt({
+      sessionId: session.sessionId,
+      text: "second prompt",
+    });
+    await waitUntil(() => runtime.enqueued.length === 1);
+
+    runtime.publishAssistant(oldConversationId, "stale cancelled reply");
+    runtime.publishAssistant(`acp-${session.sessionId}-1`, "fresh reply");
+
+    await expect(prompt).resolves.toEqual({ text: "fresh reply" });
+  });
+
+  test("runtime bridge ignores assistant events before the prompt row advances", async () => {
+    const runtime = fakeRuntime({ autoReply: false });
+    const bridge = new AithyRuntimeAcpBridge(async () => runtime as any);
+    const session = await bridge.createSession({
+      cwd: "/tmp/project",
+      mcpServers: [],
+    });
+    const conversationId = `acp-${session.sessionId}`;
+    const prompt = bridge.runPrompt({
+      sessionId: session.sessionId,
+      text: "position-gated prompt",
+    });
+    await waitUntil(() => runtime.enqueued.length === 1);
+
+    runtime.publishAssistant(conversationId, "too early", { advanceRow: false });
+    runtime.publishAssistant(conversationId, "position-gated reply");
+
+    await expect(prompt).resolves.toEqual({ text: "position-gated reply" });
+  });
+
+  test("runtime bridge shuts down a created runtime", async () => {
+    const runtime = fakeRuntime();
+    const bridge = new AithyRuntimeAcpBridge(async () => runtime as any);
+
+    await bridge.createSession({
+      cwd: "/tmp/project",
+      mcpServers: [],
+    });
+    await bridge.shutdown();
+
+    expect(runtime.shutdowns).toBe(1);
+  });
 });
 
 function connectFakeAithy(overrides: Partial<AithyAcpBridge> = {}) {
@@ -184,22 +239,57 @@ class FakeBridge implements AithyAcpBridge {
   }
 }
 
-function fakeRuntime() {
+function fakeRuntime(options: { autoReply?: boolean } = {}) {
+  const autoReply = options.autoReply ?? true;
   const live = new LiveEventHub();
   const enqueued: any[] = [];
   const ensured: any[] = [];
   const messages: any[] = [];
+  const lastMessageIds = new Map<string, number>();
+  let shutdowns = 0;
+  const nextMessageId = (conversationId: string) => {
+    const next = (lastMessageIds.get(conversationId) ?? 0) + 1;
+    lastMessageIds.set(conversationId, next);
+    return next;
+  };
+  const publishAssistant = (
+    conversationId: string,
+    content: string,
+    publishOptions: { advanceRow?: boolean } = {},
+  ) => {
+    if (publishOptions.advanceRow !== false) nextMessageId(conversationId);
+    live.publish({
+      type: "message",
+      id: crypto.randomUUID(),
+      conversationId,
+      createdAt: new Date().toISOString(),
+      message: {
+        role: "assistant",
+        kind: "text",
+        content,
+        createdAt: new Date().toISOString(),
+      },
+    });
+  };
   return {
     live,
     enqueued,
     ensured,
     messages,
+    publishAssistant,
+    get shutdowns() {
+      return shutdowns;
+    },
     sessions: {
       ensureLogicalSession(conversationId: string, options: any) {
         ensured.push({ conversationId, ...options });
       },
       appendMessages(conversationId: string, input: any[]) {
+        nextMessageId(conversationId);
         messages.push({ conversationId, content: input[0]?.content });
+      },
+      lastMessageId(conversationId: string) {
+        return lastMessageIds.get(conversationId) ?? null;
       },
     },
     sessionState: {
@@ -208,20 +298,7 @@ function fakeRuntime() {
     dispatcher: {
       async enqueueUserChat(data: any) {
         enqueued.push(data);
-        queueMicrotask(() => {
-          live.publish({
-            type: "message",
-            id: crypto.randomUUID(),
-            conversationId: data.conversationId,
-            createdAt: new Date().toISOString(),
-            message: {
-              role: "assistant",
-              kind: "text",
-              content: "runtime reply",
-              createdAt: new Date().toISOString(),
-            },
-          });
-        });
+        if (autoReply) queueMicrotask(() => publishAssistant(data.conversationId, "runtime reply"));
         return { jobId: "job", conversationId: data.conversationId };
       },
       async cancelByConversation() {
@@ -229,5 +306,17 @@ function fakeRuntime() {
       },
     },
     assertReady() {},
+    async shutdown() {
+      shutdowns += 1;
+    },
   };
+}
+
+async function waitUntil(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 500;
+  while (Date.now() < deadline) {
+    if (predicate()) return;
+    await Bun.sleep(1);
+  }
+  throw new Error("Timed out waiting for test condition");
 }
