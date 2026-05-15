@@ -47,6 +47,8 @@ When Microsandbox is enabled, agent commands run in a Linux sandbox. Host files 
 
 You can manage sandbox settings and mounts from **Settings -> Sandbox**.
 
+For example, a folder such as `/Users/you/Documents` is mounted read-write under `/mounts/Documents-<hash>`. A single attached file is copied into the shared workspace as `/workspace/<filename>`.
+
 ## Commands
 
 Shared slash commands are handled before a message reaches the agent:
@@ -60,12 +62,14 @@ Shared slash commands are handled before a message reaches the agent:
 
 ```bash
 bun run check               # line budget + typecheck + tests
-bun test                    # full test suite
+bun run test                # full test suite through the repo-pinned Bun
 bun run check:lines         # 500-line file limit
 bun run debug               # list SQLite tables
 bun run debug <table> <id>  # inspect a table
 bun run memory <session-id> # reprocess a session
 ```
+
+`bun install` installs the repo-pinned Bun from `package.json`. Use `bun run check` and `bun run test` unless your global `bun --version` is already 1.3.14 or newer.
 
 Useful project areas:
 
@@ -82,3 +86,8 @@ src/runtime/          server-side runtime construction
 ```
 
 The repo enforces a 500-line hard limit with `bun run check:lines`. Keep subsystems split into focused files, and put startup wiring in `src/main.ts`.
+
+More docs:
+
+- [Operations](docs/operations.md): local state, reset behavior, host-shell approvals, and troubleshooting.
+- [Architecture](docs/architecture.md): routes, server functions, runtime services, storage, sandboxing, and memory flow.
