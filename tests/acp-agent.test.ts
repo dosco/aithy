@@ -102,6 +102,7 @@ describe("Aithy ACP agent", () => {
       text: "hello through runtime",
       skillIds: [],
       disableSystemBash: true,
+      responseRunId: expect.any(String),
     });
     expect(runtime.messages[0]).toMatchObject({
       conversationId: `acp-${session.sessionId}`,
@@ -126,7 +127,9 @@ describe("Aithy ACP agent", () => {
     await waitUntil(() => runtime.enqueued.length === 1);
 
     runtime.publishAssistant(oldConversationId, "stale cancelled reply");
-    runtime.publishAssistant(`acp-${session.sessionId}-1`, "fresh reply");
+    runtime.publishAssistant(`acp-${session.sessionId}-1`, "fresh reply", {
+      runId: runtime.enqueued[0].responseRunId,
+    });
 
     await expect(prompt).resolves.toEqual({ text: "fresh reply" });
   });
@@ -145,9 +148,47 @@ describe("Aithy ACP agent", () => {
     });
     await waitUntil(() => runtime.enqueued.length === 1);
 
-    runtime.publishAssistant(conversationId, "reply from queue event", { advanceRow: false });
+    runtime.publishAssistant(conversationId, "reply from queue event", {
+      advanceRow: false,
+      messageId: 2,
+      runId: runtime.enqueued[0].responseRunId,
+    });
 
     await expect(prompt).resolves.toEqual({ text: "reply from queue event" });
+  });
+
+  test("runtime bridge ignores unrelated assistant text in the active conversation", async () => {
+    const runtime = fakeRuntime({ autoReply: false });
+    const bridge = new AithyRuntimeAcpBridge(async () => runtime as any);
+    const session = await bridge.createSession({
+      cwd: "/tmp/project",
+      mcpServers: [],
+    });
+    const conversationId = `acp-${session.sessionId}`;
+    const prompt = bridge.runPrompt({
+      sessionId: session.sessionId,
+      text: "correlated prompt",
+    });
+    await waitUntil(() => runtime.enqueued.length === 1);
+
+    runtime.publishAssistant(conversationId, "missing row id", {
+      advanceRow: false,
+      runId: runtime.enqueued[0].responseRunId,
+    });
+    runtime.publishAssistant(conversationId, "older row id", {
+      messageId: 1,
+      runId: runtime.enqueued[0].responseRunId,
+    });
+    runtime.publishAssistant(conversationId, "wrong run id", {
+      messageId: 2,
+      runId: "other-run",
+    });
+    runtime.publishAssistant(conversationId, "correlated reply", {
+      messageId: 3,
+      runId: runtime.enqueued[0].responseRunId,
+    });
+
+    await expect(prompt).resolves.toEqual({ text: "correlated reply" });
   });
 
   test("runtime bridge shuts down a created runtime", async () => {
@@ -254,14 +295,19 @@ function fakeRuntime(options: { autoReply?: boolean } = {}) {
   const publishAssistant = (
     conversationId: string,
     content: string,
-    publishOptions: { advanceRow?: boolean } = {},
+    publishOptions: { advanceRow?: boolean; messageId?: number; runId?: string } = {},
   ) => {
-    if (publishOptions.advanceRow !== false) nextMessageId(conversationId);
+    let messageId = publishOptions.messageId;
+    if (publishOptions.advanceRow !== false) {
+      messageId ??= nextMessageId(conversationId);
+    }
     live.publish({
       type: "message",
       id: crypto.randomUUID(),
       conversationId,
       createdAt: new Date().toISOString(),
+      ...(messageId === undefined ? {} : { messageId }),
+      ...(publishOptions.runId === undefined ? {} : { runId: publishOptions.runId }),
       message: {
         role: "assistant",
         kind: "text",
@@ -297,7 +343,12 @@ function fakeRuntime(options: { autoReply?: boolean } = {}) {
     dispatcher: {
       async enqueueUserChat(data: any) {
         enqueued.push(data);
-        if (autoReply) queueMicrotask(() => publishAssistant(data.conversationId, "runtime reply"));
+        if (autoReply) {
+          queueMicrotask(() =>
+            publishAssistant(data.conversationId, "runtime reply", {
+              runId: data.responseRunId,
+            }));
+        }
         return { jobId: "job", conversationId: data.conversationId };
       },
       async cancelByConversation() {

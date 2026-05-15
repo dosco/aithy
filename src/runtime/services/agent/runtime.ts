@@ -354,6 +354,7 @@ function userChatPayload(payload: unknown): UserChatJobData {
   const createdAt = value.createdAt;
   const skillIds = value.skillIds;
   const disableSystemBash = value.disableSystemBash;
+  const responseRunId = value.responseRunId;
   if (
     typeof conversationId !== "string"
     || typeof text !== "string"
@@ -364,10 +365,14 @@ function userChatPayload(payload: unknown): UserChatJobData {
       disableSystemBash !== undefined
       && typeof disableSystemBash !== "boolean"
     )
+    || (
+      responseRunId !== undefined
+      && typeof responseRunId !== "string"
+    )
   ) {
     throw new Error("Invalid user chat command payload");
   }
-  return { conversationId, text, createdAt, skillIds, disableSystemBash };
+  return { conversationId, text, createdAt, skillIds, disableSystemBash, responseRunId };
 }
 
 function payloadString(payload: unknown, key: string): string | undefined {

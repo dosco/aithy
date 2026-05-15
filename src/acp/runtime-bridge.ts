@@ -69,10 +69,14 @@ export class AithyRuntimeAcpBridge implements AithyAcpBridge {
       createdAt: createdAt.toISOString(),
     }]);
     await runtime.sessionState.flush();
+    const afterUserMessageId = runtime.sessions.lastMessageId(session.conversationId);
+    const responseRunId = crypto.randomUUID();
     runtime.assertReady();
 
     return this.waitForAssistantText(runtime, {
       conversationId: session.conversationId,
+      afterUserMessageId,
+      responseRunId,
       signal: input.signal,
       start: () => runtime.dispatcher.enqueueUserChat({
         conversationId: session.conversationId,
@@ -80,6 +84,7 @@ export class AithyRuntimeAcpBridge implements AithyAcpBridge {
         createdAt: createdAt.toISOString(),
         skillIds: [],
         disableSystemBash: true,
+        responseRunId,
       }),
     });
   }
@@ -116,6 +121,8 @@ export class AithyRuntimeAcpBridge implements AithyAcpBridge {
 
   private waitForAssistantText(runtime: AithyRuntime, input: {
     conversationId: string;
+    afterUserMessageId: number | null;
+    responseRunId: string;
     signal: AbortSignal | undefined;
     start: () => Promise<unknown>;
   }): Promise<AithyAcpRunPromptResult> {
@@ -133,7 +140,12 @@ export class AithyRuntimeAcpBridge implements AithyAcpBridge {
       const onAbort = () => finish({ cancelled: true });
       input.signal?.addEventListener("abort", onAbort, { once: true });
       unsubscribe = runtime.live.subscribe((event) => {
-        const text = assistantTextFromEvent(event, input.conversationId);
+        const text = assistantTextFromEvent(
+          event,
+          input.conversationId,
+          input.afterUserMessageId,
+          input.responseRunId,
+        );
         if (text !== undefined) finish({ text });
       });
       input.start().catch((error) => finish({}, error));
@@ -178,10 +190,22 @@ function commandMessage(conversationId: string, text: string): ChannelCommand {
 function assistantTextFromEvent(
   event: WebLiveEvent,
   conversationId: string,
+  afterUserMessageId: number | null,
+  responseRunId: string,
 ): string | undefined {
   if (event.type !== "message") return undefined;
   if (event.conversationId !== conversationId) return undefined;
+  if (!isReplyAfterPrompt(event.messageId, afterUserMessageId)) return undefined;
+  if (event.runId !== responseRunId) return undefined;
   const message = event.message;
   if (message.role !== "assistant" || message.kind !== "text") return undefined;
   return message.content;
+}
+
+function isReplyAfterPrompt(
+  eventMessageId: number | undefined,
+  afterUserMessageId: number | null,
+): boolean {
+  if (afterUserMessageId === null) return true;
+  return typeof eventMessageId === "number" && eventMessageId > afterUserMessageId;
 }

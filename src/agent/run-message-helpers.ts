@@ -111,11 +111,12 @@ export function wrapSkillsSearch(
   };
 }
 
-export function assistantTextMessage(text: string): AssistantTextMessage {
+export function assistantTextMessage(text: string, runId?: string): AssistantTextMessage {
   return {
     role: "assistant",
     kind: "text",
     content: trimHistoryText(text),
+    ...(runId ? { runId } : {}),
     createdAt: new Date().toISOString(),
   };
 }

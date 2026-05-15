@@ -71,6 +71,7 @@ export interface RunMessageDeps {
   capabilities?: CapabilityBroker;
   runtimeStore?: RuntimeStore;
   flushSessionState?: () => Promise<void>;
+  responseRunId?: string;
   urlPrefetcher?: UrlPrefetcher;
   searchPrefetcher?: SearchPrefetcher;
 }
@@ -215,7 +216,7 @@ export async function runMessage(
     });
     deps.sessions.appendMessages(
       message.conversationId,
-      turnMessages(message, toolCallMessages, assistantTextMessage(agentResponse), deps),
+      turnMessages(message, toolCallMessages, responseMessage(agentResponse, deps), deps),
     );
     await deps.flushSessionState?.();
     if (deps.usage) {
@@ -243,7 +244,7 @@ export async function runMessage(
       const stoppedText = "[stopped]";
       deps.sessions.appendMessages(
         message.conversationId,
-        turnMessages(message, toolCallMessages, assistantTextMessage(stoppedText), deps),
+        turnMessages(message, toolCallMessages, responseMessage(stoppedText, deps), deps),
       );
       deps.events.emit({
         type: "agent.completed",
@@ -261,7 +262,7 @@ export async function runMessage(
       if (fallbackAnswer) {
         deps.sessions.appendMessages(
           message.conversationId,
-          turnMessages(message, toolCallMessages, assistantTextMessage(fallbackAnswer), deps),
+          turnMessages(message, toolCallMessages, responseMessage(fallbackAnswer, deps), deps),
         );
         await deps.flushSessionState?.();
         deps.events.emit({
@@ -283,7 +284,7 @@ export async function runMessage(
       });
       deps.sessions.appendMessages(
         message.conversationId,
-        turnMessages(message, toolCallMessages, assistantTextMessage(question), deps),
+        turnMessages(message, toolCallMessages, responseMessage(question, deps), deps),
       );
       return {
         channelId: message.channelId,
@@ -295,7 +296,7 @@ export async function runMessage(
     const reply = `Error: ${errorText}`;
     deps.sessions.appendMessages(
       message.conversationId,
-      turnMessages(message, toolCallMessages, assistantTextMessage(reply), deps),
+      turnMessages(message, toolCallMessages, responseMessage(reply, deps), deps),
     );
     deps.events.emit({
       type: "error",
@@ -314,6 +315,10 @@ export async function runMessage(
       await appendChatLogToTraces(deps.config, safeGetChatLog(program), deps.events);
     }
   }
+}
+
+function responseMessage(text: string, deps: RunMessageDeps) {
+  return assistantTextMessage(text, deps.responseRunId);
 }
 
 function shouldRecordFunctionCall(call: unknown): boolean {

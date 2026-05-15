@@ -72,6 +72,21 @@ describe("QueueSessionCache", () => {
     expect(sessionEvents[0].sessions.some((session) => session.conversationId === "child")).toBe(true);
     expect(cache.messagesPage("child", { limit: 50 }).items).toHaveLength(1);
   });
+
+  test("publishes persisted row ids on message events", async () => {
+    const { cache, events } = await testCache();
+    cache.ensure(logicalSession("s1", "First"));
+    events.length = 0;
+
+    cache.appendMessages("s1", [
+      userMessage("hello"),
+      assistantMessage("hi", { runId: "run-1" }),
+    ]);
+
+    const messageEvents = events.filter((event) => event.type === "message");
+    expect(messageEvents.map((event) => event.messageId)).toEqual([1, 2]);
+    expect(messageEvents.map((event) => event.runId)).toEqual([undefined, "run-1"]);
+  });
 });
 
 class CountingSessionStore implements SessionStateStore {
@@ -167,6 +182,15 @@ function userMessage(content: string): BotMessage {
   return { role: "user", content, createdAt: new Date().toISOString() };
 }
 
-function assistantMessage(content: string): BotMessage {
-  return { role: "assistant", kind: "text", content, createdAt: new Date().toISOString() };
+function assistantMessage(
+  content: string,
+  options: { runId?: string } = {},
+): BotMessage {
+  return {
+    role: "assistant",
+    kind: "text",
+    content,
+    ...(options.runId ? { runId: options.runId } : {}),
+    createdAt: new Date().toISOString(),
+  };
 }

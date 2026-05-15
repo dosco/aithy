@@ -100,6 +100,8 @@ export type WebLiveEvent =
       conversationId: string;
       createdAt: string;
       streamId?: string;
+      messageId?: number;
+      runId?: string;
       message: SerializableBotMessage;
     }
   | {
@@ -191,12 +193,18 @@ export class LiveEventHub {
 export function messageEvent(
   conversationId: string,
   message: BotMessage,
+  messageId?: number,
 ): WebLiveEvent {
+  const runId = message.role === "assistant" && message.kind === "text"
+    ? message.runId
+    : undefined;
   return {
     type: "message",
     id: crypto.randomUUID(),
     conversationId,
     createdAt: new Date().toISOString(),
+    ...(messageId === undefined ? {} : { messageId }),
+    ...(runId === undefined ? {} : { runId }),
     message: serializableMessage(message),
   };
 }

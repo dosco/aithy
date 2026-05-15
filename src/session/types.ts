@@ -25,6 +25,7 @@ export interface AssistantTextMessage {
   kind: "text";
   content: string;
   thought?: string;
+  runId?: string;
   usage?: TokenUsage;
   createdAt: string;
 }

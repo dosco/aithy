@@ -17,15 +17,20 @@ export function publishUserChatFailure(
   data: UserChatJobData,
   error: Error,
 ): void {
-  const assistant = assistantMessage(`Error: ${error.message}`);
+  const assistant = assistantMessage(`Error: ${error.message}`, new Date().toISOString(), data.responseRunId);
   runtime.sessions.appendMessages(data.conversationId, [assistant]);
 }
 
-function assistantMessage(text: string, createdAt = new Date().toISOString()): AssistantTextMessage {
+function assistantMessage(
+  text: string,
+  createdAt = new Date().toISOString(),
+  runId?: string,
+): AssistantTextMessage {
   return {
     role: "assistant",
     kind: "text",
     content: text,
+    ...(runId ? { runId } : {}),
     createdAt,
   };
 }

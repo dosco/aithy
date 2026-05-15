@@ -106,14 +106,17 @@ export class QueueSessionCache {
 
   appendMessages(conversationId: string, messages: BotMessage[]): MessagePage {
     if (messages.length === 0) return this.messagesPage(conversationId, { limit: DEFAULT_PAGE_LIMIT });
+    const beforeMessageId = this.store.lastMessageId(conversationId);
     this.store.appendMessages(conversationId, messages);
     const stored = this.store.loadSession(conversationId);
     if (stored) this.cacheSession(stored);
     this.clearMessageCache(conversationId);
     const page = this.messagesPage(conversationId, { limit: DEFAULT_PAGE_LIMIT });
-    for (const message of messages) {
+    const appended = appendedMessageRows(page, beforeMessageId);
+    for (let index = 0; index < messages.length; index += 1) {
+      const message = messages[index];
       if (message.role === "user" || message.kind === "text" || message.kind === "permission") {
-        this.publish(messageEvent(conversationId, message));
+        this.publish(messageEvent(conversationId, message, appended[index]?.id));
       }
     }
     this.publishSessions();
@@ -187,4 +190,8 @@ function pageKey(conversationId: string, input: MessagePageInput): string {
 
 function zeroTokens() {
   return { input: 0, output: 0, thought: 0, total: 0 };
+}
+
+function appendedMessageRows(page: MessagePage, beforeMessageId: number | null) {
+  return page.items.filter((item) => beforeMessageId === null || item.id > beforeMessageId);
 }

@@ -80,6 +80,7 @@ function rowToMessage(row: MessageRow): BotMessage {
     kind: "text",
     content: row.content ?? "",
     thought: row.thought ?? undefined,
+    ...assistantTextMetadata(row.metadata_json),
     usage,
     createdAt: row.created_at,
   };
@@ -187,9 +188,15 @@ export function messageToBindings(message: BotMessage) {
   return {
     ...base,
     $content: message.content,
-    $metadataJson: null,
+    $metadataJson: message.runId ? JSON.stringify({ runId: message.runId }) : null,
     $toolName: null,
     $toolArgs: null,
     $toolResult: null,
   };
+}
+
+function assistantTextMetadata(value: string | null): { runId?: string } {
+  const metadata = parseMetadata(value);
+  const runId = metadata.runId;
+  return typeof runId === "string" && runId.length > 0 ? { runId } : {};
 }
