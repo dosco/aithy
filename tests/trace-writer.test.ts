@@ -24,6 +24,7 @@ function makeConfig(tracesDir: string): AppConfig {
     parallelAgents: 1,
     parallelSearchMcpUrl: "https://search.parallel.ai/mcp",
     workspaceRoot: "/tmp/ws",
+    outboxRoot: "/tmp/outbox",
     botId: "default",
     stateDir: "/tmp/state",
     stateDbPath: "/tmp/state/default/state.db",

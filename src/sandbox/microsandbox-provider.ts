@@ -51,6 +51,7 @@ type SandboxState = "live" | "parked";
 interface SandboxEntry {
   sandbox: MicrosandboxInstance | null;
   hostWorkspacePath: string;
+  hostOutboxPath: string;
   mounts: SessionMount[];
   state: SandboxState;
 }
@@ -63,28 +64,34 @@ export class MicrosandboxProvider implements SandboxProvider {
   async createSession(
     botId: string,
     hostWorkspacePath: string,
-    mounts: SessionMount[]
+    hostOutboxPathOrMounts: string | SessionMount[],
+    maybeMounts?: SessionMount[]
   ): Promise<SandboxSession> {
     const name = sandboxNameFor(botId);
-    await ensureHostWorkspace(hostWorkspacePath);
-    const sandbox = await this.createSandbox(name, hostWorkspacePath, mounts);
-    this.sandboxes.set(name, { sandbox, hostWorkspacePath, mounts: [...mounts], state: "live" });
+    const { hostOutboxPath, mounts } = outboxAndMounts(hostWorkspacePath, hostOutboxPathOrMounts, maybeMounts);
+    await ensureHostPath(hostWorkspacePath);
+    await ensureHostPath(hostOutboxPath);
+    const sandbox = await this.createSandbox(name, hostWorkspacePath, hostOutboxPath, mounts);
+    this.sandboxes.set(name, { sandbox, hostWorkspacePath, hostOutboxPath, mounts: [...mounts], state: "live" });
     return { id: name, name };
   }
 
   async recreate(
     sessionId: string,
     hostWorkspacePath: string,
-    mounts: SessionMount[]
+    hostOutboxPathOrMounts: string | SessionMount[],
+    maybeMounts?: SessionMount[]
   ): Promise<SandboxSession> {
+    const { hostOutboxPath, mounts } = outboxAndMounts(hostWorkspacePath, hostOutboxPathOrMounts, maybeMounts);
     const existing = this.sandboxes.get(sessionId);
     if (existing) {
       this.sandboxes.delete(sessionId);
       if (existing.state === "live" && existing.sandbox) await stopSandbox(existing.sandbox);
     }
-    await ensureHostWorkspace(hostWorkspacePath);
-    const sandbox = await this.createSandbox(sessionId, hostWorkspacePath, mounts);
-    this.sandboxes.set(sessionId, { sandbox, hostWorkspacePath, mounts: [...mounts], state: "live" });
+    await ensureHostPath(hostWorkspacePath);
+    await ensureHostPath(hostOutboxPath);
+    const sandbox = await this.createSandbox(sessionId, hostWorkspacePath, hostOutboxPath, mounts);
+    this.sandboxes.set(sessionId, { sandbox, hostWorkspacePath, hostOutboxPath, mounts: [...mounts], state: "live" });
     return { id: sessionId, name: sessionId };
   }
 
@@ -92,7 +99,7 @@ export class MicrosandboxProvider implements SandboxProvider {
     await this.ensureLive(sessionId);
     const timeoutMs = Math.min(request.timeoutMs ?? DEFAULT_BASH_TIMEOUT_MS, MAX_BASH_TIMEOUT_MS);
     const cwd = normalizeSandboxCwd(request.cwd);
-    const command = `cd ${shellQuote(cwd)} && ${request.command}`;
+    const command = `${envExports(request.env)}cd ${shellQuote(cwd)} && ${request.command}`;
 
     const result = await this.execWithTimeout(sessionId, "bash", ["-lc", command], timeoutMs);
     const maxChars = request.maxOutputChars ?? MAX_TOOL_OUTPUT_CHARS;
@@ -106,14 +113,14 @@ export class MicrosandboxProvider implements SandboxProvider {
 
   async read(sessionId: string, sandboxPath: string, maxBytes = MAX_SANDBOX_INLINE_BYTES): Promise<string> {
     await this.ensureLive(sessionId);
-    const safeSandboxPath = toWorkspacePath(sandboxPath);
+    const safeSandboxPath = toSandboxFilePath(sandboxPath);
     const content = await this.fs(sessionId).readToString(safeSandboxPath);
     return content.length > maxBytes ? content.slice(0, maxBytes) : content;
   }
 
   async write(sessionId: string, sandboxPath: string, content: string): Promise<SandboxFile> {
     await this.ensureLive(sessionId);
-    const safeSandboxPath = toWorkspacePath(sandboxPath);
+    const safeSandboxPath = toSandboxFilePath(sandboxPath);
     await this.mkdirp(sessionId, path.posix.dirname(safeSandboxPath));
     await this.fs(sessionId).write(safeSandboxPath, content);
     return { path: safeSandboxPath, sizeBytes: Buffer.byteLength(content) };
@@ -145,7 +152,7 @@ export class MicrosandboxProvider implements SandboxProvider {
     const factory = this.factory();
     if (typeof factory.get !== "function") {
       // SDK does not expose Sandbox.get — rebuild from scratch using the same builder pipeline.
-      entry.sandbox = await this.createSandbox(sessionId, entry.hostWorkspacePath, entry.mounts);
+      entry.sandbox = await this.createSandbox(sessionId, entry.hostWorkspacePath, entry.hostOutboxPath, entry.mounts);
       entry.state = "live";
       return;
     }
@@ -154,7 +161,7 @@ export class MicrosandboxProvider implements SandboxProvider {
       entry.sandbox = await handle.startDetached();
     } catch {
       // No persisted record (or it was lost) — build a fresh VM with the same configuration.
-      entry.sandbox = await this.createSandbox(sessionId, entry.hostWorkspacePath, entry.mounts);
+      entry.sandbox = await this.createSandbox(sessionId, entry.hostWorkspacePath, entry.hostOutboxPath, entry.mounts);
     }
     entry.state = "live";
   }
@@ -185,6 +192,7 @@ export class MicrosandboxProvider implements SandboxProvider {
   private async createSandbox(
     name: string,
     hostWorkspacePath: string,
+    hostOutboxPath: string,
     mounts: SessionMount[]
   ): Promise<MicrosandboxInstance> {
     const factory = this.factory();
@@ -195,6 +203,7 @@ export class MicrosandboxProvider implements SandboxProvider {
       builder = applyBundledRuntime(builder);
       builder = applyNetwork(builder, this.options.network);
       builder = builder.volume("/workspace", (v) => v.bind(hostWorkspacePath));
+      builder = builder.volume("/outbox", (v) => v.bind(hostOutboxPath));
       for (const mount of mounts) {
         builder = builder.volume(`/mounts/${mount.mountName}`, (v) => v.bind(mount.hostPath));
       }
@@ -276,8 +285,8 @@ export class MicrosandboxProvider implements SandboxProvider {
   }
 }
 
-async function ensureHostWorkspace(hostWorkspacePath: string): Promise<void> {
-  await mkdir(hostWorkspacePath, { recursive: true });
+async function ensureHostPath(hostPath: string): Promise<void> {
+  await mkdir(hostPath, { recursive: true });
 }
 
 function applyNetwork(builder: MicrosandboxBuilder, network: MicrosandboxOptions["network"]) {
@@ -286,9 +295,33 @@ function applyNetwork(builder: MicrosandboxBuilder, network: MicrosandboxOptions
   return builder.network((n) => n.policy(NetworkPolicy.publicOnly()));
 }
 
-function toWorkspacePath(sandboxPath: string): string {
-  const relativePath = sandboxPath.startsWith("/workspace/")
-    ? sandboxPath.slice("/workspace/".length)
-    : ensureRelativePath(sandboxPath);
-  return sandboxWorkspacePath(relativePath);
+function outboxAndMounts(
+  hostWorkspacePath: string,
+  hostOutboxPathOrMounts: string | SessionMount[],
+  maybeMounts?: SessionMount[],
+): { hostOutboxPath: string; mounts: SessionMount[] } {
+  if (typeof hostOutboxPathOrMounts === "string") {
+    return { hostOutboxPath: hostOutboxPathOrMounts, mounts: maybeMounts ?? [] };
+  }
+  return { hostOutboxPath: path.join(hostWorkspacePath, "outbox"), mounts: hostOutboxPathOrMounts };
+}
+
+function toSandboxFilePath(sandboxPath: string): string {
+  if (sandboxPath === "/workspace") return "/workspace";
+  if (sandboxPath.startsWith("/workspace/")) {
+    return sandboxWorkspacePath(sandboxPath.slice("/workspace/".length));
+  }
+  if (sandboxPath === "/outbox") return "/outbox";
+  if (sandboxPath.startsWith("/outbox/")) {
+    return `/outbox/${ensureRelativePath(sandboxPath.slice("/outbox/".length))}`;
+  }
+  return sandboxWorkspacePath(ensureRelativePath(sandboxPath));
+}
+
+function envExports(env: Record<string, string> | undefined): string {
+  if (!env) return "";
+  const entries = Object.entries(env)
+    .filter(([key]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(key))
+    .map(([key, value]) => `export ${key}=${shellQuote(value)}; `);
+  return entries.join("");
 }

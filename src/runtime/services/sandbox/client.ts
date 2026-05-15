@@ -26,20 +26,32 @@ export class SandboxServiceUnavailableError extends Error {
 export class SandboxCommandClient implements SandboxProvider {
   constructor(private readonly store: RuntimeStore | QueueServiceClient) {}
 
-  async createSession(botId: string, hostWorkspacePath: string, mounts: SessionMount[]): Promise<SandboxSession> {
+  async createSession(
+    botId: string,
+    hostWorkspacePath: string,
+    hostOutboxPathOrMounts: string | SessionMount[],
+    maybeMounts?: SessionMount[],
+  ): Promise<SandboxSession> {
     await this.assertReady();
+    const { hostOutboxPath, mounts } = outboxAndMounts(hostWorkspacePath, hostOutboxPathOrMounts, maybeMounts);
     return this.send({
       kind: "sandbox.createSession",
-      payload: { botId, hostWorkspacePath, mounts },
+      payload: { botId, hostWorkspacePath, hostOutboxPath, mounts },
       result: { id: "", name: "" },
     });
   }
 
-  async recreate(sessionId: string, hostWorkspacePath: string, mounts: SessionMount[]): Promise<SandboxSession> {
+  async recreate(
+    sessionId: string,
+    hostWorkspacePath: string,
+    hostOutboxPathOrMounts: string | SessionMount[],
+    maybeMounts?: SessionMount[],
+  ): Promise<SandboxSession> {
     await this.assertReady();
+    const { hostOutboxPath, mounts } = outboxAndMounts(hostWorkspacePath, hostOutboxPathOrMounts, maybeMounts);
     return this.send({
       kind: "sandbox.recreate",
-      payload: { sessionId, hostWorkspacePath, mounts },
+      payload: { sessionId, hostWorkspacePath, hostOutboxPath, mounts },
       result: { id: "", name: "" },
     });
   }
@@ -118,4 +130,15 @@ export class SandboxCommandClient implements SandboxProvider {
   private send<T extends SandboxCommand>(command: T): Promise<T["result"]> {
     return sendRuntimeCommand(this.store, "sandbox-worker", command, { timeoutMs: DEFAULT_TIMEOUT_MS });
   }
+}
+
+function outboxAndMounts(
+  hostWorkspacePath: string,
+  hostOutboxPathOrMounts: string | SessionMount[],
+  maybeMounts?: SessionMount[],
+): { hostOutboxPath: string; mounts: SessionMount[] } {
+  if (typeof hostOutboxPathOrMounts === "string") {
+    return { hostOutboxPath: hostOutboxPathOrMounts, mounts: maybeMounts ?? [] };
+  }
+  return { hostOutboxPath: `${hostWorkspacePath}/outbox`, mounts: hostOutboxPathOrMounts };
 }

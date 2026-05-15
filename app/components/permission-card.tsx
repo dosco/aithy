@@ -21,7 +21,7 @@ export function PermissionCard({
   request?: SerializableSystemPermissionRequest;
   message?: PermissionMessage;
   busy?: boolean;
-  onDecision?: (requestId: string, decision: "allow" | "deny") => void;
+  onDecision?: (requestId: string, decision: "allow" | "deny", persist?: string) => void;
   onRetry?: (message: PermissionMessage) => void;
 }) {
   const [expanded, setExpanded] = useState(!message);
@@ -69,7 +69,7 @@ export function PermissionCard({
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <div className={`truncate text-base font-medium ${tone.title}`}>
                   {pending
-                    ? "Allow command on your computer?"
+                    ? permissionTitle(request)
                     : statusLabel(status)}
                 </div>
               </div>
@@ -115,9 +115,12 @@ export function PermissionCard({
               </p>
               <dl className="mt-3 grid gap-2">
                 <PermissionField label="Reason" value={item.reason} />
-                <PermissionField label="Folder" value={item.cwd} mono />
+                {item.cwd ? <PermissionField label="Folder" value={item.cwd} mono /> : null}
+                {"targetValue" in item && item.targetValue ? (
+                  <PermissionField label={targetLabel(item.targetKind)} value={item.targetValue} mono />
+                ) : null}
                 <PermissionField
-                  label="Command"
+                  label={item.toolName === "system.bash" ? "Command" : "Request"}
                   value={item.command}
                   mono
                   block
@@ -148,12 +151,43 @@ export function PermissionCard({
               >
                 Allow once
               </Button>
+              {request.matchOptions.map((option) => (
+                <Button
+                  key={option.kind}
+                  type="button"
+                  variant="default"
+                  size="sm"
+                  className="border border-emerald-300 bg-emerald-300 text-emerald-950 shadow-sm hover:bg-emerald-400 dark:border-emerald-300 dark:bg-emerald-300 dark:text-emerald-950 dark:hover:bg-emerald-200"
+                  disabled={busy}
+                  onClick={() => onDecision(request.id, "allow", option.kind)}
+                >
+                  {option.label}
+                </Button>
+              ))}
             </div>
           ) : null}
         </div>
       </div>
     </div>
   );
+}
+
+function permissionTitle(request?: SerializableSystemPermissionRequest): string {
+  if (!request) return "Allow tool request?";
+  if (request.toolName === "system.bash") return "Allow command on your computer?";
+  if (request.capability.startsWith("web.")) return "Allow web access?";
+  if (request.capability.startsWith("memory.")) return "Allow memory write?";
+  if (request.capability.startsWith("sandbox.")) return "Allow sandbox capability?";
+  return "Allow tool request?";
+}
+
+function targetLabel(kind: string | null): string {
+  if (kind === "host_path") return "Host path";
+  if (kind === "website") return "Website";
+  if (kind === "web_search") return "Search";
+  if (kind === "memory") return "Memory";
+  if (kind === "command") return "Target";
+  return "Target";
 }
 
 function PermissionField({

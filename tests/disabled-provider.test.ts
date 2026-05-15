@@ -71,6 +71,21 @@ describe("DisabledSandboxProvider", () => {
     ).rejects.toThrow("Disabled sandbox path must stay under /workspace");
   });
 
+  test("maps /outbox and injects bash environment variables", async () => {
+    const { provider, session, outbox } = await makeSession();
+
+    const written = await provider.write(session.id, "/outbox/run/result.txt", "hello artifact");
+    const env = await provider.bash(session.id, {
+      command: "printf \"$AITHY_OUTBOX\"",
+      env: { AITHY_OUTBOX: "/outbox/run" },
+    });
+
+    expect(written).toEqual({ path: "/outbox/run/result.txt", sizeBytes: 14 });
+    expect(await Bun.file(path.join(outbox, "run/result.txt")).text()).toBe("hello artifact");
+    expect(env.stdout).toBe("/outbox/run");
+  });
+
+
   test("translates /mounts/<name> bash cwds to the bound host path", async () => {
     const mountHost = await mkdtemp(path.join(tmpdir(), "aithy-disabled-mount-"));
     await Bun.write(path.join(mountHost, "marker.txt"), "from-mount");
@@ -90,7 +105,8 @@ describe("DisabledSandboxProvider", () => {
 
 async function makeSession(mounts: SessionMount[] = []) {
   const workspace = await mkdtemp(path.join(tmpdir(), "aithy-disabled-"));
+  const outbox = await mkdtemp(path.join(tmpdir(), "aithy-disabled-outbox-"));
   const provider = new DisabledSandboxProvider();
-  const session = await provider.createSession("conversation", workspace, mounts);
-  return { provider, session, workspace };
+  const session = await provider.createSession("conversation", workspace, outbox, mounts);
+  return { provider, session, workspace, outbox };
 }

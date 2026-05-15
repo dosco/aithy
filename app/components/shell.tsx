@@ -12,6 +12,7 @@ import {
   Palette,
   Settings,
   SquarePen,
+  ListChecks,
 } from "lucide-react";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { ChatUiProvider, useChatUi } from "@/components/chat-ui-context";
@@ -25,6 +26,7 @@ import { getSessionsPageState } from "@/server/state.functions";
 
 const navItems = [
   { to: "/sessions", label: "Sessions", icon: History },
+  { to: "/tasks", label: "Tasks", icon: ListChecks },
   { to: "/skills", label: "Skills", icon: BookOpen },
   { to: "/memory", label: "Memory", icon: Brain },
   { to: "/usage", label: "Usage", icon: BarChart3 },
@@ -107,7 +109,7 @@ function TopChrome() {
     <header className="pointer-events-none fixed left-0 right-0 top-4 z-30">
       <div
         className={cn(
-          "pointer-events-auto absolute right-[clamp(2rem,18vw,16rem)] top-0 flex items-center gap-1 overflow-visible rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--panel)/0.9)] p-1 shadow-lg shadow-black/5 backdrop-blur-xl",
+          "pointer-events-auto absolute right-4 top-0 flex items-center gap-1 overflow-visible rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--panel)/0.9)] p-1 shadow-lg shadow-black/5 backdrop-blur-xl sm:right-6 lg:right-8",
           showDetails ? "w-64" : "w-[13.75rem]",
         )}
       >

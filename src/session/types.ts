@@ -55,10 +55,31 @@ export interface AssistantPermissionMessage {
   createdAt: string;
 }
 
+export interface AssistantArtifactMessage {
+  role: "assistant";
+  kind: "artifact";
+  id: string;
+  sessionId: string;
+  runId: string | null;
+  sandboxPath: string;
+  relativePath: string;
+  title: string;
+  description: string | null;
+  filename: string;
+  mimeType: string;
+  sizeBytes: number;
+  previewKind: "text" | "image" | "download";
+  textPreview: string | null;
+  openUrl: string;
+  downloadUrl: string;
+  createdAt: string;
+}
+
 export type AssistantMessage =
   | AssistantTextMessage
   | AssistantToolCallMessage
-  | AssistantPermissionMessage;
+  | AssistantPermissionMessage
+  | AssistantArtifactMessage;
 export type BotMessage = UserMessage | AssistantMessage;
 
 export interface BotSessionSummary {

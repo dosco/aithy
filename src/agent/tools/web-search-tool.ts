@@ -1,7 +1,7 @@
 import { f, fn, type AxAgentFunction } from "@ax-llm/ax";
 import type { AppConfig } from "../../config/env";
 import { parallelWebSearch } from "../../search/parallel-search-client";
-import { argsPreview } from "../../security/capability-broker";
+import { requireToolPermission } from "../../security/permission-gate";
 import type { ToolContext } from "../tool-context";
 
 export function createWebSearchTools(
@@ -24,11 +24,14 @@ export function createWebSearchTools(
         code: "await web.search({ query: 'Parallel Search MCP no API key rate limits', task: 'Find current docs about free anonymous usage.' });",
       })
       .handler(async ({ query, task }) => {
-        ctx.capabilities?.require({
-          conversationId: ctx.session.conversationId,
+        await requireToolPermission(ctx, {
           capability: "web.search",
           toolName: "web.search",
-          argsPreview: argsPreview({ query, task }),
+          command: `web search: ${query}`,
+          reason: task,
+          targetKind: "web_search",
+          targetValue: query,
+          args: { query, task },
         });
         ctx.events.emit({
           type: "agent.turn",

@@ -17,4 +17,10 @@ export {
 export { getUsageStats } from "./usage.actions";
 export { saveSoul } from "./soul.actions";
 export { getWebState } from "./web-state.actions";
-export { respondSystemPermission } from "./permission.actions";
+export { cancelTask, retryTask } from "./task.actions";
+export {
+  createPermissionRule,
+  deletePermissionRule,
+  resetPermissionRules,
+  respondSystemPermission,
+} from "./permission.actions";

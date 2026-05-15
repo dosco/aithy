@@ -1,11 +1,13 @@
 import { runMessage } from "../agent/run-message";
 import type { ActiveRunRegistry } from "../agent/active-runs";
+import type { SqliteArtifactStore } from "../artifacts/artifact-store";
 import type { UserChatJobData, UserChatJobResult } from "../agent/dispatcher";
 import type { ChannelMessage } from "../channel/types";
 import type { AppConfig } from "../config/env";
 import type { EventBus } from "../events/bus";
 import type { SqliteMemoryStore } from "../memory/memory-store";
 import type { MemoryQueue } from "../memory/memory-queue";
+import type { SkillCandidateQueue } from "../skills/candidate-queue";
 import type { NotificationCreate, NotificationEntry } from "../notifications/types";
 import type { UserProfile } from "../profile/types";
 import type { SandboxProvider } from "../sandbox/provider";
@@ -16,6 +18,7 @@ import { formatSkillContent } from "../skills/skills-store";
 import type { SqliteSkillsStore } from "../skills/skills-store";
 import type { SqliteUsageStore } from "../usage/usage-store";
 import type { RuntimeStore } from "./runtime-store";
+import type { SqliteTaskStore } from "../tasks/task-store";
 
 interface RuntimeForUserChat {
   config: AppConfig;
@@ -25,12 +28,15 @@ interface RuntimeForUserChat {
   soul: SoulProfile;
   profile?: UserProfile;
   memory: SqliteMemoryStore;
+  artifacts: SqliteArtifactStore;
   memoryQueue: MemoryQueue;
+  skillCandidateQueue?: SkillCandidateQueue;
   usage: SqliteUsageStore;
   activeRuns: ActiveRunRegistry;
   skills: SqliteSkillsStore;
   capabilities?: CapabilityBroker;
   runtimeStore?: RuntimeStore;
+  tasks?: SqliteTaskStore;
   notify(input: NotificationCreate): NotificationEntry;
   flushSessionState?(): Promise<void>;
 }
@@ -58,11 +64,14 @@ export async function processUserChatJob(
     soul: runtime.soul,
     profile: runtime.profile,
     memory: runtime.memory,
+    artifacts: runtime.artifacts,
     memoryQueue: runtime.memoryQueue,
     usage: runtime.usage,
     activeRuns: runtime.activeRuns,
     capabilities: runtime.capabilities,
     runtimeStore: runtime.runtimeStore,
+    tasks: runtime.tasks,
+    taskId: data.taskId,
     notify: (input) => runtime.notify(input),
     flushSessionState: runtime.flushSessionState ? () => runtime.flushSessionState?.() ?? Promise.resolve() : undefined,
     skills,
@@ -71,6 +80,18 @@ export async function processUserChatJob(
       runtime.skills.search(queries).map((s) => ({ name: s.name, content: formatSkillContent(s) })),
   });
   await runtime.flushSessionState?.();
+  const summary = runtime.sessions.getSummary(data.conversationId);
+  if (!summary?.parentSessionId) {
+    try {
+      await runtime.skillCandidateQueue?.enqueueAuto();
+    } catch (error) {
+      runtime.events.emit({
+        type: "error",
+        conversationId: data.conversationId,
+        message: error instanceof Error ? error.message : "Failed to enqueue skill candidate task",
+      });
+    }
+  }
   const assistant = [...runtime.sessions.getTranscript(reply.conversationId)]
     .reverse()
     .find((item) =>

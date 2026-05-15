@@ -5,8 +5,11 @@ import type {
   RuntimeServiceStatus,
 } from "../runtime/protocol/types";
 import type { SystemPermissionRequest } from "../runtime/runtime-store";
+import type { CapabilityPolicyOption } from "../security/capability-policy";
 import type { BotMessage, BotSessionSummary } from "../session/types";
 import type { SetupStatusInput, SetupStatusTone } from "../setup/status";
+import type { TaskSummary } from "../tasks/types";
+import { taskStatusEvent } from "../tasks/live";
 
 export type JsonValue =
   | string
@@ -47,6 +50,24 @@ export type SerializableBotMessage =
       reason: string;
       decidedAt: string;
       createdAt: string;
+    }
+  | {
+      role: "assistant";
+      kind: "artifact";
+      id: string;
+      sessionId: string;
+      sandboxPath: string;
+      relativePath: string;
+      title: string;
+      description: string | null;
+      filename: string;
+      mimeType: string;
+      sizeBytes: number;
+      previewKind: "text" | "image" | "download";
+      textPreview: string | null;
+      openUrl: string;
+      downloadUrl: string;
+      createdAt: string;
     };
 
 export interface SerializableSystemPermissionRequest {
@@ -57,6 +78,9 @@ export interface SerializableSystemPermissionRequest {
   command: string;
   cwd: string;
   reason: string;
+  targetKind: string | null;
+  targetValue: string | null;
+  matchOptions: CapabilityPolicyOption[];
   status: SystemPermissionRequest["status"];
   createdAt: string;
   decidedAt: string | null;
@@ -131,6 +155,14 @@ export type WebLiveEvent =
       streamId?: string;
       request: SerializableSystemPermissionRequest;
     }
+  | {
+      type: "task-status";
+      id: string;
+      conversationId: string | null;
+      createdAt: string;
+      streamId?: string;
+      task: TaskSummary;
+    }
   | ({
       type: "log";
       id: string;
@@ -158,12 +190,14 @@ export class LiveEventHub {
   private readonly setupStatuses = new Map<string, WebLiveEvent & { type: "setup-status" }>();
   private readonly serviceStatuses = new Map<string, WebLiveEvent & { type: "service-status" }>();
   private readonly queueStatuses = new Map<string, WebLiveEvent & { type: "queue-status" }>();
+  private readonly taskStatuses = new Map<string, WebLiveEvent & { type: "task-status" }>();
 
   subscribe(listener: Listener): () => void {
     this.listeners.add(listener);
     for (const event of this.setupStatuses.values()) listener(event);
     for (const event of this.serviceStatuses.values()) listener(event);
     for (const event of this.queueStatuses.values()) listener(event);
+    for (const event of this.taskStatuses.values()) listener(event);
     return () => this.listeners.delete(listener);
   }
 
@@ -171,6 +205,7 @@ export class LiveEventHub {
     if (event.type === "setup-status") this.rememberSetupStatus(event);
     if (event.type === "service-status") this.serviceStatuses.set(event.role, event);
     if (event.type === "queue-status") this.queueStatuses.set(event.queue.id, event);
+    if (event.type === "task-status") this.taskStatuses.set(event.task.id, event);
     for (const listener of this.listeners) listener(event);
   }
 
@@ -217,6 +252,7 @@ export function serializableMessage(message: BotMessage): SerializableBotMessage
   if (message.role === "user") return message;
   if (message.kind === "text") return message;
   if (message.kind === "permission") return message;
+  if (message.kind === "artifact") return message;
   const { toolResult, toolArgs, ...rest } = message;
   return {
     ...rest,
@@ -237,6 +273,9 @@ export function serializableSession(
 }
 
 function liveEventFromBotEvent(event: BotEvent): WebLiveEvent | undefined {
+  if (event.type === "task.status") {
+    return taskStatusEvent(event.task);
+  }
   if (event.type === "setup.status") {
     return setupStatus(event.status);
   }
@@ -313,10 +352,30 @@ export function serializablePermissionRequest(
     command: request.command,
     cwd: request.cwd,
     reason: request.reason,
+    targetKind: request.targetKind,
+    targetValue: request.targetValue,
+    matchOptions: parseCapabilityPolicyOptions(request.matchOptionsJson),
     status: request.status,
     createdAt: request.createdAt,
     decidedAt: request.decidedAt,
   };
+}
+
+function parseCapabilityPolicyOptions(value: string | null): CapabilityPolicyOption[] {
+  if (!value) return [];
+  try {
+    const parsed = JSON.parse(value);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((item): item is CapabilityPolicyOption => {
+      if (!item || typeof item !== "object") return false;
+      const record = item as Record<string, unknown>;
+      return typeof record.kind === "string"
+        && typeof record.label === "string"
+        && (typeof record.value === "string" || record.value === null);
+    });
+  } catch {
+    return [];
+  }
 }
 
 function setupStatus(status: SetupStatusInput): WebLiveEvent {

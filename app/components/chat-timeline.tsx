@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { GitBranch } from "lucide-react";
 import { AsciiSplash } from "@/components/ascii-splash";
+import { ArtifactCard } from "@/components/artifact-card";
 import { Markdown } from "@/components/markdown";
 import { PermissionCard } from "@/components/permission-card";
 import type { SessionSummaryDto } from "@/server/dto";
@@ -19,6 +20,7 @@ export interface ChatMessageItem {
 type TimelineEntry =
   | { kind: "user"; key: string; content: string }
   | { kind: "assistant"; key: string; content: string; usage?: Usage }
+  | { kind: "artifact"; key: string; message: Extract<SerializableBotMessage, { kind: "artifact" }> }
   | { kind: "permission"; key: string; message: Extract<SerializableBotMessage, { kind: "permission" }> }
   | { kind: "permission-request"; key: string; request: SerializableSystemPermissionRequest }
   | { kind: "thought"; key: string; content: string }
@@ -59,7 +61,7 @@ export function ChatTimeline({
   loadingMore: boolean;
   onLoadMore: () => Promise<boolean>;
   onOpenSession: (session: SessionSummaryDto) => void;
-  onPermissionDecision: (requestId: string, decision: "allow" | "deny") => void;
+  onPermissionDecision: (requestId: string, decision: "allow" | "deny", persist?: string) => void;
   onPermissionRetry: (message: Extract<SerializableBotMessage, { kind: "permission" }>) => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
@@ -172,9 +174,9 @@ export function countDebugItems(
   let count = activities.length;
   for (const { message } of messages) {
     if (message.role !== "assistant") continue;
-    if (message.kind !== "permission" && message.thought) count += 1;
+    if ((message.kind === "text" || message.kind === "tool_call") && message.thought) count += 1;
     if (message.kind === "tool_call") count += 1;
-    if (message.kind !== "permission" && message.usage) count += 1;
+    if ((message.kind === "text" || message.kind === "tool_call") && message.usage) count += 1;
   }
   return count;
 }
@@ -197,7 +199,7 @@ function buildTimeline(
       }
       return;
     }
-    if (details && message.kind !== "permission" && message.thought && message.thought.trim().length > 0) {
+    if (details && (message.kind === "text" || message.kind === "tool_call") && message.thought && message.thought.trim().length > 0) {
       entries.push({ at, entry: { kind: "thought", key: `${baseKey}-thought`, content: message.thought } });
     }
     if (message.kind === "text") {
@@ -217,6 +219,8 @@ function buildTimeline(
         at,
         entry: { kind: "permission", key: baseKey, message },
       });
+    } else if (message.kind === "artifact") {
+      entries.push({ at, entry: { kind: "artifact", key: baseKey, message } });
     } else if (details) {
       entries.push({
         at,
@@ -319,7 +323,7 @@ function TimelineItem({
 }: {
   item: Exclude<TimelineEntry, { kind: "typing" }>;
   onOpenSession: (session: SessionSummaryDto) => void;
-  onPermissionDecision: (requestId: string, decision: "allow" | "deny") => void;
+  onPermissionDecision: (requestId: string, decision: "allow" | "deny", persist?: string) => void;
   onPermissionRetry: (message: Extract<SerializableBotMessage, { kind: "permission" }>) => void;
 }) {
   const reduce = useReducedMotion();
@@ -365,6 +369,7 @@ function TimelineItem({
   }
   if (item.kind === "permission") return <motion.div {...motionProps}><PermissionCard message={item.message} onRetry={onPermissionRetry} /></motion.div>;
   if (item.kind === "permission-request") return <motion.div {...motionProps}><PermissionCard request={item.request} onDecision={onPermissionDecision} /></motion.div>;
+  if (item.kind === "artifact") return <motion.div {...motionProps}><ArtifactCard artifact={item.message} /></motion.div>;
   if (item.kind === "tool") {
     return (
       <motion.div

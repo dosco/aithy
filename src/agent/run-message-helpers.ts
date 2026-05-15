@@ -52,17 +52,6 @@ export function conversationHistoryForAgent(
   return lines.length > 0 ? lines.join("\n") : undefined;
 }
 
-export function priorMessagesForAutoMemory(
-  session: BotSession,
-  current: ChannelMessage,
-  userMessagePersisted: boolean | undefined,
-): BotMessage[] {
-  const messages = [...session.messages];
-  return userMessagePersisted
-    ? messages.filter((message) => !isCurrentUserMessage(message, current))
-    : messages;
-}
-
 export function toolCallMessage(
   call: Readonly<AxFunctionCallTrace | AxAgentFunctionCall>,
 ): AssistantToolCallMessage {
@@ -125,10 +114,12 @@ export function turnMessages(
   toolCallMessages: AssistantToolCallMessage[],
   assistant: AssistantTextMessage,
   deps: RunMessageDeps,
+  artifactMessages: BotMessage[] = [],
 ): BotMessage[] {
   return [
     ...(deps.userMessagePersisted ? [] : [userMessage(message)]),
     ...toolCallMessages,
+    ...artifactMessages,
     assistant,
   ];
 }
@@ -142,6 +133,13 @@ function isCurrentUserMessage(message: BotMessage, current: ChannelMessage): boo
 function historyEntryFor(message: BotMessage): { role: "user" | "assistant"; content: string; createdAt: string } | undefined {
   if (message.role === "user") return { role: "user", content: message.content, createdAt: message.createdAt };
   if (message.kind === "text") return { role: "assistant", content: message.content, createdAt: message.createdAt };
+  if (message.kind === "artifact") {
+    return {
+      role: "assistant",
+      content: `Published artifact: ${message.title} (${message.sandboxPath})`,
+      createdAt: message.createdAt,
+    };
+  }
   return undefined;
 }
 

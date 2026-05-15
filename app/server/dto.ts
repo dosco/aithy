@@ -26,6 +26,7 @@ export {
   setupGateStateDto,
   setupPageStateDto,
   skillsPageStateDto,
+  tasksPageStateDto,
   themesPageStateDto,
   usagePageStateDto,
   webStateDto,

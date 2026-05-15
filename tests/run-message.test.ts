@@ -356,7 +356,7 @@ describe("runMessage", () => {
       ttlMs: 1000,
       state: new DelayedLastIdStore(inner, () => visibleLastMessageId),
     });
-    const enqueued: Array<{ sessionId: string; finalMessageId?: number }> = [];
+    const enqueued: string[] = [];
 
     await runMessage(textMessage("m1", "remember my favourite city is Vancouver"), {
       config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
@@ -364,8 +364,8 @@ describe("runMessage", () => {
       sandbox,
       sessions,
       memoryQueue: {
-        enqueueAuto: async (sessionId: string, finalMessageId?: number) => {
-          enqueued.push({ sessionId, finalMessageId });
+        enqueueAuto: async (sessionId: string) => {
+          enqueued.push(sessionId);
         },
       } as any,
       flushSessionState: async () => {
@@ -379,7 +379,8 @@ describe("runMessage", () => {
       }),
     });
 
-    expect(enqueued).toEqual([{ sessionId: "conversation", finalMessageId: 2 }]);
+    expect(Number(visibleLastMessageId)).toBe(2);
+    expect(enqueued).toEqual(["conversation"]);
   });
 });
 
@@ -407,35 +408,27 @@ class DelayedLastIdStore implements SessionStateStore {
   renameSession(conversationId: string, name: string): void {
     this.inner.renameSession(conversationId, name);
   }
-
   clearSession(conversationId: string, now: string): void {
     this.inner.clearSession(conversationId, now);
   }
-
   deleteSession(conversationId: string): void {
     this.inner.deleteSession(conversationId);
   }
-
   deleteAllSessions(): void {
     this.inner.deleteAllSessions();
   }
-
   appendMessages(conversationId: string, messages: BotMessage[]): void {
     this.inner.appendMessages(conversationId, messages);
   }
-
   messagesPage(conversationId: string, input: MessagePageInput) {
     return this.inner.messagesPage(conversationId, input);
   }
-
   childSessions(parentId: string): BotSessionSummary[] {
     return this.inner.childSessions(parentId);
   }
-
   lastMessageId(_conversationId: string): number | null {
     return this.readVisibleLastId();
   }
-
   close(): void {
     this.inner.close?.();
   }

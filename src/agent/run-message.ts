@@ -9,6 +9,7 @@ import type { ChannelMessage, ChannelReply } from "../channel/types";
 import type { AppConfig } from "../config/env";
 import type { EventBus } from "../events/bus";
 import type { SqliteMemoryStore } from "../memory/memory-store";
+import type { SqliteArtifactStore } from "../artifacts/artifact-store";
 import type { MemoryQueue } from "../memory/memory-queue";
 import type { NotificationCreate } from "../notifications/types";
 import { formatMemoryForRecall } from "../memory/format";
@@ -19,17 +20,20 @@ import type { SessionManager } from "../session/session-manager";
 import type { UserProfile } from "../profile/types";
 import { userProfileForAgent } from "../profile/service";
 import type { SoulProfile } from "../soul/types";
-import { shouldQueueAutoMemory } from "../memory/auto-gate";
-import type {
-  AssistantToolCallMessage,
-} from "../session/types";
+import type { AssistantToolCallMessage } from "../session/types";
 import { isClarificationPause } from "./clarification";
+import {
+  artifactContextText,
+  artifactIdsForRun,
+  artifactMessagesForTurn,
+  createArtifactRunContext,
+} from "./artifact-turn";
+import { artifactRepairRequest, shouldRequireArtifactForRequest } from "./artifact-intent";
 import { createAithyAgent, type AxAgentMemoriesSearchFn } from "./create-agent";
 import {
   assistantTextMessage,
   compactPreview,
   conversationHistoryForAgent,
-  priorMessagesForAutoMemory,
   safeGetChatLog,
   toChannelContext,
   toolCallMessage,
@@ -40,6 +44,7 @@ import type { ToolContext } from "./tool-context";
 import { createAgentTools } from "./tools";
 import type { CapabilityBroker } from "../security/capability-broker";
 import type { RuntimeStore } from "../runtime/runtime-store";
+import type { SqliteTaskStore } from "../tasks/task-store";
 import { appendChatLogToTraces } from "./trace-writer";
 import {
   prefetchUrlsForMessage,
@@ -60,6 +65,7 @@ export interface RunMessageDeps {
   soul?: SoulProfile;
   profile?: UserProfile;
   memory?: SqliteMemoryStore;
+  artifacts?: SqliteArtifactStore;
   memoryQueue?: MemoryQueue;
   usage?: SqliteUsageStore;
   skillsSearch?: AxAgentSkillsSearchFn;
@@ -70,6 +76,8 @@ export interface RunMessageDeps {
   userMessagePersisted?: boolean;
   capabilities?: CapabilityBroker;
   runtimeStore?: RuntimeStore;
+  tasks?: SqliteTaskStore;
+  taskId?: string;
   flushSessionState?: () => Promise<void>;
   urlPrefetcher?: UrlPrefetcher;
   searchPrefetcher?: SearchPrefetcher;
@@ -86,6 +94,8 @@ export async function runMessage(
   });
 
   const session = await deps.sessions.get(message.conversationId);
+  const artifactRun = createArtifactRunContext(message.conversationId);
+  const artifactIdsBeforeTurn = artifactIdsForRun(deps.artifacts, message.conversationId, artifactRun.runId);
   const memoryQueue = deps.memoryQueue;
   const toolContext: ToolContext = {
     session,
@@ -97,9 +107,14 @@ export async function runMessage(
     enqueueRemember: memoryQueue
       ? (req) => memoryQueue.enqueueExplicit(req.sessionId, req.hint)
       : undefined,
+    artifacts: deps.artifacts,
+    artifactRunId: artifactRun.runId,
+    artifactRunOutboxPath: artifactRun.runOutboxPath,
     notify: deps.notify,
     capabilities: deps.capabilities,
     runtimeStore: deps.runtimeStore,
+    tasks: deps.tasks,
+    taskId: deps.taskId,
     flushSessionState: deps.flushSessionState,
   };
   const toolCallMessages: AssistantToolCallMessage[] = [];
@@ -198,6 +213,7 @@ export async function runMessage(
       userRequest: message.text,
       ...(urlPrefetch?.context ? { urlContext: urlPrefetch.context } : {}),
       ...(searchPrefetch?.context ? { searchContext: searchPrefetch.context } : {}),
+      artifactContext: artifactContextText(artifactRun),
       channelContext: toChannelContext(message),
       conversationHistory: conversationHistoryForAgent(
         session,
@@ -205,17 +221,41 @@ export async function runMessage(
       ),
     };
     const options = deps.skills?.length ? { skills: deps.skills } : undefined;
-    const result = options
+    const requiresArtifact = Boolean(deps.artifacts) && shouldRequireArtifactForRequest(message.text);
+    let result = options
       ? await program.forward(llm, input, options)
       : await program.forward(llm, input);
-    const agentResponse = String(result.agentResponse ?? "");
-    const shouldQueueMemory = shouldQueueAutoMemory({
-      userText: message.text,
-      priorMessages: priorMessagesForAutoMemory(session, message, deps.userMessagePersisted),
+    let agentResponse = String(result.agentResponse ?? "");
+    let artifactMessages = await artifactMessagesForTurn({
+      artifacts: deps.artifacts,
+      sessionId: message.conversationId,
+      run: artifactRun,
+      toolMessages: toolCallMessages,
+      artifactIdsBeforeTurn,
     });
+    if (requiresArtifact && artifactMessages.length === 0) {
+      const repairInput = {
+        ...input,
+        userRequest: artifactRepairRequest(message.text, artifactRun.runOutboxPath),
+      };
+      result = options
+        ? await program.forward(llm, repairInput, options)
+        : await program.forward(llm, repairInput);
+      agentResponse = String(result.agentResponse ?? "");
+      artifactMessages = await artifactMessagesForTurn({
+        artifacts: deps.artifacts,
+        sessionId: message.conversationId,
+        run: artifactRun,
+        toolMessages: toolCallMessages,
+        artifactIdsBeforeTurn,
+      });
+    }
+    if (requiresArtifact && artifactMessages.length === 0) {
+      agentResponse = "I could not create or publish the requested file in this turn.";
+    }
     deps.sessions.appendMessages(
       message.conversationId,
-      turnMessages(message, toolCallMessages, assistantTextMessage(agentResponse), deps),
+      turnMessages(message, toolCallMessages, assistantTextMessage(agentResponse), deps, artifactMessages),
     );
     await deps.flushSessionState?.();
     if (deps.usage) {
@@ -225,9 +265,7 @@ export async function runMessage(
         sessionId: message.conversationId,
       });
     }
-    if (shouldQueueMemory) {
-      enqueueAutoMemoryTask(deps, message.conversationId);
-    }
+    enqueueAutoMemoryTask(deps, message.conversationId);
     deps.events.emit({
       type: "agent.completed",
       conversationId: message.conversationId,
@@ -243,7 +281,19 @@ export async function runMessage(
       const stoppedText = "[stopped]";
       deps.sessions.appendMessages(
         message.conversationId,
-        turnMessages(message, toolCallMessages, assistantTextMessage(stoppedText), deps),
+        turnMessages(
+          message,
+          toolCallMessages,
+          assistantTextMessage(stoppedText),
+          deps,
+          await artifactMessagesForTurn({
+            artifacts: deps.artifacts,
+            sessionId: message.conversationId,
+            run: artifactRun,
+            toolMessages: toolCallMessages,
+            artifactIdsBeforeTurn,
+          }),
+        ),
       );
       deps.events.emit({
         type: "agent.completed",
@@ -261,7 +311,19 @@ export async function runMessage(
       if (fallbackAnswer) {
         deps.sessions.appendMessages(
           message.conversationId,
-          turnMessages(message, toolCallMessages, assistantTextMessage(fallbackAnswer), deps),
+          turnMessages(
+            message,
+            toolCallMessages,
+            assistantTextMessage(fallbackAnswer),
+            deps,
+            await artifactMessagesForTurn({
+              artifacts: deps.artifacts,
+              sessionId: message.conversationId,
+              run: artifactRun,
+              toolMessages: toolCallMessages,
+              artifactIdsBeforeTurn,
+            }),
+          ),
         );
         await deps.flushSessionState?.();
         deps.events.emit({
@@ -283,7 +345,19 @@ export async function runMessage(
       });
       deps.sessions.appendMessages(
         message.conversationId,
-        turnMessages(message, toolCallMessages, assistantTextMessage(question), deps),
+        turnMessages(
+          message,
+          toolCallMessages,
+          assistantTextMessage(question),
+          deps,
+          await artifactMessagesForTurn({
+            artifacts: deps.artifacts,
+            sessionId: message.conversationId,
+            run: artifactRun,
+            toolMessages: toolCallMessages,
+            artifactIdsBeforeTurn,
+          }),
+        ),
       );
       return {
         channelId: message.channelId,
@@ -295,7 +369,19 @@ export async function runMessage(
     const reply = `Error: ${errorText}`;
     deps.sessions.appendMessages(
       message.conversationId,
-      turnMessages(message, toolCallMessages, assistantTextMessage(reply), deps),
+      turnMessages(
+        message,
+        toolCallMessages,
+        assistantTextMessage(reply),
+        deps,
+        await artifactMessagesForTurn({
+          artifacts: deps.artifacts,
+          sessionId: message.conversationId,
+          run: artifactRun,
+          toolMessages: toolCallMessages,
+          artifactIdsBeforeTurn,
+        }),
+      ),
     );
     deps.events.emit({
       type: "error",
@@ -326,9 +412,8 @@ function enqueueAutoMemoryTask(deps: RunMessageDeps, conversationId: string): vo
   // Sub-sessions are managed by the memory queue itself; don't recurse.
   const summary = deps.sessions.getSummary(conversationId);
   if (summary?.parentSessionId) return;
-  const finalMessageId = deps.sessions.lastMessageId(conversationId);
   void deps.memoryQueue
-    .enqueueAuto(conversationId, finalMessageId ?? undefined)
+    .enqueueAuto(conversationId)
     .catch((error) => {
       deps.events.emit({
         type: "error",

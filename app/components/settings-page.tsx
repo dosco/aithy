@@ -14,6 +14,7 @@ import {
 } from "@/components/settings-identity-sections";
 import { ModelSettingsTab, SandboxSettingsTab } from "@/components/settings-runtime-tabs";
 import { SearchSettingsTab } from "@/components/settings-search-tab";
+import { PermissionsSettingsTab } from "@/components/settings-permissions-tab";
 import { ThemeSync } from "@/components/theme-sync";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { saveSettingsWithSetupGateRefresh } from "@/lib/setup-gate";
@@ -42,6 +43,7 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
   const [soul, setSoul] = useState<SoulDto>(initialState.soul);
   const [profile, setProfile] = useState<ProfileDto>(initialState.profile);
   const [ui, setUi] = useState(initialState.settings.ui);
+  const [permissionRules, setPermissionRules] = useState(initialState.permissionRules);
   const [primaryClearAction, setPrimaryClearAction] =
     useState<PrimaryClearAction | null>(null);
   const [primaryClearBusy, setPrimaryClearBusy] = useState(false);
@@ -138,6 +140,7 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
           <TabsTrigger value="model">Model</TabsTrigger>
           <TabsTrigger value="search">Search</TabsTrigger>
           <TabsTrigger value="sandbox">Sandbox</TabsTrigger>
+          <TabsTrigger value="permissions">Permissions</TabsTrigger>
           <TabsTrigger value="profile">User</TabsTrigger>
           <TabsTrigger value="agent">Agent</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
@@ -194,6 +197,13 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
           />
         </TabsContent>
 
+        <TabsContent value="permissions">
+          <PermissionsSettingsTab
+            rules={permissionRules}
+            onRulesChange={setPermissionRules}
+          />
+        </TabsContent>
+
         <TabsContent value="profile">
           <UserProfileSection profile={profile} onChange={setProfile} />
         </TabsContent>
@@ -217,6 +227,7 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
               setSoul(state.soul);
               setProfile(state.profile);
               setUi(state.settings.ui);
+              setPermissionRules(state.permissionRules);
               setApiKey("");
               setFastApiKey("");
               setParallelApiKey("");

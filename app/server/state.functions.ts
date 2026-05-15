@@ -8,6 +8,7 @@ import {
   setupGateStateDto,
   setupPageStateDto,
   skillsPageStateDto,
+  tasksPageStateDto,
   themesPageStateDto,
   usagePageStateDto,
 } from "./dto";
@@ -64,4 +65,10 @@ export const getNotificationsPageState = createServerFn({ method: "GET" })
   .handler(async () => {
     const runtime = await getAithyRuntime();
     return notificationsPageStateDto(runtime);
+  });
+
+export const getTasksPageState = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const runtime = await getAithyRuntime();
+    return tasksPageStateDto(runtime);
   });

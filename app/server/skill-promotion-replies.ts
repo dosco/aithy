@@ -4,19 +4,22 @@ import type { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
 
 type Runtime = Awaited<ReturnType<typeof getAithyRuntime>>;
 
-export function tryHandleSkillPromotionReply(input: {
+export async function tryHandleSkillPromotionReply(input: {
   runtime: Runtime;
   user: ChannelMessage;
   publishSessions: (runtime: Runtime) => void;
 }) {
   const { runtime, user } = input;
-  const result = handleSkillPromotionReply({
+  const result = await handleSkillPromotionReply({
     conversationId: user.conversationId,
     text: user.text,
     createdAt: user.createdAt,
+    config: runtime.config,
     sessions: runtime.sessions,
+    candidates: runtime.skillCandidates,
     promotions: runtime.skillPromotions,
     skills: runtime.skills,
+    usage: runtime.usage,
   });
   if (!result.handled) return null;
   const assistant = result.assistant ?? {

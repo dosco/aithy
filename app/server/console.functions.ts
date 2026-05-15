@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { z } from "zod";
 import { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
-import { runtimeConsoleDto } from "./runtime-console.dto";
+import { runtimeConsoleDto, staleRuntimeConsoleDto } from "./runtime-console.dto";
 
 const consoleInput = z.object({
   logLimit: z.number().int().min(20).max(1000).optional(),
@@ -11,6 +11,10 @@ const consoleInput = z.object({
 export const getRuntimeConsole = createServerFn({ method: "GET" })
   .inputValidator(consoleInput)
   .handler(async ({ data }) => {
-    const runtime = await getAithyRuntime();
-    return runtimeConsoleDto(runtime, data);
+    try {
+      const runtime = await getAithyRuntime();
+      return await runtimeConsoleDto(runtime, data);
+    } catch (error) {
+      return staleRuntimeConsoleDto(error, data);
+    }
   });

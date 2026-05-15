@@ -28,5 +28,6 @@ function contentOf(message: SerializableBotMessage): string {
   if (message.role === "user") return message.content;
   if (message.kind === "text") return message.content;
   if (message.kind === "permission") return `${message.requestId}:${message.status}`;
+  if (message.kind === "artifact") return `artifact:${message.id}`;
   return `${message.toolName}:${JSON.stringify(message.toolArgs)}`;
 }

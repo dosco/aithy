@@ -174,11 +174,12 @@ export class SqliteSessionStateStore implements SessionStateStore {
     for (const message of messages) {
       insert.run({ $sessionId: conversationId, ...messageToBindings(message) });
       updatedAt = message.createdAt;
-      if (message.role === "assistant" && message.kind !== "permission" && message.usage) {
-        inputTokens += message.usage.input;
-        outputTokens += message.usage.output;
-        thoughtTokens += message.usage.thought;
-        totalTokens += message.usage.total;
+      const usage = assistantUsage(message);
+      if (usage) {
+        inputTokens += usage.input;
+        outputTokens += usage.output;
+        thoughtTokens += usage.thought;
+        totalTokens += usage.total;
       }
     }
     this.db.query(`
@@ -265,4 +266,10 @@ export class SqliteSessionStateStore implements SessionStateStore {
   close(): void {
     this.db.close();
   }
+}
+
+function assistantUsage(message: BotMessage) {
+  if (message.role !== "assistant") return undefined;
+  if (message.kind !== "text" && message.kind !== "tool_call") return undefined;
+  return message.usage;
 }

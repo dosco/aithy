@@ -24,6 +24,7 @@ export interface UserChatJobData {
   text: string;
   createdAt: string;
   skillIds: readonly string[];
+  taskId?: string;
 }
 
 export interface UserChatJobResult {
@@ -62,6 +63,7 @@ interface AgentDispatcherOptions {
   process: (data: UserChatJobData) => Promise<UserChatJobResult>;
   onCompleted?: (data: UserChatJobData, result: UserChatJobResult) => void;
   onFailed?: (data: UserChatJobData, error: Error) => void;
+  onStarted?: (data: UserChatJobData, jobId: string) => void;
   onStatus?: (status: SetupStatusInput) => void;
   onError?: QueueErrorReporter;
 }
@@ -286,6 +288,7 @@ export class AgentDispatcher implements UserChatQueueClient {
     try {
       await this.opts.ensureBotSandbox();
       this.opts.onStatus?.({ key: "agent", label: "agent started", active: false });
+      this.opts.onStarted?.(job.data, jobId);
       return await this.opts.process(job.data);
     } catch (error) {
       this.opts.onStatus?.({ key: "agent", label: "agent start ended", active: false });

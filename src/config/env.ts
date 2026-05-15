@@ -31,6 +31,7 @@ export interface AppConfig {
   parallelApiKey?: string;
   systemBashEnabled: boolean;
   workspaceRoot: string;
+  outboxRoot: string;
   botId: string;
   stateDir: string;
   stateDbPath: string;
@@ -75,6 +76,8 @@ export function loadConfig(
     systemBashEnabled: parseBoolean(env.AITHY_SYSTEM_BASH_ENABLED, true),
     workspaceRoot:
       env.AITHY_WORKSPACE_ROOT ?? path.join(stateDir, botId, "workspace"),
+    outboxRoot:
+      env.AITHY_OUTBOX_ROOT ?? path.join(stateDir, botId, "outbox"),
     botId,
     stateDir,
     stateDbPath: path.join(stateDir, botId, "state.db"),

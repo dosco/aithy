@@ -28,6 +28,7 @@ describe("MicrosandboxProvider", () => {
     expect(created?.libkrunfwPath).toContain("libkrunfw");
     expect(created?.volumes).toEqual([
       { guest: "/workspace", host: workspacePath, readonly: false },
+      { guest: "/outbox", host: path.join(workspacePath, "outbox"), readonly: false },
       { guest: "/mounts/data-aabbccdd", host: "/host/data", readonly: false },
       { guest: "/mounts/scratch-eeff0011", host: "/host/scratch", readonly: false }
     ]);
@@ -52,6 +53,7 @@ describe("MicrosandboxProvider", () => {
     expect(fakeFactory.created).toHaveLength(2);
     expect(fakeFactory.created[1]?.volumes).toEqual([
       { guest: "/workspace", host: workspacePath, readonly: false },
+      { guest: "/outbox", host: path.join(workspacePath, "outbox"), readonly: false },
       { guest: "/mounts/data-aabbccdd", host: "/host/data", readonly: false }
     ]);
 

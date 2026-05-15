@@ -11,6 +11,8 @@ import type { SqliteMemoryStore } from "./memory-store";
 import type { SqliteMemoryRunsStore } from "./memory-runs";
 import type { SqliteUsageStore } from "../usage/usage-store";
 import { captureProgramUsage } from "../usage/capture";
+import type { SqliteTaskStore } from "../tasks/task-store";
+import type { TaskRecord } from "../tasks/types";
 
 const MAX_ATTEMPTS = 2;
 const JOB_TTL_MS = 5 * 60_000;
@@ -19,6 +21,7 @@ const CRON_PATTERN = "0 3 * * *"; // every day at 03:00 local time
 interface JobData {
   runId: string;
   triggeredAt: string;
+  taskId?: string;
 }
 
 export interface MemoryConsolidateHandle {
@@ -59,6 +62,8 @@ export interface ConsolidateQueueDeps {
   config: AppConfig;
   memory: SqliteMemoryStore;
   runs: SqliteMemoryRunsStore;
+  tasks?: SqliteTaskStore;
+  onTaskStatus?: (task: TaskRecord) => void;
   usage?: SqliteUsageStore;
   notify?: (input: {
     kind: "memory.consolidated";
@@ -105,9 +110,16 @@ export class MemoryConsolidateQueue implements MemoryConsolidateHandle {
   /** Trigger an immediate consolidation pass (e.g. from a UI button). */
   async runNow(): Promise<void> {
     const runId = crypto.randomUUID();
+    const task = this.deps.tasks?.create({
+      kind: "memory.consolidate",
+      title: "Consolidate memories",
+      conversationId: null,
+      reason: "Queued for memory consolidation",
+    });
+    if (task) this.deps.onTaskStatus?.(task);
     await this.app.queue.add(
       "memory.consolidate.now",
-      { runId, triggeredAt: new Date().toISOString() },
+      { runId, triggeredAt: new Date().toISOString(), ...(task ? { taskId: task.id } : {}) },
       {
         attempts: MAX_ATTEMPTS,
         backoff: { type: "exponential", delay: 30_000 },
@@ -122,10 +134,42 @@ export class MemoryConsolidateQueue implements MemoryConsolidateHandle {
   }
 
   private async processJob(job: Job<JobData>): Promise<{ summary: string }> {
+    const taskId = job.data.taskId ?? (job.data.runId === "scheduled"
+      ? this.deps.tasks?.create({
+          kind: "memory.consolidate",
+          title: "Nightly memory consolidation",
+          conversationId: null,
+          reason: "Scheduled memory consolidation",
+        }).id
+      : undefined);
+    if (taskId) {
+      const task = this.deps.tasks?.update(taskId, {
+        status: "running",
+        queueJobId: String(job.id),
+        reason: "Memory consolidation is running",
+      });
+      if (task) this.deps.onTaskStatus?.(task);
+    }
     if (Date.now() - job.timestamp > JOB_TTL_MS) {
+      this.updateTask(taskId, { status: "cancelled", reason: "Memory consolidation expired before it could run" });
       return { summary: "job expired" };
     }
-    return this.process(job.data);
+    try {
+      const result = await this.process(job.data);
+      this.updateTask(taskId, {
+        status: "completed",
+        reason: "Memory consolidation completed",
+        resultSummary: result.summary,
+      });
+      return result;
+    } catch (error) {
+      this.updateTask(taskId, {
+        status: "failed",
+        reason: "Memory consolidation failed",
+        errorSummary: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   private async process(data: JobData): Promise<{ summary: string }> {
@@ -168,5 +212,11 @@ export class MemoryConsolidateQueue implements MemoryConsolidateHandle {
       });
     }
     return { summary };
+  }
+
+  private updateTask(taskId: string | undefined, patch: Parameters<SqliteTaskStore["update"]>[1]): void {
+    if (!taskId || !this.deps.tasks) return;
+    const task = this.deps.tasks.update(taskId, patch);
+    if (task) this.deps.onTaskStatus?.(task);
   }
 }

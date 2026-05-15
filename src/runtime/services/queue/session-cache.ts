@@ -112,7 +112,7 @@ export class QueueSessionCache {
     this.clearMessageCache(conversationId);
     const page = this.messagesPage(conversationId, { limit: DEFAULT_PAGE_LIMIT });
     for (const message of messages) {
-      if (message.role === "user" || message.kind === "text" || message.kind === "permission") {
+      if (message.role === "user" || message.kind === "text" || message.kind === "permission" || message.kind === "artifact") {
         this.publish(messageEvent(conversationId, message));
       }
     }

@@ -110,6 +110,13 @@ function PreviewMessage({ item }: { item: ChatMessageItem }) {
       </div>
     );
   }
+  if (message.kind === "artifact") {
+    return (
+      <div className="max-w-[88%] rounded-2xl rounded-bl-md bg-[rgb(var(--panel))] px-4 py-2 text-sm text-[rgb(var(--muted-foreground))]">
+        artifact · {message.title}
+      </div>
+    );
+  }
   return (
     <div className="max-w-[88%] rounded-2xl rounded-bl-md bg-[rgb(var(--muted))] px-4 py-2 font-mono text-xs text-[rgb(var(--muted-foreground))]">
       tool · {message.toolName}

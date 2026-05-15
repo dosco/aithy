@@ -19,6 +19,7 @@ describe("createAithyAgent", () => {
         parallelSearchMcpUrl: "https://search.parallel.ai/mcp",
         systemBashEnabled: true,
         workspaceRoot: "/tmp/aithy-create-agent-test",
+        outboxRoot: "/tmp/aithy-create-agent-test-outbox",
         botId: "default",
         stateDir: "/tmp/aithy-state",
         stateDbPath: "/tmp/aithy-state/default/state.db",
@@ -60,6 +61,8 @@ describe("createAithyAgent", () => {
     expect(description).toContain("Bun Shell");
     expect(description).toContain("When the user's request includes a URL");
     expect(description).toContain("call web.fetch on the URL before answering");
+    expect(description).toContain("use artifact.write");
+    expect(description).toContain("call artifact.publish");
     expect(description).toContain("bot-shared");
     expect(description).not.toContain("microVM");
     expect(description).not.toContain("/cache");
@@ -75,6 +78,8 @@ describe("createAithyAgent", () => {
     expect(description).toContain("Linux microVM");
     expect(description).toContain("When the user's request includes a URL");
     expect(description).toContain("call web.fetch on the URL before answering");
+    expect(description).toContain("use artifact.write");
+    expect(description).toContain("call artifact.publish");
     expect(description).toContain("Mounting policy");
     // New topology: top-level /mounts/<name> + bot-shared /workspace, no /cache
     // mount, no "per-session" framing.
@@ -130,6 +135,7 @@ function configFixture(sandboxProvider: "microsandbox" | "disabled") {
     parallelSearchMcpUrl: "https://search.parallel.ai/mcp",
     systemBashEnabled: true,
     workspaceRoot: "/tmp/aithy-create-agent-test",
+    outboxRoot: "/tmp/aithy-create-agent-test-outbox",
     botId: "default",
     stateDir: "/tmp/aithy-state",
     stateDbPath: "/tmp/aithy-state/default/state.db",

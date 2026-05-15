@@ -107,6 +107,7 @@ function formatThread(messages: readonly BotMessage[]): string {
       if (m.role === "user") return `[${m.createdAt}] user: ${m.content}`;
       if (m.kind === "text") return `[${m.createdAt}] assistant: ${m.content}`;
       if (m.kind === "permission") return `[${m.createdAt}] permission ${m.toolName}: ${m.status}`;
+      if (m.kind === "artifact") return `[${m.createdAt}] artifact ${m.title}: ${m.sandboxPath}`;
       return `[${m.createdAt}] tool ${m.toolName}: ${safeJson(m.toolArgs)}`;
     })
     .join("\n");

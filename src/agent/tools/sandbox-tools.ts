@@ -53,7 +53,7 @@ function createBashTool(ctx: ToolContext, sandboxProvider: AppConfig["sandboxPro
       code: "await sandbox.bash({ command: 'ls -la' });"
     })
     .handler(async (request) => {
-      const args = normalizeBashArgs(request);
+      const args = normalizeBashArgs(request, artifactEnv(ctx));
       ctx.capabilities?.require({
         conversationId: ctx.session.conversationId,
         capability: "sandbox.bash",
@@ -79,9 +79,9 @@ function editDescription(sandboxProvider: AppConfig["sandboxProvider"]): string 
 
 function bashDescription(sandboxProvider: AppConfig["sandboxProvider"]): string {
   if (sandboxProvider === "disabled") {
-    return "Execute a command locally through Bun Shell. Use this for ANY shell task — listing files, reading files, running scripts, grep, git, package managers, etc. Default cwd is /workspace, which maps to this conversation's local host workspace. Returns exitCode, stdout, and stderr; you must call this and read the output rather than describing what the command would do.";
+    return "Execute a command locally through Bun Shell. Use this for ANY shell task — listing files, reading files, running scripts, grep, git, package managers, etc. Default cwd is /workspace, which maps to this conversation's local host workspace. $AITHY_OUTBOX points at the current run artifact directory. Returns exitCode, stdout, and stderr; you must call this and read the output rather than describing what the command would do.";
   }
-  return "Execute a shell command in the sandbox. Use this for ANY shell task — listing files, reading files, running scripts, grep, git, package managers, etc. Default cwd is /workspace (the sandbox root). Returns exitCode, stdout, and stderr; you must call this and read the output rather than describing what the command would do.";
+  return "Execute a shell command in the sandbox. Use this for ANY shell task — listing files, reading files, running scripts, grep, git, package managers, etc. Default cwd is /workspace (the sandbox root). $AITHY_OUTBOX points at the current run artifact directory. Returns exitCode, stdout, and stderr; you must call this and read the output rather than describing what the command would do.";
 }
 
 function normalizeBashArgs(request: {
@@ -89,12 +89,22 @@ function normalizeBashArgs(request: {
   cwd?: string;
   timeoutMs?: number;
   maxOutputChars?: number;
-}) {
+}, env?: Record<string, string>) {
   return {
     command: request.command,
     cwd: request.cwd,
+    env,
     timeoutMs: clampNumber(request.timeoutMs, DEFAULT_BASH_TIMEOUT_MS, MAX_BASH_TIMEOUT_MS),
     maxOutputChars: clampNumber(request.maxOutputChars, MAX_TOOL_OUTPUT_CHARS, MAX_TOOL_OUTPUT_CHARS)
+  };
+}
+
+function artifactEnv(ctx: ToolContext): Record<string, string> | undefined {
+  if (!ctx.artifactRunId || !ctx.artifactRunOutboxPath) return undefined;
+  return {
+    AITHY_OUTBOX: ctx.artifactRunOutboxPath,
+    AITHY_RUN_ID: ctx.artifactRunId,
+    AITHY_SESSION_ID: ctx.session.conversationId,
   };
 }
 

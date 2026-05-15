@@ -3,6 +3,7 @@ import { Activity, Circle, HardDrive, ListTree, RadioTower } from "lucide-react"
 import type { LucideIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useLiveConnectionState } from "@/components/live-events";
 import type {
   RuntimeCommandDto,
   RuntimeConsoleDto,
@@ -24,6 +25,7 @@ export function ConsolePage({ initialState }: { initialState: RuntimeConsoleDto 
   const [commandQuery, setCommandQuery] = useState("");
   const [commandStatus, setCommandStatus] = useState("all");
   const state = useRuntimeConsole(initialState, { logLimit, commandLimit });
+  const liveConnectionState = useLiveConnectionState();
   const logs = collapseAdjacentLogs(state.logs);
   const visibleLogs = useMemo(
     () => logs.filter((log) => matchesLog(log, logQuery, logLevel)),
@@ -42,6 +44,13 @@ export function ConsolePage({ initialState }: { initialState: RuntimeConsoleDto 
 
   return (
     <div className="space-y-5">
+      {state.snapshotState === "stale" || liveConnectionState === "error" ? (
+        <RuntimeNotice
+          snapshotError={state.snapshotError}
+          liveConnectionState={liveConnectionState}
+          refreshedAt={state.refreshedAt}
+        />
+      ) : null}
       <div className="overflow-hidden rounded-lg border border-[rgb(var(--accent)/0.36)] bg-[rgb(var(--panel)/0.82)] shadow-[0_0_0_1px_rgb(var(--foreground)/0.05),0_24px_80px_rgb(0_0_0/0.18)]">
         <div className="flex items-center justify-between border-b border-[rgb(var(--border))] bg-[rgb(var(--muted)/0.42)] px-4 py-2">
           <div className="flex items-center gap-2">
@@ -176,6 +185,29 @@ export function ConsolePage({ initialState }: { initialState: RuntimeConsoleDto 
 
 interface CollapsedLog extends RuntimeLogDto {
   repeatCount: number;
+}
+
+function RuntimeNotice({
+  snapshotError,
+  liveConnectionState,
+  refreshedAt,
+}: {
+  snapshotError?: string;
+  liveConnectionState: string;
+  refreshedAt?: string;
+}) {
+  const message = snapshotError
+    ? `Showing the last persisted runtime state. ${snapshotError}`
+    : "Live runtime events are reconnecting.";
+  const tail = refreshedAt ? `Last refresh ${formatTimestamp(refreshedAt)}.` : "";
+  return (
+    <div className="rounded-lg border border-amber-500/35 bg-amber-500/10 px-4 py-3 text-sm text-amber-800 dark:text-amber-200">
+      <div className="font-medium">Runtime console is in recovery mode.</div>
+      <div className="mt-1 text-xs text-amber-800/80 dark:text-amber-100/80">
+        {message} {tail} Stream: {liveConnectionState}.
+      </div>
+    </div>
+  );
 }
 
 function ConsoleMetric({

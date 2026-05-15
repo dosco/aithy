@@ -5,6 +5,7 @@ import { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import { generateSessionName } from "../../src/session/session-names";
 import { assertLoopbackRequest } from "../../src/settings/localhost";
 import { messageEvent } from "../../src/web/live-events";
+import { taskStatusEvent } from "../../src/tasks/live";
 import { sendInput, conversationIdInput } from "./action-schemas";
 import {
   assistantMessage,
@@ -32,6 +33,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
 
     const text = data.text.trim();
     const user = userMessage(data.conversationId, text, new Date(data.createdAt));
+    let taskId: string | null = null;
     try {
       runtime.sessions.ensureLogicalSession(data.conversationId, {
         name: generateSessionName(text),
@@ -41,7 +43,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       runtime.settings.save({ ui: { lastActiveSessionId: data.conversationId } });
 
       if (text.startsWith("/")) return handleCommand(runtime, data.conversationId, text);
-      const promotionReply = tryHandleSkillPromotionReply({ runtime, user, publishSessions });
+      const promotionReply = await tryHandleSkillPromotionReply({ runtime, user, publishSessions });
       if (promotionReply) {
         await runtime.sessionState.flush();
         return { activeSessionId: data.conversationId, queued: false };
@@ -50,14 +52,38 @@ export const sendChatMessage = createServerFn({ method: "POST" })
       runtime.sessions.appendMessages(data.conversationId, [persistedUserMessage(user)]);
       await runtime.sessionState.flush();
       runtime.assertReady();
+      const task = runtime.tasks.create({
+        kind: "chat.turn",
+        title: taskTitle(user.text),
+        conversationId: data.conversationId,
+        relatedSessionId: data.conversationId,
+        reason: "Queued for agent",
+        metadata: { text: user.text, skillIds: data.skillIds ?? [] },
+      });
+      taskId = task.id;
+      runtime.live.publish(taskStatusEvent(task));
       const queued = await runtime.dispatcher.enqueueUserChat({
         conversationId: data.conversationId,
         text: user.text,
         createdAt: user.createdAt.toISOString(),
         skillIds: data.skillIds ?? [],
+        taskId: task.id,
       });
-      return { activeSessionId: data.conversationId, queued: true, jobId: queued.jobId };
+      const linked = runtime.tasks.update(task.id, {
+        queueJobId: queued.jobId,
+        reason: "Queued for agent",
+      });
+      if (linked) runtime.live.publish(taskStatusEvent(linked));
+      return { activeSessionId: data.conversationId, queued: true, jobId: queued.jobId, taskId: task.id };
     } catch (error) {
+      if (taskId) {
+        const failed = runtime.tasks.update(taskId, {
+          status: "failed",
+          reason: "Could not queue task",
+          errorSummary: error instanceof Error ? error.message : String(error),
+        });
+        if (failed) runtime.live.publish(taskStatusEvent(failed));
+      }
       const bot = assistantMessage(error instanceof Error ? `Error: ${error.message}` : "Unknown error");
       runtime.sessions.appendMessages(data.conversationId, [bot]);
       try {
@@ -75,8 +101,20 @@ export const stopChatMessage = createServerFn({ method: "POST" })
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
     const dropped = await runtime.dispatcher.cancelByConversation(data.conversationId);
+    for (const task of runtime.tasks.activeForConversation(data.conversationId)) {
+      const cancelled = runtime.tasks.update(task.id, {
+        status: "cancelled",
+        reason: "Stopped by user",
+      });
+      if (cancelled) runtime.live.publish(taskStatusEvent(cancelled));
+    }
     return { stopped: true, queuedDropped: dropped };
   });
+
+function taskTitle(text: string): string {
+  const clean = text.replace(/\s+/g, " ").trim();
+  return clean.length > 80 ? `${clean.slice(0, 77)}...` : clean || "Chat task";
+}
 
 async function handleCommand(
   runtime: Awaited<ReturnType<typeof getAithyRuntime>>,

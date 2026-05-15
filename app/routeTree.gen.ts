@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as UsageRouteImport } from './routes/usage'
 import { Route as ThemesRouteImport } from './routes/themes'
+import { Route as TasksRouteImport } from './routes/tasks'
 import { Route as SkillsRouteImport } from './routes/skills'
 import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SettingsRouteImport } from './routes/settings'
@@ -22,6 +23,7 @@ import { Route as ChatRouteImport } from './routes/chat'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChatSessionIdRouteImport } from './routes/chat.$sessionId'
 import { Route as ApiEventsRouteImport } from './routes/api.events'
+import { Route as ApiArtifactsArtifactIdRouteImport } from './routes/api.artifacts.$artifactId'
 
 const UsageRoute = UsageRouteImport.update({
   id: '/usage',
@@ -31,6 +33,11 @@ const UsageRoute = UsageRouteImport.update({
 const ThemesRoute = ThemesRouteImport.update({
   id: '/themes',
   path: '/themes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TasksRoute = TasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SkillsRoute = SkillsRouteImport.update({
@@ -88,6 +95,11 @@ const ApiEventsRoute = ApiEventsRouteImport.update({
   path: '/api/events',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiArtifactsArtifactIdRoute = ApiArtifactsArtifactIdRouteImport.update({
+  id: '/api/artifacts/$artifactId',
+  path: '/api/artifacts/$artifactId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -99,10 +111,12 @@ export interface FileRoutesByFullPath {
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/skills': typeof SkillsRoute
+  '/tasks': typeof TasksRoute
   '/themes': typeof ThemesRoute
   '/usage': typeof UsageRoute
   '/api/events': typeof ApiEventsRoute
   '/chat/$sessionId': typeof ChatSessionIdRoute
+  '/api/artifacts/$artifactId': typeof ApiArtifactsArtifactIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -114,10 +128,12 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/skills': typeof SkillsRoute
+  '/tasks': typeof TasksRoute
   '/themes': typeof ThemesRoute
   '/usage': typeof UsageRoute
   '/api/events': typeof ApiEventsRoute
   '/chat/$sessionId': typeof ChatSessionIdRoute
+  '/api/artifacts/$artifactId': typeof ApiArtifactsArtifactIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -130,10 +146,12 @@ export interface FileRoutesById {
   '/settings': typeof SettingsRoute
   '/setup': typeof SetupRoute
   '/skills': typeof SkillsRoute
+  '/tasks': typeof TasksRoute
   '/themes': typeof ThemesRoute
   '/usage': typeof UsageRoute
   '/api/events': typeof ApiEventsRoute
   '/chat/$sessionId': typeof ChatSessionIdRoute
+  '/api/artifacts/$artifactId': typeof ApiArtifactsArtifactIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -147,10 +165,12 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/skills'
+    | '/tasks'
     | '/themes'
     | '/usage'
     | '/api/events'
     | '/chat/$sessionId'
+    | '/api/artifacts/$artifactId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -162,10 +182,12 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/skills'
+    | '/tasks'
     | '/themes'
     | '/usage'
     | '/api/events'
     | '/chat/$sessionId'
+    | '/api/artifacts/$artifactId'
   id:
     | '__root__'
     | '/'
@@ -177,10 +199,12 @@ export interface FileRouteTypes {
     | '/settings'
     | '/setup'
     | '/skills'
+    | '/tasks'
     | '/themes'
     | '/usage'
     | '/api/events'
     | '/chat/$sessionId'
+    | '/api/artifacts/$artifactId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -193,9 +217,11 @@ export interface RootRouteChildren {
   SettingsRoute: typeof SettingsRoute
   SetupRoute: typeof SetupRoute
   SkillsRoute: typeof SkillsRoute
+  TasksRoute: typeof TasksRoute
   ThemesRoute: typeof ThemesRoute
   UsageRoute: typeof UsageRoute
   ApiEventsRoute: typeof ApiEventsRoute
+  ApiArtifactsArtifactIdRoute: typeof ApiArtifactsArtifactIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -212,6 +238,13 @@ declare module '@tanstack/react-router' {
       path: '/themes'
       fullPath: '/themes'
       preLoaderRoute: typeof ThemesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tasks': {
+      id: '/tasks'
+      path: '/tasks'
+      fullPath: '/tasks'
+      preLoaderRoute: typeof TasksRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/skills': {
@@ -291,6 +324,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiEventsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/artifacts/$artifactId': {
+      id: '/api/artifacts/$artifactId'
+      path: '/api/artifacts/$artifactId'
+      fullPath: '/api/artifacts/$artifactId'
+      preLoaderRoute: typeof ApiArtifactsArtifactIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -314,9 +354,11 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsRoute: SettingsRoute,
   SetupRoute: SetupRoute,
   SkillsRoute: SkillsRoute,
+  TasksRoute: TasksRoute,
   ThemesRoute: ThemesRoute,
   UsageRoute: UsageRoute,
   ApiEventsRoute: ApiEventsRoute,
+  ApiArtifactsArtifactIdRoute: ApiArtifactsArtifactIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

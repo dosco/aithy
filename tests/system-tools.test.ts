@@ -68,7 +68,7 @@ describe("system.bash tool", () => {
 
     await expect(
       tool.func({ command: "echo should-not-run", reason: "Need host shell." }),
-    ).rejects.toThrow("already timed out for this exact command");
+    ).rejects.toThrow("already timed out for this exact request");
     expect(ctx.messages).toHaveLength(1);
   });
 

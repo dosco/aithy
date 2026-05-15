@@ -8,11 +8,21 @@ import type {
 } from "./provider";
 
 export class UnavailableSandboxProvider implements SandboxProvider {
-  async createSession(_botId: string, _hostWorkspacePath: string, _mounts: SessionMount[]): Promise<SandboxSession> {
+  async createSession(
+    _botId: string,
+    _hostWorkspacePath: string,
+    _hostOutboxPathOrMounts: string | SessionMount[],
+    _mounts?: SessionMount[],
+  ): Promise<SandboxSession> {
     throw unavailable();
   }
 
-  async recreate(_sessionId: string, _hostWorkspacePath: string, _mounts: SessionMount[]): Promise<SandboxSession> {
+  async recreate(
+    _sessionId: string,
+    _hostWorkspacePath: string,
+    _hostOutboxPathOrMounts: string | SessionMount[],
+    _mounts?: SessionMount[],
+  ): Promise<SandboxSession> {
     throw unavailable();
   }
 

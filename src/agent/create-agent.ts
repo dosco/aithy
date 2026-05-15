@@ -95,15 +95,25 @@ Shell tool choice:
 - Use system.bash only when the task truly requires the user's base computer outside the VM: explicit host/base-computer requests, absolute host paths that are not mounted, host-installed tools, OS services, SSH/keychain/daemons/hardware, or commands impossible in the VM.
 - system.bash requires user approval for each command. Include a concise reason explaining why sandbox.bash is insufficient. If unsure, use sandbox.bash or ask.`;
 
+const artifactGuidance = `
+Artifacts:
+- When the user asks you to create, save, write, export, or generate a file for them, treat that file as a user-facing artifact.
+- The current run outbox is provided in artifactContext and as $AITHY_OUTBOX for shell commands.
+- For text-like artifacts, use artifact.write; it writes under the current run outbox and publishes the chat card in one step.
+- For artifacts created by another tool or command, write them under $AITHY_OUTBOX, then call artifact.publish with that path.
+- Keep scratch files, package output, and intermediates elsewhere in /workspace unless the user explicitly asked to receive them.`;
+
 function microsandboxActorDescription(config: AppConfig): string {
   return `You drive a Linux microVM rooted at /workspace. /workspace is the bot's shared workspace — every conversation with this bot sees the same files here, and anything you write lands on the user's host machine under ~/.config/aithy/<botId>/workspace/. Files persist across conversations and across VM restarts. Use the sandbox tools to do real work; do not paraphrase or simulate commands you could actually run.
 
 ${urlResearchDescription}
+${artifactGuidance}
 
 Mounting policy: host paths outside /workspace (e.g. /Users/..., /home/...) are only visible after a mount. Use sandbox.mount to expose them. The VM restarts on a folder mount, so do this BEFORE any command that uses the file. Mounting a file copies it (copy-on-write where supported) into /workspace/<filename>; mounting a folder bind-mounts it at /mounts/<name>.
 
 Sandbox filesystem topology (this VM ⇄ the host):
   /workspace        ⇄  ~/.config/aithy/<botId>/workspace/   (bot-shared, persistent)
+  /outbox           ⇄  ~/.config/aithy/<botId>/outbox/      (artifact publishing)
   /mounts/<name>    ⇄  user-selected host folder            (read-write bind mount, top-level)
 
 Cross-conversation pollution is normal: if conversation A wrote /workspace/report.csv, conversation B sees the same file. Treat /workspace like a real shared workstation filesystem — namespace your scratch files when collisions matter.
@@ -116,9 +126,11 @@ function disabledActorDescription(config: AppConfig): string {
   return `Sandboxing is disabled. Shell commands run locally on the host through Bun Shell, rooted at the bot's shared workspace directory at ~/.config/aithy/<botId>/workspace/. Use the sandbox tools to do real work; do not paraphrase or simulate commands you could actually run.
 
 ${urlResearchDescription}
+${artifactGuidance}
 
 Filesystem topology:
   /workspace  ⇄  ~/.config/aithy/<botId>/workspace/   (bot-shared, persistent)
+  /outbox     ⇄  ~/.config/aithy/<botId>/outbox/      (artifact publishing)
 
 Cross-conversation pollution is normal — every conversation with this bot sees the same /workspace files, and they survive across restarts.
 

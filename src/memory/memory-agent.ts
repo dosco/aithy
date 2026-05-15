@@ -14,12 +14,12 @@ export interface MemoryAgentDeps {
 const memoryAgentSignature = f()
   .input("trigger", f.string("'auto' for end-of-turn or 'explicit' when the user asked the main agent to remember something."))
   .input("hint", f.string("If trigger='explicit', the user's request verbatim. Empty otherwise.").optional())
-  .input("thread", f.string("The full conversation thread, oldest first, formatted as '[ts] role: content'."))
+  .input("thread", f.string("A bounded conversation segment, oldest first. Auto runs include '[context #id ts]' overlap lines and '[new #id ts]' fresh lines; explicit runs may include the full session."))
   .input("memories", f.string("Recent existing durable memories, formatted one per line. Empty if none.").optional())
   .output("summary", f.string("One short line describing what you did, or 'nothing to remember' if you wrote nothing."))
   .build();
 
-const description = `You are the memory triage agent. Given a conversation thread, decide what — if anything — should be persisted to durable memory.
+const description = `You are the memory triage agent. Given a bounded conversation segment, decide what — if anything — should be persisted to durable memory.
 
 CRITICAL — how to actually persist:
 - The ONLY way to save a memory is to \`await memory.write({...})\`. Likewise \`memory.supersede\` and \`memory.delete\` are the only ways to change existing memories.
@@ -42,6 +42,7 @@ DO NOT WRITE:
 - transient state for the current conversation.
 - speculation; only confirmed facts.
 - duplicates — \`memories\` contains recent existing durable memories. If the fact is already present, do not write it again.
+- context-only overlap in auto runs. Use \`[context ...]\` lines only to understand \`[new ...]\` lines; do not write a memory solely from context that was already processed earlier.
 - greetings, acknowledgments, pleasantries, and low-signal chat filler.
 - reactions to the current conversation or assistant output ("I like this answer", "that was funny").
 - vague tentative references where the durable object is unclear ("I might try that", "maybe someday").

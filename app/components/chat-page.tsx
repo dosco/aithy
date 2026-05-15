@@ -27,6 +27,7 @@ import {
   stopChatMessage,
 } from "@/server/actions.functions";
 import type { WebStateDto } from "@/server/dto";
+import type { CapabilityMatchKind } from "../../src/security/capability-policy";
 import type { SerializableBotMessage, WebLiveEvent } from "../../src/web/live-events";
 
 type PermissionMessage = Extract<SerializableBotMessage, { kind: "permission" }>;
@@ -69,6 +70,7 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
   const [activities, setActivities] =
     useState<Array<Extract<WebLiveEvent, { type: "activity" }>>>(initialActivities);
   const [permissionRequests, setPermissionRequests] = useState(initialState.pendingPermissions);
+  const [tasks, setTasks] = useState(initialState.tasks);
   const [setupStatuses, setSetupStatuses] = useState<SetupStatusEvent[]>([]);
   const [input, setInput] = useState("");
   const [selectedSkills, setSelectedSkills] = useState<SelectedSkill[]>([]);
@@ -98,11 +100,19 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
     setActiveSessionId(resolvedInitialSessionId);
     setActivities(initialActivities);
     setPermissionRequests(initialState.pendingPermissions);
+    setTasks(initialState.tasks);
     clearSetupStatusLog();
     setPreviewSessionId(null);
-  }, [resolvedInitialSessionId, initialPage, initialActivities, initialState.pendingPermissions]);
+  }, [resolvedInitialSessionId, initialPage, initialActivities, initialState.pendingPermissions, initialState.tasks]);
   const { details } = useChatUi();
   const visibleSetupStatuses = useMemo(() => compactSetupStatuses(setupStatuses), [setupStatuses]);
+  const activeTask = useMemo(
+    () => tasks.find((task) =>
+      task.relatedSessionId === activeSessionId
+      && (task.status === "planned" || task.status === "running" || task.status === "paused_approval" || task.status === "failed")
+    ) ?? null,
+    [tasks, activeSessionId],
+  );
 
   useLiveEvent((event) => {
     if (event.type === "sessions") setSessions(event.sessions);
@@ -113,6 +123,9 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
     if (event.type === "queue-status" && event.queue.id === "agent.chat") {
       cancelSetupStatusClear();
       setSetupStatuses((current) => appendSetupStatus(current, queueStatusToSetup(event)));
+    }
+    if (event.type === "task-status") {
+      setTasks((current) => [event.task, ...current.filter((task) => task.id !== event.task.id)]);
     }
     if ("conversationId" in event && event.conversationId === activeSessionRef.current) {
       if (event.type === "message") {
@@ -231,12 +244,14 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
   return (
     <section className="app-chat-page mx-auto flex min-h-screen w-full flex-col pt-24">
       <ThemeSync ui={initialState.settings.ui} />
-      <header className="app-chat-header flex items-end justify-between gap-4">
-        <div>
+      <header className="app-chat-header flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+        <div className="min-w-0">
           <p className="font-mono text-xs uppercase tracking-[0.22em] text-[rgb(var(--muted-foreground))]">
             Aithy
           </p>
-          <h1 className="mt-2 text-3xl font-normal">{activeSession?.name ?? "Chat"}</h1>
+          <h1 className="mt-2 break-words text-3xl font-normal leading-tight text-balance sm:text-4xl">
+            {activeSession?.name ?? "Chat"}
+          </h1>
           {activeSession?.parentSessionId ? (
             <Link
               to="/chat/$sessionId"
@@ -247,7 +262,7 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
             </Link>
           ) : null}
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2 self-start sm:self-auto">
           {activeSessionId ? (
             <button
               type="button"
@@ -266,6 +281,8 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
         </div>
       </header>
 
+      {activeTask ? <TaskBanner task={activeTask} /> : null}
+
       <div className="app-chat-timeline mt-8 flex flex-1 flex-col gap-6">
         <ChatTimeline
           messages={messages}
@@ -279,10 +296,10 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
           onLoadMore={loadMoreMessages}
           subSessions={childSessions}
           onOpenSession={(session) => setPreviewSessionId(session.conversationId)}
-          onPermissionDecision={(requestId, decision) => {
+          onPermissionDecision={(requestId, decision, persist) => {
             setPermissionRequests((current) =>
               current.filter((request) => request.id !== requestId));
-            void respondSystemPermission({ data: { requestId, decision } });
+            void respondSystemPermission({ data: { requestId, decision, persist: persist as CapabilityMatchKind | undefined } });
           }}
           onPermissionRetry={(message) => void retryPermission(message)}
         />
@@ -333,6 +350,22 @@ function retryPermissionPrompt(message: PermissionMessage): string {
     "Reason:",
     message.reason,
   ].join("\n");
+}
+
+function TaskBanner({ task }: { task: WebStateDto["tasks"][number] }) {
+  return (
+    <div className="mt-5 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--panel)/0.72)] px-4 py-3 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="rounded border border-[rgb(var(--border))] px-2 py-0.5 font-mono text-[11px] uppercase text-[rgb(var(--muted-foreground))]">
+          {task.status.replace("_", " ")}
+        </span>
+        <span className="font-medium">{task.title}</span>
+      </div>
+      <p className="mt-1 text-xs text-[rgb(var(--muted-foreground))]">
+        {task.reason ?? "Task is updating."}
+      </p>
+    </div>
+  );
 }
 
 function updatePermissionRequests(

@@ -1,9 +1,11 @@
 import type { JsonValue } from "../../src/web/live-events";
 import type { AithyRuntime } from "../../src/runtime/aithy-runtime.server";
+import { loadBaseConfig } from "../../src/runtime/resolve-effective-config";
 import type {
   RuntimeCommandRow,
   RuntimeCommandStatus,
 } from "../../src/runtime/runtime-store";
+import { RuntimeStore } from "../../src/runtime/runtime-store";
 import type { RuntimeConsoleSnapshot } from "../../src/runtime/protocol/bus";
 import type {
   RuntimeLogEventPayload,
@@ -43,6 +45,9 @@ export interface RuntimeConsoleDto {
   logs: RuntimeLogDto[];
   commands: RuntimeCommandDto[];
   queues: RuntimeQueueStatus[];
+  snapshotState?: "live" | "stale";
+  snapshotError?: string;
+  refreshedAt?: string;
 }
 
 export async function runtimeConsoleDto(
@@ -53,7 +58,43 @@ export async function runtimeConsoleDto(
     logLimit: input.logLimit ?? 120,
     commandLimit: input.commandLimit ?? 120,
   });
-  return runtimeConsoleSnapshotDto(snapshot);
+  return {
+    ...runtimeConsoleSnapshotDto(snapshot),
+    snapshotState: "live",
+    refreshedAt: new Date().toISOString(),
+  };
+}
+
+export function staleRuntimeConsoleDto(
+  error: unknown,
+  input: { logLimit?: number; commandLimit?: number } = {},
+): RuntimeConsoleDto {
+  const store = new RuntimeStore(loadBaseConfig().stateDbPath);
+  try {
+    const message = errorMessage(error);
+    const refreshedAt = new Date().toISOString();
+    return {
+      services: store.services().map(runtimeServiceDto),
+      logs: [
+        {
+          id: "console-stale",
+          createdAt: refreshedAt,
+          role: "web",
+          level: "warn",
+          source: "console",
+          message: `Runtime console is showing the last persisted state: ${message}`,
+        },
+        ...store.recentEvents({ kinds: ["log"], limit: input.logLimit ?? 120 }).flatMap(runtimeLogEventDto),
+      ],
+      commands: store.recentCommands(input.commandLimit ?? 120).map(runtimeCommandDto),
+      queues: recentQueues(store),
+      snapshotState: "stale",
+      snapshotError: message,
+      refreshedAt,
+    };
+  } finally {
+    store.close();
+  }
 }
 
 function runtimeConsoleSnapshotDto(snapshot: RuntimeConsoleSnapshot): RuntimeConsoleDto {
@@ -65,6 +106,16 @@ function runtimeConsoleSnapshotDto(snapshot: RuntimeConsoleSnapshot): RuntimeCon
   };
 }
 
+function recentQueues(store: RuntimeStore): RuntimeQueueStatus[] {
+  const queueById = new Map<string, RuntimeQueueStatus>();
+  for (const row of store.recentEvents({ kinds: ["queue-status"], limit: 100 })) {
+    if (row.payload.type === "queue-status" && !queueById.has(row.payload.queue.id)) {
+      queueById.set(row.payload.queue.id, row.payload.queue);
+    }
+  }
+  return [...queueById.values()];
+}
+
 function runtimeServiceDto(service: RuntimeServiceStatus): RuntimeServiceDto {
   return {
     ...service,
@@ -74,10 +125,22 @@ function runtimeServiceDto(service: RuntimeServiceStatus): RuntimeServiceDto {
 
 function runtimeLogDto(row: RuntimeConsoleSnapshot["logs"][number]): RuntimeLogDto[] {
   const payload = row.event;
+  return runtimeLogPayloadDto(row.id, row.createdAt, payload);
+}
+
+function runtimeLogEventDto(row: ReturnType<RuntimeStore["recentEvents"]>[number]): RuntimeLogDto[] {
+  return runtimeLogPayloadDto(row.id, row.createdAt, row.payload);
+}
+
+function runtimeLogPayloadDto(
+  id: number | string,
+  createdAt: string,
+  payload: RuntimeConsoleSnapshot["logs"][number]["event"],
+): RuntimeLogDto[] {
   if (payload.type !== "log") return [];
   return [{
-    id: row.id,
-    createdAt: row.createdAt,
+    id,
+    createdAt,
     role: payload.role,
     level: payload.level,
     source: payload.source,
@@ -106,4 +169,8 @@ function serializableDetail(value: unknown): JsonValue | null {
   } catch {
     return String(value);
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

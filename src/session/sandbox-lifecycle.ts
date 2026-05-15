@@ -15,6 +15,7 @@ export class SandboxLifecycle {
       sandbox: SandboxProvider;
       botId: string;
       workspaceRoot: string;
+      outboxRoot: string;
       events: EventBus;
       sessions: Map<string, BotSession>;
       idleParkMs?: number;
@@ -49,6 +50,7 @@ export class SandboxLifecycle {
     const sandbox = await this.input.sandbox.recreate(
       this.id,
       this.input.workspaceRoot,
+      this.input.outboxRoot,
       this.input.mountsForSandbox(),
     );
     this.id = sandbox.id;
@@ -114,6 +116,7 @@ export class SandboxLifecycle {
       const sandbox = await this.input.sandbox.createSession(
         this.input.botId,
         this.input.workspaceRoot,
+        this.input.outboxRoot,
         this.input.mountsForSandbox(),
       );
       this.id = sandbox.id;

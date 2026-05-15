@@ -143,19 +143,21 @@ describe("RuntimeStore", () => {
     store.close();
   });
 
-  test("capability broker requires grants and audits decisions", async () => {
+  test("capability broker allows sandbox bash and still requires grants for other defaults", async () => {
     const { store, dbPath } = await makeStore();
     const broker = new CapabilityBroker(store);
+    broker.require({ capability: "sandbox.bash", toolName: "sandbox.bash", conversationId: "c1" });
+
     expect(() =>
-      broker.require({ capability: "sandbox.bash", toolName: "sandbox.bash", conversationId: "c1" }),
+      broker.require({ capability: "sandbox.edit", toolName: "sandbox.edit", conversationId: "c1" }),
     ).toThrow("Capability denied");
 
     broker.ensureDefaultLocalGrants();
-    broker.require({ capability: "sandbox.bash", toolName: "sandbox.bash", conversationId: "c1" });
+    broker.require({ capability: "sandbox.edit", toolName: "sandbox.edit", conversationId: "c1" });
 
     const db = new Database(dbPath, { readonly: true });
     const row = db.query(`SELECT COUNT(*) AS count FROM tool_audit_log`).get() as { count: number };
-    expect(row.count).toBe(2);
+    expect(row.count).toBe(3);
     db.close();
     store.close();
   });
@@ -182,6 +184,39 @@ describe("RuntimeStore", () => {
       decisionReason: "user allowed once",
     });
     expect(store.pendingPermissionRequests("c1")).toEqual([]);
+    store.close();
+  });
+
+  test("matches capability policy rules by scope", async () => {
+    const { store } = await makeStore();
+    expect(store.capabilityPolicyDecision("web.search").allowed).toBe(false);
+    store.createCapabilityPolicyRule({
+      capability: "web.search",
+      matchKind: "global",
+      source: "settings",
+      reason: "test",
+    });
+    expect(store.capabilityPolicyDecision("web.search").allowed).toBe(true);
+
+    store.createCapabilityPolicyRule({
+      capability: "web.scrape",
+      matchKind: "website_origin",
+      matchValue: "https://example.com",
+      source: "settings",
+      reason: "test",
+    });
+    expect(store.capabilityPolicyDecision("web.scrape", { url: "https://example.com/docs" }).allowed).toBe(true);
+    expect(store.capabilityPolicyDecision("web.scrape", { url: "https://elsewhere.test" }).allowed).toBe(false);
+
+    store.createCapabilityPolicyRule({
+      capability: "sandbox.mount",
+      matchKind: "host_path_prefix",
+      matchValue: "/tmp/aithy",
+      source: "settings",
+      reason: "test",
+    });
+    expect(store.capabilityPolicyDecision("sandbox.mount", { hostPath: "/tmp/aithy/project" }).allowed).toBe(true);
+    expect(store.capabilityPolicyDecision("sandbox.mount", { hostPath: "/tmp/aithy-old" }).allowed).toBe(false);
     store.close();
   });
 

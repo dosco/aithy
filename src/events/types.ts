@@ -1,6 +1,7 @@
 import type { SetupStatusInput } from "../setup/status";
 import type { AssistantToolCallMessage } from "../session/types";
 import type { SystemPermissionRequest } from "../runtime/runtime-store";
+import type { TaskRecord } from "../tasks/types";
 
 export type BotEvent =
   | { type: "message.received"; conversationId: string; text: string }
@@ -29,6 +30,7 @@ export type BotEvent =
   | { type: "sandbox.exec"; conversationId: string; command: string }
   | { type: "system.exec"; conversationId: string; command: string }
   | { type: "system.permission_request"; conversationId: string; request: SystemPermissionRequest }
+  | { type: "task.status"; task: TaskRecord }
   | { type: "sandbox.destroyed"; conversationId: string; sessionId: string }
   | { type: "sandbox.mountsRefreshPending"; conversationId: string }
   | { type: "sandbox.mountsRefreshing"; conversationId: string; sessionId: string }

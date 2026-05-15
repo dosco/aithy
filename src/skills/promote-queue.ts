@@ -1,7 +1,10 @@
 import { Database } from "bun:sqlite";
+import type { Job } from "bunqueue/client";
 import type { AppConfig } from "../config/env";
 import { captureProgramUsage } from "../usage/capture";
 import type { SqliteUsageStore } from "../usage/usage-store";
+import type { SqliteTaskStore } from "../tasks/task-store";
+import type { TaskRecord } from "../tasks/types";
 import {
   createEmbeddedQueueWorker,
   type EmbeddedQueueWorker,
@@ -17,12 +20,15 @@ type MaybePromise<T> = T | Promise<T>;
 
 interface JobData {
   triggeredAt: string;
+  taskId?: string;
 }
 
 export interface SkillPromoteQueueDeps {
   config: AppConfig;
   skills: SqliteSkillsStore;
   promotions: SqliteSkillPromotionStore;
+  tasks?: SqliteTaskStore;
+  onTaskStatus?: (task: TaskRecord) => void;
   postToSubSession: (input: {
     parentSessionId: string;
     parentMessageId?: number | null;
@@ -56,7 +62,7 @@ export class SkillPromoteQueue {
     this.app = createEmbeddedQueueWorker<JobData, { suggested: number }>({
       name: "aithy.skill.promote",
       stateDbPath: deps.config.stateDbPath,
-      processor: (job) => this.process(job.data),
+      processor: (job) => this.processJob(job),
       onError: deps.onQueueError,
     });
   }
@@ -74,9 +80,16 @@ export class SkillPromoteQueue {
   }
 
   async runNow(): Promise<void> {
+    const task = this.deps.tasks?.create({
+      kind: "skill.promote",
+      title: "Suggest reusable skills",
+      conversationId: null,
+      reason: "Queued for skill promotion",
+    });
+    if (task) this.deps.onTaskStatus?.(task);
     await this.app.queue.add(
       "skill.promote.now",
-      { triggeredAt: new Date().toISOString() },
+      { triggeredAt: new Date().toISOString(), ...(task ? { taskId: task.id } : {}) },
       {
         attempts: 1,
         deduplication: { id: "skill.promote:adhoc", ttl: 30_000 },
@@ -89,7 +102,37 @@ export class SkillPromoteQueue {
     await this.app.close();
   }
 
-  private async process(_data: JobData): Promise<{ suggested: number }> {
+  private async processJob(job: Job<JobData>): Promise<{ suggested: number }> {
+    const taskId = job.data.taskId ?? this.deps.tasks?.create({
+      kind: "skill.promote",
+      title: "Daily skill promotion",
+      conversationId: null,
+      reason: "Scheduled skill promotion",
+    }).id;
+    this.updateTask(taskId, {
+      status: "running",
+      queueJobId: String(job.id),
+      reason: "Skill promotion is running",
+    });
+    try {
+      const result = await this.process();
+      this.updateTask(taskId, {
+        status: "completed",
+        reason: result.suggested > 0 ? "Skill suggestion ready" : "Skill promotion completed",
+        resultSummary: `suggested ${result.suggested}`,
+      });
+      return result;
+    } catch (error) {
+      this.updateTask(taskId, {
+        status: "failed",
+        reason: "Skill promotion failed",
+        errorSummary: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
+  }
+
+  private async process(): Promise<{ suggested: number }> {
     const db = new Database(this.deps.config.stateDbPath, { readonly: true });
     db.exec("PRAGMA busy_timeout = 10000;");
     let patterns: DetectedPattern[] = [];
@@ -156,6 +199,12 @@ export class SkillPromoteQueue {
       if (suggested >= 3) break;
     }
     return { suggested };
+  }
+
+  private updateTask(taskId: string | undefined, patch: Parameters<SqliteTaskStore["update"]>[1]): void {
+    if (!taskId || !this.deps.tasks) return;
+    const task = this.deps.tasks.update(taskId, patch);
+    if (task) this.deps.onTaskStatus?.(task);
   }
 }
 

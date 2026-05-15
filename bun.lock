@@ -5,7 +5,7 @@
     "": {
       "name": "aithy",
       "dependencies": {
-        "@ax-llm/ax": "21.0.4",
+        "@ax-llm/ax": "^21.0.5",
         "@modelcontextprotocol/sdk": "1.29.0",
         "@radix-ui/react-popover": "1.1.15",
         "@radix-ui/react-select": "2.2.6",
@@ -54,7 +54,7 @@
   "packages": {
     "@alloc/quick-lru": ["@alloc/quick-lru@5.2.0", "", {}, "sha512-UrcABB+4bUrFABwbluTIBErXwvbsU/V7TZWfmbgJfbkwiBuziS9gxdODUyuiecfdGQ85jglMW6juS3+z5TsKLw=="],
 
-    "@ax-llm/ax": ["@ax-llm/ax@21.0.4", "", { "dependencies": { "@opentelemetry/api": "^1.9.0" }, "peerDependencies": { "zod": "^3.24.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "ax": "cli/index.mjs" } }, "sha512-sKMbvofzSrbZQOS4IVv/Bh+hNKADQe8fnmu9j6byq8tdeZAC1/2HxCSMCZcTN1Ib126nBUkESlMFClgBhxWJUg=="],
+    "@ax-llm/ax": ["@ax-llm/ax@21.0.5", "", { "dependencies": { "@opentelemetry/api": "^1.9.0" }, "peerDependencies": { "zod": "^3.24.0 || ^4.0.0" }, "optionalPeers": ["zod"], "bin": { "ax": "cli/index.mjs" } }, "sha512-McKtxUU0WUnyfINaFl6ArxguKvJPc64RGIM9CQHPRCc33QXwv7mE5yhWL2UfwttV9W/FUXvV2AhXZn5oSiHQaQ=="],
 
     "@babel/code-frame": ["@babel/code-frame@7.27.1", "", { "dependencies": { "@babel/helper-validator-identifier": "^7.27.1", "js-tokens": "^4.0.0", "picocolors": "^1.1.1" } }, "sha512-cjQ7ZlQ0Mv3b47hABuTevyTuYN4i+loJKGeV9flcCgIK37cCXRh+L1bd3iBHlynerhQ7BhCkn2BPbQUL+rGqFg=="],
 

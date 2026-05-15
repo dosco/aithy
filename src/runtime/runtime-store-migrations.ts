@@ -95,6 +95,27 @@ const migrations: readonly SqliteMigration[] = [
         ON permission_requests(conversation_id, status, created_at);
     `,
   },
+  {
+    version: 4,
+    sql: `
+      CREATE TABLE IF NOT EXISTS capability_policy_rules (
+        id TEXT PRIMARY KEY,
+        capability TEXT NOT NULL,
+        match_kind TEXT NOT NULL,
+        match_value TEXT,
+        source TEXT NOT NULL,
+        reason TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT
+      );
+      CREATE INDEX IF NOT EXISTS capability_policy_rules_lookup_idx
+        ON capability_policy_rules(capability, match_kind, match_value);
+
+      ALTER TABLE permission_requests ADD COLUMN target_kind TEXT;
+      ALTER TABLE permission_requests ADD COLUMN target_value TEXT;
+      ALTER TABLE permission_requests ADD COLUMN match_options_json TEXT;
+    `,
+  },
 ];
 
 export function applyRuntimeStoreMigrations(db: Database): void {

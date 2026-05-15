@@ -7,6 +7,8 @@ import {
 } from "../queue/embedded";
 import type { SqliteMemoryStore } from "./memory-store";
 import { todayLocalDate } from "./time-bound";
+import type { SqliteTaskStore } from "../tasks/task-store";
+import type { TaskRecord } from "../tasks/types";
 
 const MAX_ATTEMPTS = 2;
 const JOB_TTL_MS = 5 * 60_000;
@@ -14,11 +16,14 @@ const CRON_PATTERN = "30 2 * * *"; // every day at 02:30 local time
 
 interface JobData {
   triggeredAt: string;
+  taskId?: string;
 }
 
 export interface MemoryExpiryQueueDeps {
   config: AppConfig;
   memory: SqliteMemoryStore;
+  tasks?: SqliteTaskStore;
+  onTaskStatus?: (task: TaskRecord) => void;
   notify?: (input: {
     kind: "memory.consolidated";
     title: string;
@@ -57,9 +62,16 @@ export class MemoryExpiryQueue {
 
   async runNow(): Promise<void> {
     const id = crypto.randomUUID();
+    const task = this.deps.tasks?.create({
+      kind: "memory.expiry",
+      title: "Remove expired memories",
+      conversationId: null,
+      reason: "Queued for memory cleanup",
+    });
+    if (task) this.deps.onTaskStatus?.(task);
     await this.app.queue.add(
       "memory.expiry.now",
-      { triggeredAt: new Date().toISOString() },
+      { triggeredAt: new Date().toISOString(), ...(task ? { taskId: task.id } : {}) },
       {
         attempts: MAX_ATTEMPTS,
         backoff: { type: "exponential", delay: 30_000 },
@@ -74,8 +86,37 @@ export class MemoryExpiryQueue {
   }
 
   private async processJob(job: Job<JobData>): Promise<{ deleted: number }> {
-    if (Date.now() - job.timestamp > JOB_TTL_MS) return { deleted: 0 };
-    return this.process();
+    const taskId = job.data.taskId ?? this.deps.tasks?.create({
+      kind: "memory.expiry",
+      title: "Daily memory cleanup",
+      conversationId: null,
+      reason: "Scheduled memory cleanup",
+    }).id;
+    this.updateTask(taskId, {
+      status: "running",
+      queueJobId: String(job.id),
+      reason: "Memory cleanup is running",
+    });
+    if (Date.now() - job.timestamp > JOB_TTL_MS) {
+      this.updateTask(taskId, { status: "cancelled", reason: "Memory cleanup expired before it could run" });
+      return { deleted: 0 };
+    }
+    try {
+      const result = this.process();
+      this.updateTask(taskId, {
+        status: "completed",
+        reason: "Memory cleanup completed",
+        resultSummary: `Deleted ${result.deleted} expired ${result.deleted === 1 ? "memory" : "memories"}`,
+      });
+      return result;
+    } catch (error) {
+      this.updateTask(taskId, {
+        status: "failed",
+        reason: "Memory cleanup failed",
+        errorSummary: error instanceof Error ? error.message : String(error),
+      });
+      throw error;
+    }
   }
 
   private process(): { deleted: number } {
@@ -89,5 +130,11 @@ export class MemoryExpiryQueue {
       });
     }
     return { deleted };
+  }
+
+  private updateTask(taskId: string | undefined, patch: Parameters<SqliteTaskStore["update"]>[1]): void {
+    if (!taskId || !this.deps.tasks) return;
+    const task = this.deps.tasks.update(taskId, patch);
+    if (task) this.deps.onTaskStatus?.(task);
   }
 }

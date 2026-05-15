@@ -18,8 +18,10 @@ export class MockSandboxProvider implements SandboxProvider {
   async createSession(
     botId: string,
     _hostWorkspacePath: string,
-    mounts: SessionMount[]
+    hostOutboxPathOrMounts: string | SessionMount[],
+    maybeMounts?: SessionMount[]
   ): Promise<SandboxSession> {
+    const mounts = Array.isArray(hostOutboxPathOrMounts) ? hostOutboxPathOrMounts : maybeMounts ?? [];
     const id = `mock-${botId}`;
     this.mounts.set(id, [...mounts]);
     this.state.set(id, "live");
@@ -30,8 +32,10 @@ export class MockSandboxProvider implements SandboxProvider {
   async recreate(
     sessionId: string,
     _hostWorkspacePath: string,
-    mounts: SessionMount[]
+    hostOutboxPathOrMounts: string | SessionMount[],
+    maybeMounts?: SessionMount[]
   ): Promise<SandboxSession> {
+    const mounts = Array.isArray(hostOutboxPathOrMounts) ? hostOutboxPathOrMounts : maybeMounts ?? [];
     this.mounts.set(sessionId, [...mounts]);
     this.recreates.push({ sessionId, mounts: [...mounts] });
     this.state.set(sessionId, "live");

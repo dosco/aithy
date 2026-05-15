@@ -14,12 +14,22 @@ export class LifecycleLockedSandboxProvider implements SandboxProvider {
 
   constructor(private readonly inner: SandboxProvider) {}
 
-  createSession(botId: string, hostWorkspacePath: string, mounts: SessionMount[]): Promise<SandboxSession> {
-    return this.withLifecycle(() => this.inner.createSession(botId, hostWorkspacePath, mounts));
+  createSession(
+    botId: string,
+    hostWorkspacePath: string,
+    hostOutboxPathOrMounts: string | SessionMount[],
+    mounts?: SessionMount[],
+  ): Promise<SandboxSession> {
+    return this.withLifecycle(() => this.inner.createSession(botId, hostWorkspacePath, hostOutboxPathOrMounts, mounts));
   }
 
-  recreate(sessionId: string, hostWorkspacePath: string, mounts: SessionMount[]): Promise<SandboxSession> {
-    return this.withLifecycle(() => this.inner.recreate(sessionId, hostWorkspacePath, mounts));
+  recreate(
+    sessionId: string,
+    hostWorkspacePath: string,
+    hostOutboxPathOrMounts: string | SessionMount[],
+    mounts?: SessionMount[],
+  ): Promise<SandboxSession> {
+    return this.withLifecycle(() => this.inner.recreate(sessionId, hostWorkspacePath, hostOutboxPathOrMounts, mounts));
   }
 
   bash(sessionId: string, request: SandboxBashRequest): Promise<SandboxBashResult> {

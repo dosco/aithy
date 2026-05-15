@@ -25,6 +25,7 @@ function configFixture(globalMounts: AppConfig["globalMounts"] = []): AppConfig 
     parallelAgents: 1,
     parallelSearchMcpUrl: "https://search.parallel.ai/mcp",
     workspaceRoot: "/tmp",
+    outboxRoot: "/tmp/outbox",
     botId: "default",
     stateDir: "/tmp",
     stateDbPath: "/tmp/x.db",

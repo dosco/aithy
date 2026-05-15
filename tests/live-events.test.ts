@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { createLiveEventBus } from "../app/components/live-events";
-import { LiveEventHub, userMessageEvent } from "../src/web/live-events";
+import { LiveEventHub, messageEvent, userMessageEvent } from "../src/web/live-events";
 
 describe("web live events", () => {
   test("publishes user messages through the message event shape", () => {
@@ -94,6 +94,37 @@ describe("web live events", () => {
         }),
       }),
     ]);
+  });
+
+  test("serializes artifact messages through live message events", () => {
+    const event = messageEvent("conversation", {
+      role: "assistant",
+      kind: "artifact",
+      id: "artifact-1",
+      sessionId: "conversation",
+      runId: "run-1",
+      sandboxPath: "/workspace/outbox/report.md",
+      relativePath: "report.md",
+      title: "Report",
+      description: null,
+      filename: "report.md",
+      mimeType: "text/markdown; charset=utf-8",
+      sizeBytes: 8,
+      previewKind: "text",
+      textPreview: "# Report",
+      openUrl: "/api/artifacts/artifact-1",
+      downloadUrl: "/api/artifacts/artifact-1?download=1",
+      createdAt: "2026-04-30T00:00:00.000Z",
+    });
+
+    expect(event).toMatchObject({
+      type: "message",
+      message: {
+        kind: "artifact",
+        title: "Report",
+        openUrl: "/api/artifacts/artifact-1",
+      },
+    });
   });
 
   test("replays active setup statuses to late subscribers", () => {

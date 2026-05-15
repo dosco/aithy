@@ -35,6 +35,14 @@ import {
   grantDecision as runtimeGrantDecision,
 } from "./runtime-grants-store";
 import {
+  capabilityPolicyDecision as runtimeCapabilityPolicyDecision,
+  createCapabilityPolicyRule as createRuntimeCapabilityPolicyRule,
+  deleteCapabilityPolicyRule as deleteRuntimeCapabilityPolicyRule,
+  listCapabilityPolicyRules as listRuntimeCapabilityPolicyRules,
+  resetCapabilityPolicyRules as resetRuntimeCapabilityPolicyRules,
+  type CreateCapabilityPolicyRuleInput,
+} from "./runtime-policy-store";
+import {
   createPermissionRequest as createRuntimePermissionRequest,
   decidePermissionRequest as decideRuntimePermissionRequest,
   maintainPermissionRequests as maintainRuntimePermissionRequests,
@@ -46,6 +54,11 @@ import {
 } from "./permission-requests";
 import { applyRuntimeStoreMigrations } from "./runtime-store-migrations";
 import { heartbeat as runtimeHeartbeat, service as runtimeService, services as runtimeServices } from "./runtime-service-store";
+import type {
+  CapabilityMatchContext,
+  CapabilityPolicyDecision,
+  CapabilityPolicyRule,
+} from "../security/capability-policy";
 import type {
   RuntimeCommandRow,
   RuntimeCommandStatus,
@@ -66,6 +79,12 @@ export type {
   SystemPermissionRequest,
   SystemPermissionStatus,
 } from "./permission-requests";
+export type {
+  CapabilityMatchContext,
+  CapabilityMatchKind,
+  CapabilityPolicyOption,
+  CapabilityPolicyRule,
+} from "../security/capability-policy";
 export { PERMISSION_REQUEST_TIMEOUT_MS } from "./permission-requests";
 
 const EXPIRED_EVENT_PRUNE_INTERVAL_MS = 60_000;
@@ -180,6 +199,29 @@ export class RuntimeStore {
 
   grantDecision(capability: string, scope = "global"): { allowed: boolean; reason: string } {
     return runtimeGrantDecision(this.db, capability, scope);
+  }
+
+  capabilityPolicyDecision(
+    capability: string,
+    context?: CapabilityMatchContext,
+  ): CapabilityPolicyDecision {
+    return runtimeCapabilityPolicyDecision(this.db, capability, context);
+  }
+
+  createCapabilityPolicyRule(input: CreateCapabilityPolicyRuleInput): CapabilityPolicyRule {
+    return createRuntimeCapabilityPolicyRule(this.db, input);
+  }
+
+  listCapabilityPolicyRules(search?: string): CapabilityPolicyRule[] {
+    return listRuntimeCapabilityPolicyRules(this.db, search);
+  }
+
+  deleteCapabilityPolicyRule(id: string): boolean {
+    return deleteRuntimeCapabilityPolicyRule(this.db, id);
+  }
+
+  resetCapabilityPolicyRules(): number {
+    return resetRuntimeCapabilityPolicyRules(this.db);
   }
 
   auditTool(input: ToolAuditInput): void {

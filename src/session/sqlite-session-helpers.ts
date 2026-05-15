@@ -61,6 +61,29 @@ function rowToMessage(row: MessageRow): BotMessage {
     };
   }
 
+  if (row.message_kind === "artifact") {
+    const metadata = parseMetadata(row.metadata_json);
+    return {
+      role: "assistant",
+      kind: "artifact",
+      id: stringField(metadata, "id"),
+      sessionId: stringField(metadata, "sessionId"),
+      runId: nullableStringField(metadata, "runId"),
+      sandboxPath: stringField(metadata, "sandboxPath"),
+      relativePath: stringField(metadata, "relativePath"),
+      title: stringField(metadata, "title"),
+      description: nullableStringField(metadata, "description"),
+      filename: stringField(metadata, "filename"),
+      mimeType: stringField(metadata, "mimeType"),
+      sizeBytes: numberField(metadata, "sizeBytes"),
+      previewKind: previewKindField(metadata),
+      textPreview: nullableStringField(metadata, "textPreview"),
+      openUrl: stringField(metadata, "openUrl"),
+      downloadUrl: stringField(metadata, "downloadUrl"),
+      createdAt: row.created_at,
+    };
+  }
+
   if (row.tool_name !== null || row.tool_args !== null || row.tool_result !== null) {
     const toolArgs = row.tool_args ? JSON.parse(row.tool_args) : null;
     return {
@@ -109,6 +132,22 @@ function stringField(value: Record<string, unknown>, key: string): string {
   return typeof field === "string" ? field : "";
 }
 
+function nullableStringField(value: Record<string, unknown>, key: string): string | null {
+  const field = value[key];
+  return typeof field === "string" && field.length > 0 ? field : null;
+}
+
+function numberField(value: Record<string, unknown>, key: string): number {
+  const field = value[key];
+  return typeof field === "number" && Number.isFinite(field) ? field : 0;
+}
+
+function previewKindField(value: Record<string, unknown>) {
+  const field = value.previewKind;
+  if (field === "text" || field === "image" || field === "download") return field;
+  return "download";
+}
+
 function permissionStatusField(value: Record<string, unknown>) {
   const status = value.status;
   if (status === "allowed" || status === "denied" || status === "timed_out") return status;
@@ -139,11 +178,11 @@ export function messageToBindings(message: BotMessage) {
     };
   }
 
-  const usage = message.kind === "permission" ? undefined : message.usage;
+  const usage = message.kind === "permission" || message.kind === "artifact" ? undefined : message.usage;
   const base = {
     $role: "assistant" as const,
     $messageKind: message.kind,
-    $thought: message.kind === "permission" ? null : message.thought ?? null,
+    $thought: message.kind === "text" || message.kind === "tool_call" ? message.thought ?? null : null,
     $inputTokens: usage?.input ?? null,
     $outputTokens: usage?.output ?? null,
     $thoughtTokens: usage?.thought ?? null,
@@ -177,6 +216,32 @@ export function messageToBindings(message: BotMessage) {
         cwd: message.cwd,
         reason: message.reason,
         decidedAt: message.decidedAt,
+      }),
+      $toolName: null,
+      $toolArgs: null,
+      $toolResult: null,
+    };
+  }
+
+  if (message.kind === "artifact") {
+    return {
+      ...base,
+      $content: null,
+      $metadataJson: JSON.stringify({
+        id: message.id,
+        sessionId: message.sessionId,
+        runId: message.runId,
+        sandboxPath: message.sandboxPath,
+        relativePath: message.relativePath,
+        title: message.title,
+        description: message.description,
+        filename: message.filename,
+        mimeType: message.mimeType,
+        sizeBytes: message.sizeBytes,
+        previewKind: message.previewKind,
+        textPreview: message.textPreview,
+        openUrl: message.openUrl,
+        downloadUrl: message.downloadUrl,
       }),
       $toolName: null,
       $toolArgs: null,

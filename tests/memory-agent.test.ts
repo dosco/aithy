@@ -16,6 +16,8 @@ describe("memory agents", () => {
 
     expect(program.executor).toBeUndefined();
     expect(generatorDescription(program)).toContain("The ONLY way to save a memory");
+    expect(generatorDescription(program)).toContain("bounded conversation segment");
+    expect(generatorDescription(program)).toContain("context-only overlap");
     expect(generatorDescription(program)).toContain("dense, consolidated, self-contained");
     expect(generatorDescription(program)).toContain("include an explicit frequency");
     expect(generatorDescription(program)).toContain("validFrom, validUntil, durationDays, and evidence");
@@ -152,6 +154,7 @@ async function fixture(): Promise<{ config: AppConfig; memory: SqliteMemoryStore
     parallelAgents: 1,
     parallelSearchMcpUrl: "https://search.parallel.ai/mcp",
     workspaceRoot: dir,
+    outboxRoot: path.join(dir, "outbox"),
     botId: "default",
     stateDir: dir,
     stateDbPath: path.join(dir, "state.db"),

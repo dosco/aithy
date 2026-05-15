@@ -19,6 +19,7 @@ import type {
 
 interface DisabledSandboxEntry {
   hostWorkspacePath: string;
+  hostOutboxPath: string;
   mounts: SessionMount[];
   state: "live" | "parked";
 }
@@ -29,6 +30,7 @@ import { $ } from "bun";
 const input = await new Response(Bun.stdin.stream()).json();
 const result = await $\`\${{ raw: input.command }}\`
   .cwd(input.cwd)
+  .env(input.env ?? {})
   .nothrow()
   .quiet();
 
@@ -43,21 +45,27 @@ export class DisabledSandboxProvider implements SandboxProvider {
   async createSession(
     botId: string,
     hostWorkspacePath: string,
-    mounts: SessionMount[],
+    hostOutboxPathOrMounts: string | SessionMount[],
+    maybeMounts?: SessionMount[],
   ): Promise<SandboxSession> {
     const id = disabledSessionIdFor(botId);
-    await ensureHostWorkspace(hostWorkspacePath);
-    this.sessions.set(id, { hostWorkspacePath, mounts: [...mounts], state: "live" });
+    const { hostOutboxPath, mounts } = outboxAndMounts(hostWorkspacePath, hostOutboxPathOrMounts, maybeMounts);
+    await ensureHostPath(hostWorkspacePath);
+    await ensureHostPath(hostOutboxPath);
+    this.sessions.set(id, { hostWorkspacePath, hostOutboxPath, mounts: [...mounts], state: "live" });
     return { id, name: id };
   }
 
   async recreate(
     sessionId: string,
     hostWorkspacePath: string,
-    mounts: SessionMount[],
+    hostOutboxPathOrMounts: string | SessionMount[],
+    maybeMounts?: SessionMount[],
   ): Promise<SandboxSession> {
-    await ensureHostWorkspace(hostWorkspacePath);
-    this.sessions.set(sessionId, { hostWorkspacePath, mounts: [...mounts], state: "live" });
+    const { hostOutboxPath, mounts } = outboxAndMounts(hostWorkspacePath, hostOutboxPathOrMounts, maybeMounts);
+    await ensureHostPath(hostWorkspacePath);
+    await ensureHostPath(hostOutboxPath);
+    this.sessions.set(sessionId, { hostWorkspacePath, hostOutboxPath, mounts: [...mounts], state: "live" });
     return { id: sessionId, name: sessionId };
   }
 
@@ -69,6 +77,7 @@ export class DisabledSandboxProvider implements SandboxProvider {
     const result = await runBunShell({
       command: request.command,
       cwd,
+      env: request.env,
       timeoutMs,
     });
     const maxChars = request.maxOutputChars ?? MAX_TOOL_OUTPUT_CHARS;
@@ -128,6 +137,17 @@ export class DisabledSandboxProvider implements SandboxProvider {
   }
 }
 
+function outboxAndMounts(
+  hostWorkspacePath: string,
+  hostOutboxPathOrMounts: string | SessionMount[],
+  maybeMounts?: SessionMount[],
+): { hostOutboxPath: string; mounts: SessionMount[] } {
+  if (typeof hostOutboxPathOrMounts === "string") {
+    return { hostOutboxPath: hostOutboxPathOrMounts, mounts: maybeMounts ?? [] };
+  }
+  return { hostOutboxPath: path.join(hostWorkspacePath, "outbox"), mounts: hostOutboxPathOrMounts };
+}
+
 export function disabledSessionIdFor(botId: string): string {
   return `disabled-${botId.replace(/[^a-zA-Z0-9-]/g, "-").slice(0, 40)}`;
 }
@@ -136,6 +156,10 @@ function toHostPath(entry: DisabledSandboxEntry, sandboxPath: string): string {
   if (sandboxPath === "/workspace") return entry.hostWorkspacePath;
   if (sandboxPath.startsWith("/workspace/")) {
     return safeJoin(entry.hostWorkspacePath, sandboxPath.slice("/workspace/".length));
+  }
+  if (sandboxPath === "/outbox") return entry.hostOutboxPath;
+  if (sandboxPath.startsWith("/outbox/")) {
+    return safeJoin(entry.hostOutboxPath, sandboxPath.slice("/outbox/".length));
   }
   if (sandboxPath === "/mounts" || sandboxPath.startsWith("/mounts/")) {
     const rest = sandboxPath === "/mounts" ? "" : sandboxPath.slice("/mounts/".length);
@@ -146,23 +170,28 @@ function toHostPath(entry: DisabledSandboxEntry, sandboxPath: string): string {
     return tail.length === 0 ? mount.hostPath : safeJoin(mount.hostPath, tail.join("/"));
   }
   if (path.isAbsolute(sandboxPath)) {
-    throw new Error("Disabled sandbox path must stay under /workspace or /mounts");
+    throw new Error("Disabled sandbox path must stay under /workspace, /outbox, or /mounts");
   }
   return safeJoin(entry.hostWorkspacePath, sandboxPath);
 }
 
 function toSandboxPath(entry: DisabledSandboxEntry, hostPath: string): string {
+  const outboxRelativePath = path.relative(entry.hostOutboxPath, hostPath);
+  if (outboxRelativePath && !outboxRelativePath.startsWith("..") && !path.isAbsolute(outboxRelativePath)) {
+    return `/outbox/${ensureRelativePath(outboxRelativePath)}`;
+  }
   const relativePath = path.relative(entry.hostWorkspacePath, hostPath);
   return `/workspace/${ensureRelativePath(relativePath)}`;
 }
 
-async function ensureHostWorkspace(hostWorkspacePath: string): Promise<void> {
-  await mkdir(hostWorkspacePath, { recursive: true });
+async function ensureHostPath(hostPath: string): Promise<void> {
+  await mkdir(hostPath, { recursive: true });
 }
 
 async function runBunShell(input: {
   command: string;
   cwd: string;
+  env?: Record<string, string>;
   timeoutMs: number;
 }): Promise<SandboxBashResult> {
   let proc: ReturnType<typeof Bun.spawn>;
@@ -190,7 +219,7 @@ async function runBunShell(input: {
 
   try {
     const stdin = proc.stdin as { write: (chunk: string) => void; end: () => void };
-    stdin.write(JSON.stringify({ command: input.command, cwd: input.cwd }));
+    stdin.write(JSON.stringify({ command: input.command, cwd: input.cwd, env: input.env ?? {} }));
     stdin.end();
     const [stdout, stderr, exitCode] = await Promise.all([
       streamText(proc.stdout),

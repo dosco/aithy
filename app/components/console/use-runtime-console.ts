@@ -19,7 +19,16 @@ export function useRuntimeConsole(
 
   useEffect(() => {
     if (initial && limits.logLimit === 120 && limits.commandLimit === 120) return;
-    void getRuntimeConsole({ data: limits }).then(setState);
+    void getRuntimeConsole({ data: limits })
+      .then(setState)
+      .catch((error) => {
+        setState((current) => ({
+          ...current,
+          snapshotState: "stale",
+          snapshotError: errorMessage(error),
+          refreshedAt: new Date().toISOString(),
+        }));
+      });
   }, [initial, limits.logLimit, limits.commandLimit]);
 
   useLiveEvent((event) => {
@@ -82,4 +91,8 @@ function upsertBy<T>(items: T[], key: string, next: T): T[] {
 function itemKey(item: unknown): string {
   const value = item as { id?: string; role?: string };
   return value.id ?? value.role ?? "";
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }

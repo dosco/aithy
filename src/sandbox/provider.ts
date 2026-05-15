@@ -8,6 +8,7 @@ export interface SandboxBashRequest {
   cwd?: string;
   timeoutMs?: number;
   maxOutputChars?: number;
+  env?: Record<string, string>;
 }
 
 export interface SandboxBashResult {
@@ -31,12 +32,14 @@ export interface SandboxProvider {
   createSession(
     botId: string,
     hostWorkspacePath: string,
-    mounts: SessionMount[]
+    hostOutboxPathOrMounts: string | SessionMount[],
+    mounts?: SessionMount[]
   ): Promise<SandboxSession>;
   recreate(
     sessionId: string,
     hostWorkspacePath: string,
-    mounts: SessionMount[]
+    hostOutboxPathOrMounts: string | SessionMount[],
+    mounts?: SessionMount[]
   ): Promise<SandboxSession>;
   bash(sessionId: string, request: SandboxBashRequest): Promise<SandboxBashResult>;
   read(sessionId: string, path: string, maxBytes?: number): Promise<string>;

@@ -1,6 +1,7 @@
 import { isAiConfigured } from "../../src/config/validate";
 import type { AithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import { RuntimeStore } from "../../src/runtime/runtime-store";
+import { taskSummary } from "../../src/tasks/summary";
 import { serializableMessage, serializablePermissionRequest } from "../../src/web/live-events";
 import type { JsonValue, WebLiveEvent } from "../../src/web/live-events";
 import {
@@ -29,6 +30,7 @@ import {
   type SetupGateStateDto,
   type SkillsPageStateDto,
   type ThemesPageStateDto,
+  type TasksPageStateDto,
   type UsagePageStateDto,
   type WebStateDto,
 } from "./dto-types";
@@ -71,8 +73,10 @@ export async function webStateDto(
     memoryRuns: runtime.memoryRuns.recent(50).map(memoryRunDto),
     notifications: runtime.notifications.recent(50).map(notificationDto),
     unreadNotifications: runtime.notifications.unreadCount(),
+    tasks: runtime.tasks.recent({ limit: 50 }).map(taskSummary),
     aiConfigured: isAiConfigured(runtime.config),
     runtimeCapabilities: runtimeCapabilitiesDto(),
+    permissionRules: runtime.runtimeStore.listCapabilityPolicyRules(),
   };
 }
 
@@ -200,6 +204,7 @@ export async function settingsPageStateDto(runtime: AithyRuntime): Promise<Setti
     soul: soulDto(runtime.soul),
     profile: profileDto(runtime.profile),
     runtimeCapabilities: runtimeCapabilitiesDto(),
+    permissionRules: runtime.runtimeStore.listCapabilityPolicyRules(),
   };
 }
 
@@ -207,6 +212,13 @@ export function notificationsPageStateDto(runtime: AithyRuntime): NotificationsP
   return {
     notifications: runtime.notifications.recent(50).map(notificationDto),
     unreadNotifications: runtime.notifications.unreadCount(),
+  };
+}
+
+export function tasksPageStateDto(runtime: AithyRuntime): TasksPageStateDto {
+  return {
+    settings: runtime.settings.load(),
+    tasks: runtime.tasks.recent({ limit: 100 }).map(taskSummary),
   };
 }
 

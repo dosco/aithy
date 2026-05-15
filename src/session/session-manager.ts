@@ -44,6 +44,7 @@ export class SessionManager {
       sandbox: SandboxProvider;
       botId: string;
       workspaceRoot: string;
+      outboxRoot?: string;
       events: EventBus;
       ttlMs?: number;
       idleParkMs?: number;
@@ -62,6 +63,7 @@ export class SessionManager {
       sandbox: options.sandbox,
       botId: this.botId,
       workspaceRoot: this.workspaceRoot,
+      outboxRoot: options.outboxRoot ?? `${this.workspaceRoot}-outbox`,
       events: options.events,
       sessions: this.sessions,
       idleParkMs: options.idleParkMs,

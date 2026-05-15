@@ -86,6 +86,7 @@ describe("loadConfig", () => {
     expect(config.botId).toBe("team-bot");
     expect(config.stateDir).toBe("/tmp/aithy-state");
     expect(config.stateDbPath).toBe("/tmp/aithy-state/team-bot/state.db");
+    expect(config.outboxRoot).toBe("/tmp/aithy-state/team-bot/outbox");
   });
 
   test("parses Parallel search overrides", () => {

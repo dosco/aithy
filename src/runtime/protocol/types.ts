@@ -53,12 +53,12 @@ export type AgentCommandKind =
 export type SandboxCommand =
   | {
       kind: "sandbox.createSession";
-      payload: { botId: string; hostWorkspacePath: string; mounts: SessionMount[] };
+      payload: { botId: string; hostWorkspacePath: string; hostOutboxPath: string; mounts: SessionMount[] };
       result: SandboxSession;
     }
   | {
       kind: "sandbox.recreate";
-      payload: { sessionId: string; hostWorkspacePath: string; mounts: SessionMount[] };
+      payload: { sessionId: string; hostWorkspacePath: string; hostOutboxPath: string; mounts: SessionMount[] };
       result: SandboxSession;
     }
   | {

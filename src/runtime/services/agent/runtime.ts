@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { shutdownManager } from "bunqueue/client";
 import { ActiveRunRegistry } from "../../../agent/active-runs";
+import { SqliteArtifactStore } from "../../../artifacts/artifact-store";
 import { AgentDispatcher, type UserChatJobData, type UserChatJobResult } from "../../../agent/dispatcher";
 import { EventBus } from "../../../events/bus";
 import { MemoryConsolidateQueue } from "../../../memory/consolidate-queue";
@@ -11,11 +12,14 @@ import { SqliteMemoryStore } from "../../../memory/memory-store";
 import { SqliteNotificationStore } from "../../../notifications/notification-store";
 import type { NotificationCreate, NotificationEntry } from "../../../notifications/types";
 import { CapabilityBroker } from "../../../security/capability-broker";
+import { SqliteTaskStore } from "../../../tasks/task-store";
+import type { TaskRecord } from "../../../tasks/types";
 import { SessionManager } from "../../../session/session-manager";
 import { globalMountsChanged, runtimeSandboxChanged } from "../../../settings/resolve";
 import { SqliteSettingsStore } from "../../../settings/store";
 import { seedSkillsIfEmpty } from "../../../skills/seed";
-import { SkillPromoteQueue } from "../../../skills/promote-queue";
+import { SqliteSkillCandidateStore } from "../../../skills/candidate-store";
+import { SkillCandidateQueue } from "../../../skills/candidate-queue";
 import { SqliteSkillPromotionStore } from "../../../skills/promote-store";
 import { SqliteSkillsStore } from "../../../skills/skills-store";
 import { loadOrSeedSoul } from "../../../soul/service";
@@ -50,10 +54,12 @@ export class AgentWorkerRuntime {
     public readonly sessions: SessionManager,
     public readonly soul: SoulProfile,
     public readonly memory: SqliteMemoryStore,
+    public readonly artifacts: SqliteArtifactStore,
     public readonly usage: SqliteUsageStore,
     public readonly activeRuns: ActiveRunRegistry,
     public readonly skills: SqliteSkillsStore,
     public readonly runtimeStore: RuntimeStore,
+    public readonly tasks: SqliteTaskStore,
     public readonly capabilities: CapabilityBroker,
     public readonly notifications: SqliteNotificationStore,
     private readonly dispatcher: AgentDispatcher,
@@ -61,7 +67,9 @@ export class AgentWorkerRuntime {
     public readonly memoryQueue: MemoryQueue,
     private readonly memoryConsolidate: MemoryConsolidateQueue,
     private readonly memoryExpiry: MemoryExpiryQueue,
-    private readonly skillPromote: SkillPromoteQueue,
+    public readonly skillCandidates: SqliteSkillCandidateStore,
+    public readonly skillCandidateQueue: SkillCandidateQueue,
+    public readonly skillPromotions: SqliteSkillPromotionStore,
     private readonly stores: { close(): void }[],
   ) {}
 
@@ -71,9 +79,11 @@ export class AgentWorkerRuntime {
     const settings = new SqliteSettingsStore(baseConfig.stateDbPath);
     const config = await resolveEffectiveConfig(baseConfig, settings.load());
     await mkdir(config.workspaceRoot, { recursive: true });
+    await mkdir(config.outboxRoot, { recursive: true });
 
     await queue.services();
     const runtimeStore = new RuntimeStore(config.stateDbPath);
+    const tasks = new SqliteTaskStore(config.stateDbPath);
     const capabilities = new CapabilityBroker(runtimeStore);
     capabilities.ensureDefaultLocalGrants();
 
@@ -99,10 +109,12 @@ export class AgentWorkerRuntime {
     });
     const memoryRuns = new SqliteMemoryRunsStore(config.stateDbPath);
     const notifications = new SqliteNotificationStore(config.stateDbPath);
+    const artifacts = new SqliteArtifactStore(config.stateDbPath, config.workspaceRoot, config.outboxRoot);
     const usage = new SqliteUsageStore(config.stateDbPath);
     const skills = new SqliteSkillsStore(config.stateDbPath);
     seedSkillsIfEmpty(skills);
     const skillPromotions = new SqliteSkillPromotionStore(config.stateDbPath);
+    const skillCandidates = new SqliteSkillCandidateStore(config.stateDbPath);
     const soulStore = new SqliteSoulStore(config.stateDbPath);
     const soul = loadOrSeedSoul(soulStore);
 
@@ -114,6 +126,7 @@ export class AgentWorkerRuntime {
       sandbox,
       botId: config.botId,
       workspaceRoot: config.workspaceRoot,
+      outboxRoot: config.outboxRoot,
       events,
       ttlMs: config.sessionTtlMs,
       idleParkMs: config.idleParkMs,
@@ -141,29 +154,32 @@ export class AgentWorkerRuntime {
       postToSubSessionAndFlush(sessions, live, notify, input, () => sessionState.flush());
     const onQueueError = (message: string, error: Error) =>
       events.emit({ type: "error", message, cause: error });
+    const publishTask = (task: TaskRecord) => events.emit({ type: "task.status", task });
 
     const memoryQueue = new MemoryQueue({
       config,
       memory,
       sessions,
       runs: memoryRuns,
+      tasks,
+      onTaskStatus: publishTask,
       postFailureToSubSession: postSub,
       notify,
       usage,
       onQueueError,
     });
-    const memoryConsolidate = new MemoryConsolidateQueue({ config, memory, runs: memoryRuns, usage, notify, onQueueError });
-    const memoryExpiry = new MemoryExpiryQueue({ config, memory, notify, onQueueError });
-    const skillPromote = new SkillPromoteQueue({
+    const memoryConsolidate = new MemoryConsolidateQueue({ config, memory, runs: memoryRuns, tasks, onTaskStatus: publishTask, usage, notify, onQueueError });
+    const memoryExpiry = new MemoryExpiryQueue({ config, memory, tasks, onTaskStatus: publishTask, notify, onQueueError });
+    const skillCandidateQueue = new SkillCandidateQueue({
       config,
-      skills,
-      promotions: skillPromotions,
+      candidates: skillCandidates,
+      tasks,
+      onTaskStatus: publishTask,
       postToSubSession: postSub,
-      usage,
       notify,
       onQueueError,
     });
-    await Promise.all([memoryConsolidate.schedule(), memoryExpiry.schedule(), skillPromote.schedule()]);
+    await Promise.all([memoryConsolidate.schedule(), memoryExpiry.schedule()]);
 
     const dispatcher = new AgentDispatcher({
       stateDbPath: config.stateDbPath,
@@ -171,14 +187,49 @@ export class AgentWorkerRuntime {
       ensureBotSandbox: () => sessions.ensureBotSandbox(),
       onStatus: setupStatus,
       onError: onQueueError,
+      onStarted: (data, jobId) => {
+        if (!runtimeRef || !data.taskId) return;
+        const task = runtimeRef.tasks.update(data.taskId, {
+          status: "running",
+          queueJobId: jobId,
+          reason: "Agent is working",
+        });
+        if (task) runtimeRef.events.emit({ type: "task.status", task });
+      },
       onCompleted: (_data, result) => {
         if (runtimeRef) {
+          if (_data.taskId) {
+            const status = result.text === "[stopped]" ? "cancelled" : result.text.startsWith("Error:") ? "failed" : "completed";
+            const task = runtimeRef.tasks.update(_data.taskId, {
+              status,
+              reason: status === "completed" ? "Done" : status === "cancelled" ? "Stopped by user" : "Agent returned an error",
+              resultSummary: status === "completed" ? result.text.slice(0, 500) : null,
+              errorSummary: status === "failed" ? result.text.slice(0, 500) : null,
+            });
+            if (task) runtimeRef.events.emit({ type: "task.status", task });
+          }
           publishUserChatReply(runtimeRef, result);
           runtimeRef.publishQueueStatus();
         }
       },
       onFailed: (data, error) => {
         if (runtimeRef) {
+          if (data.taskId) {
+            const task = runtimeRef.tasks.update(data.taskId, {
+              status: "failed",
+              reason: "Agent run failed",
+              errorSummary: error.message,
+            });
+            if (task) {
+              runtimeRef.events.emit({ type: "task.status", task });
+              runtimeRef.notify({
+                kind: "task.failed",
+                title: task.title,
+                body: error.message,
+                link: task.relatedSessionId ? `/chat/${task.relatedSessionId}` : null,
+              });
+            }
+          }
           publishUserChatFailure(runtimeRef, data, error);
           void runtimeRef.flushSessionState();
           runtimeRef.publishQueueStatus();
@@ -200,10 +251,12 @@ export class AgentWorkerRuntime {
       sessions,
       soul,
       memory,
+      artifacts,
       usage,
       activeRuns,
       skills,
       runtimeStore,
+      tasks,
       capabilities,
       notifications,
       dispatcher,
@@ -211,8 +264,10 @@ export class AgentWorkerRuntime {
       memoryQueue,
       memoryConsolidate,
       memoryExpiry,
-      skillPromote,
-      [settings, skills, skillPromotions, memory, memoryRuns, notifications, usage, soulStore, runtimeStore],
+      skillCandidates,
+      skillCandidateQueue,
+      skillPromotions,
+      [settings, skills, skillCandidates, skillPromotions, memory, memoryRuns, artifacts, notifications, usage, soulStore, runtimeStore, tasks],
     );
     runtimeRef = runtime;
     return runtime;
@@ -253,7 +308,15 @@ export class AgentWorkerRuntime {
     if (command.kind === "enqueue_user_chat") {
       const payload = userChatPayload(command.payload);
       await this.sessionState.preloadSession(payload.conversationId);
-      const job = await this.dispatcher.enqueueUserChat(userChatPayload(command.payload));
+      const job = await this.dispatcher.enqueueUserChat(payload);
+      if (payload.taskId) {
+        const task = this.tasks.update(payload.taskId, {
+          runtimeCommandId: command.id,
+          queueJobId: job.jobId,
+          reason: "Queued for agent",
+        });
+        if (task) this.events.emit({ type: "task.status", task });
+      }
       this.publishQueueStatus();
       return job;
     }
@@ -318,7 +381,7 @@ export class AgentWorkerRuntime {
       this.memoryQueue.close(),
       this.memoryConsolidate.close(),
       this.memoryExpiry.close(),
-      this.skillPromote.close(),
+      this.skillCandidateQueue.close(),
       this.sessions.parkAll(),
       this.sessionState.flush(),
     ]);
@@ -362,7 +425,8 @@ function userChatPayload(payload: unknown): UserChatJobData {
   ) {
     throw new Error("Invalid user chat command payload");
   }
-  return { conversationId, text, createdAt, skillIds };
+  const taskId = typeof value.taskId === "string" ? value.taskId : undefined;
+  return { conversationId, text, createdAt, skillIds, ...(taskId ? { taskId } : {}) };
 }
 
 function payloadString(payload: unknown, key: string): string | undefined {

@@ -101,6 +101,7 @@ export class SandboxWorkerRuntime {
       return this.provider.createSession(
         stringField(value, "botId"),
         stringField(value, "hostWorkspacePath"),
+        stringField(value, "hostOutboxPath"),
         mountsField(value),
       );
     }
@@ -109,6 +110,7 @@ export class SandboxWorkerRuntime {
       return this.provider.recreate(
         stringField(value, "sessionId"),
         stringField(value, "hostWorkspacePath"),
+        stringField(value, "hostOutboxPath"),
         mountsField(value),
       );
     }

@@ -3,6 +3,8 @@ import type { MemoryKind, MemoryLabel } from "../../src/memory/types";
 import type { MemoryRunStatus, MemoryRunTrigger } from "../../src/memory/memory-runs";
 import type { NotificationKind } from "../../src/notifications/types";
 import type { UsagePurpose } from "../../src/usage/types";
+import type { CapabilityPolicyRule } from "../../src/security/capability-policy";
+import type { TaskSummary } from "../../src/tasks/types";
 import type {
   JsonValue,
   SerializableBotMessage,
@@ -86,6 +88,8 @@ export interface ProfileDto {
 export interface RuntimeCapabilitiesDto {
   bunVersion: string;
 }
+
+export type PermissionRuleDto = CapabilityPolicyRule;
 
 export interface SkillDto {
   id: string;
@@ -180,6 +184,8 @@ export interface NotificationDto {
   createdAt: string;
 }
 
+export type TaskDto = TaskSummary;
+
 export type SkillsCursor = { name: string; id: string; retrievedCount?: number };
 export type MemoriesCursor = { updatedAt: string; id: string; retrievedCount?: number };
 
@@ -211,8 +217,10 @@ export interface WebStateDto {
   memoryRuns: MemoryRunDto[];
   notifications: NotificationDto[];
   unreadNotifications: number;
+  tasks: TaskDto[];
   aiConfigured: boolean;
   runtimeCapabilities: RuntimeCapabilitiesDto;
+  permissionRules: PermissionRuleDto[];
 }
 
 export interface SetupGateStateDto {
@@ -233,6 +241,7 @@ export type SkillsPageStateDto = Pick<
 export type SettingsPageStateDto = Pick<
   WebStateDto,
   "settings" | "config" | "secret" | "fastSecret" | "parallelSearch" | "soul" | "profile" | "runtimeCapabilities"
+  | "permissionRules"
 >;
 
 export type SetupPageStateDto = Pick<
@@ -243,6 +252,8 @@ export type SetupPageStateDto = Pick<
 export type ThemesPageStateDto = Pick<WebStateDto, "settings">;
 export type UsagePageStateDto = Pick<WebStateDto, "settings">;
 export type NotificationsPageStateDto = Pick<WebStateDto, "notifications" | "unreadNotifications">;
+
+export type TasksPageStateDto = Pick<WebStateDto, "tasks" | "settings">;
 
 export interface SessionsPageStateDto {
   sessions: SessionSummaryDto[];

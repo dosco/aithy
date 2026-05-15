@@ -18,6 +18,7 @@ import { UnavailableSandboxProvider } from "../sandbox/unavailable-provider";
 import { SessionManager } from "../session/session-manager";
 import { seedSkillsIfEmpty } from "../skills/seed";
 import { SqliteSkillsStore } from "../skills/skills-store";
+import { SqliteSkillCandidateStore } from "../skills/candidate-store";
 import { SqliteSkillPromotionStore } from "../skills/promote-store";
 import { loadOrSeedSoul, saveSoul } from "../soul/service";
 import { SqliteSoulStore } from "../soul/sqlite-soul-store";
@@ -28,6 +29,8 @@ import { LiveEventHub } from "../web/live-events";
 import { globalMountsChanged } from "../settings/resolve";
 import { SqliteSettingsStore } from "../settings/store";
 import type { SettingsPatch, StoredSettings } from "../settings/types";
+import { SqliteArtifactStore } from "../artifacts/artifact-store";
+import { SqliteTaskStore } from "../tasks/task-store";
 import { clearManagedProviderSecrets, removeBotStateDir, removeMicrosandboxVm, removeRuntimeCache, removeSqliteFiles } from "./reset-files";
 import { describe, registerSignalHandlers } from "./signals";
 import { assertSupportedBunVersion } from "./bun-version";
@@ -38,6 +41,8 @@ import { QueueServiceClient } from "./services/queue/client";
 import { RemoteSessionStateStore } from "./services/queue/session-state-client";
 import { RuntimeStore, type SystemPermissionRequest } from "./runtime-store";
 import { permissionRequestEvent } from "../web/live-events";
+import { ruleOptionForRequest } from "../security/permission-gate";
+import type { CapabilityMatchKind } from "../security/capability-policy";
 export interface AithyRuntime {
   config: AppConfig;
   events: EventBus;
@@ -49,20 +54,25 @@ export interface AithyRuntime {
   profile?: UserProfile;
   settings: SqliteSettingsStore;
   skills: SqliteSkillsStore;
+  artifacts: SqliteArtifactStore;
   memory: SqliteMemoryStore;
   notifications: SqliteNotificationStore;
   notify(input: NotificationCreate): NotificationEntry;
   usage: SqliteUsageStore;
   memoryRuns: SqliteMemoryRunsStore;
   memoryConsolidate: MemoryConsolidateHandle;
+  skillCandidates: SqliteSkillCandidateStore;
   skillPromotions: SqliteSkillPromotionStore;
   activeRuns: ActiveRunRegistry;
   dispatcher: UserChatQueueClient;
   queue: QueueServiceClient;
   sessionState: RemoteSessionStateStore;
+  runtimeStore: RuntimeStore;
+  tasks: SqliteTaskStore;
   respondSystemPermission(
     requestId: string,
     decision: "allowed" | "denied",
+    persist?: CapabilityMatchKind,
   ): SystemPermissionRequest;
   assertReady(): void;
   updateSettings(patch: SettingsPatch, secrets?: RuntimeSecretOverrides): Promise<StoredSettings>;
@@ -139,9 +149,11 @@ class RuntimeImpl implements AithyRuntime {
     public profileStore: SqliteProfileStore,
     public settings: SqliteSettingsStore,
     public skills: SqliteSkillsStore,
+    public artifacts: SqliteArtifactStore,
     public memory: SqliteMemoryStore,
     public memoryRuns: SqliteMemoryRunsStore,
     public memoryConsolidate: MemoryConsolidateHandle,
+    public skillCandidates: SqliteSkillCandidateStore,
     public skillPromotions: SqliteSkillPromotionStore,
     public notifications: SqliteNotificationStore,
     public usage: SqliteUsageStore,
@@ -149,7 +161,8 @@ class RuntimeImpl implements AithyRuntime {
     public dispatcher: UserChatQueueClient,
     public queue: QueueServiceClient,
     public sessionState: RemoteSessionStateStore,
-    private readonly runtimeStore: RuntimeStore,
+    public readonly runtimeStore: RuntimeStore,
+    public readonly tasks: SqliteTaskStore,
   ) {}
 
   notify(input: NotificationCreate): NotificationEntry {
@@ -179,6 +192,7 @@ class RuntimeImpl implements AithyRuntime {
     const skills = new SqliteSkillsStore(config.stateDbPath);
     seedSkillsIfEmpty(skills);
     const skillPromotions = new SqliteSkillPromotionStore(config.stateDbPath);
+    const skillCandidates = new SqliteSkillCandidateStore(config.stateDbPath);
 
     const events = new EventBus();
     const live = new LiveEventHub();
@@ -187,10 +201,12 @@ class RuntimeImpl implements AithyRuntime {
     const queue = queueHandle.client;
     queue.subscribe((event) => live.publish(event));
     const memory = new SqliteMemoryStore(config.stateDbPath);
+    const artifacts = new SqliteArtifactStore(config.stateDbPath, config.workspaceRoot, config.outboxRoot);
     const memoryRuns = new SqliteMemoryRunsStore(config.stateDbPath);
     const notifications = new SqliteNotificationStore(config.stateDbPath);
     const usage = new SqliteUsageStore(config.stateDbPath);
     const runtimeStore = new RuntimeStore(config.stateDbPath);
+    const tasks = new SqliteTaskStore(config.stateDbPath);
 
     const soulStore = new SqliteSoulStore(config.stateDbPath);
     const soul = loadOrSeedSoul(soulStore);
@@ -199,6 +215,7 @@ class RuntimeImpl implements AithyRuntime {
 
     const sandbox = new UnavailableSandboxProvider();
     await mkdir(config.workspaceRoot, { recursive: true });
+    await mkdir(config.outboxRoot, { recursive: true });
     const activeRuns = new ActiveRunRegistry();
     const sessionState = new RemoteSessionStateStore(queue);
     await sessionState.preloadAll();
@@ -207,6 +224,7 @@ class RuntimeImpl implements AithyRuntime {
       sandbox,
       botId: config.botId,
       workspaceRoot: config.workspaceRoot,
+      outboxRoot: config.outboxRoot,
       events,
       ttlMs: config.sessionTtlMs,
       idleParkMs: config.idleParkMs,
@@ -237,9 +255,11 @@ class RuntimeImpl implements AithyRuntime {
       profileStore,
       settings,
       skills,
+      artifacts,
       memory,
       memoryRuns,
       memoryConsolidate,
+      skillCandidates,
       skillPromotions,
       notifications,
       usage,
@@ -248,6 +268,7 @@ class RuntimeImpl implements AithyRuntime {
       queue,
       sessionState,
       runtimeStore,
+      tasks,
     );
     runtimeRef = runtime;
     runtime.queueHandle = queueHandle;
@@ -275,11 +296,28 @@ class RuntimeImpl implements AithyRuntime {
   respondSystemPermission(
     requestId: string,
     decision: "allowed" | "denied",
+    persist?: CapabilityMatchKind,
   ): SystemPermissionRequest {
+    const existing = this.runtimeStore.permissionRequest(requestId);
+    if (!existing) throw new Error(`Permission request not found: ${requestId}`);
+    if (existing.status !== "pending") return existing;
+    if (decision === "allowed" && persist) {
+      const option = ruleOptionForRequest(existing, persist);
+      if (!option) throw new Error(`Permission request does not support ${persist}`);
+      this.runtimeStore.createCapabilityPolicyRule({
+        capability: existing.capability,
+        matchKind: option.kind,
+        matchValue: option.value,
+        source: "permission_card",
+        reason: `user allowed from permission prompt: ${existing.toolName}`,
+      });
+    }
     const request = this.runtimeStore.decidePermissionRequest(
       requestId,
       decision,
-      decision === "allowed" ? "user allowed once" : "user denied",
+      decision === "allowed"
+        ? persist ? `user allowed ${persist}` : "user allowed once"
+        : "user denied",
     );
     if (!request) throw new Error(`Permission request not found: ${requestId}`);
     this.live.publish(permissionRequestEvent(request));
@@ -420,12 +458,15 @@ class RuntimeImpl implements AithyRuntime {
     this.profileStore.close();
     this.settings.close();
     this.skills.close();
+    this.artifacts.close();
     this.skillPromotions.close();
+    this.skillCandidates.close();
     this.memory.close();
     this.memoryRuns.close();
     this.notifications.close();
     this.usage.close();
     this.runtimeStore.close();
+    this.tasks.close();
   }
 }
 async function doResetAithyRuntimeSystem(): Promise<AithyRuntime> {

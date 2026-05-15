@@ -11,6 +11,30 @@ export const conversationIdInput = z.object({
 export const permissionResponseInput = z.object({
   requestId: z.string().min(1),
   decision: z.enum(["allow", "deny"]),
+  persist: z.enum([
+    "global",
+    "exact_command",
+    "cwd_prefix",
+    "host_path_exact",
+    "host_path_prefix",
+    "website_origin",
+  ]).optional(),
+});
+
+export const permissionRuleDeleteInput = z.object({ id: z.string().min(1) });
+
+export const permissionRuleCreateInput = z.object({
+  capability: z.string().min(1).max(120),
+  matchKind: z.enum([
+    "global",
+    "exact_command",
+    "cwd_prefix",
+    "host_path_exact",
+    "host_path_prefix",
+    "website_origin",
+  ]),
+  matchValue: z.string().max(1000).nullable().optional(),
+  reason: z.string().max(500).optional(),
 });
 
 export const sendInput = z.object({

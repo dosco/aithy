@@ -1,7 +1,8 @@
 import { f, fn, type AxAgentFunction } from "@ax-llm/ax";
 import type { AppConfig } from "../../config/env";
 import { smartScrape } from "../../scraper/smart-spider";
-import { argsPreview } from "../../security/capability-broker";
+import { normalizeOrigin } from "../../security/capability-policy";
+import { requireToolPermission } from "../../security/permission-gate";
 import type { ToolContext } from "../tool-context";
 
 export function createWebFetchTools(
@@ -39,11 +40,16 @@ export function createWebFetchTools(
         code: "await web.fetch({ url: 'https://example.com/docs', task: 'Find install requirements and cite the source pages.' });",
       })
       .handler(async ({ url, task }) => {
-        ctx.capabilities?.require({
-          conversationId: ctx.session.conversationId,
+        const origin = normalizeOrigin(url) ?? url;
+        await requireToolPermission(ctx, {
           capability: "web.scrape",
           toolName: "web.fetch",
-          argsPreview: argsPreview({ url, task }),
+          command: `web fetch: ${url}`,
+          reason: task,
+          targetKind: "website",
+          targetValue: origin,
+          matchContext: { url, origin },
+          args: { url, task },
         });
         ctx.events.emit({
           type: "agent.turn",

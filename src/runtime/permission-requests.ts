@@ -13,6 +13,9 @@ export interface SystemPermissionRequest {
   cwd: string;
   reason: string;
   argsPreview: string | null;
+  targetKind: string | null;
+  targetValue: string | null;
+  matchOptionsJson: string | null;
   status: SystemPermissionStatus;
   createdAt: string;
   decidedAt: string | null;
@@ -27,6 +30,9 @@ export interface CreateSystemPermissionRequestInput {
   cwd: string;
   reason: string;
   argsPreview?: string;
+  targetKind?: string | null;
+  targetValue?: string | null;
+  matchOptionsJson?: string | null;
 }
 
 export function createPermissionRequest(
@@ -42,6 +48,9 @@ export function createPermissionRequest(
     cwd: input.cwd,
     reason: input.reason,
     argsPreview: input.argsPreview ?? null,
+    targetKind: input.targetKind ?? null,
+    targetValue: input.targetValue ?? null,
+    matchOptionsJson: input.matchOptionsJson ?? null,
     status: "pending",
     createdAt: new Date().toISOString(),
     decidedAt: null,
@@ -50,10 +59,10 @@ export function createPermissionRequest(
   db.query(`
     INSERT INTO permission_requests (
       id, conversation_id, capability, tool_name, command, cwd, reason,
-      args_preview, status, created_at, decided_at, decision_reason
+      args_preview, target_kind, target_value, match_options_json, status, created_at, decided_at, decision_reason
     ) VALUES (
       $id, $conversationId, $capability, $toolName, $command, $cwd, $reason,
-      $argsPreview, $status, $createdAt, $decidedAt, $decisionReason
+      $argsPreview, $targetKind, $targetValue, $matchOptionsJson, $status, $createdAt, $decidedAt, $decisionReason
     )
   `).run(bindRequest(request));
   return request;
@@ -147,6 +156,9 @@ interface PermissionRequestRow {
   cwd: string;
   reason: string;
   args_preview: string | null;
+  target_kind?: string | null;
+  target_value?: string | null;
+  match_options_json?: string | null;
   status: SystemPermissionStatus;
   created_at: string;
   decided_at: string | null;
@@ -163,6 +175,9 @@ function requestFromRow(row: PermissionRequestRow): SystemPermissionRequest {
     cwd: row.cwd,
     reason: row.reason,
     argsPreview: row.args_preview,
+    targetKind: row.target_kind ?? null,
+    targetValue: row.target_value ?? null,
+    matchOptionsJson: row.match_options_json ?? null,
     status: row.status,
     createdAt: row.created_at,
     decidedAt: row.decided_at,
@@ -180,6 +195,9 @@ function bindRequest(request: SystemPermissionRequest) {
     $cwd: request.cwd,
     $reason: request.reason,
     $argsPreview: request.argsPreview,
+    $targetKind: request.targetKind,
+    $targetValue: request.targetValue,
+    $matchOptionsJson: request.matchOptionsJson,
     $status: request.status,
     $createdAt: request.createdAt,
     $decidedAt: request.decidedAt,
