@@ -12,7 +12,8 @@ import { Button } from "@/components/ui/button";
 import { saveSettingsWithSetupGateRefresh, setCachedSetupGateState } from "@/lib/setup-gate";
 import { saveProfile } from "@/server/profile.functions";
 import type { SetupPageStateDto } from "@/server/dto";
-import { defaultModelForProvider } from "../../src/agent/ai-providers";
+import { defaultModelForProvider, isCustomOpenAIProvider } from "../../src/agent/ai-providers";
+import { providerRequiresApiKey } from "../../src/config/validate";
 
 const SETUP_SAVE_TIMEOUT_MS = 45_000;
 
@@ -36,6 +37,7 @@ export function SetupPage({
   const [model, setModel] = useState(
     initialState.config.aiModel || defaultModelForProvider(initialProvider),
   );
+  const [apiUrl, setApiUrl] = useState(initialState.config.aiApiUrl);
   const [apiKey, setApiKey] = useState("");
   const [userName, setUserName] = useState(initialState.profile.userName);
   const [userLocation, setUserLocation] = useState(initialState.profile.userLocation);
@@ -44,11 +46,16 @@ export function SetupPage({
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
 
   const needsModel = !initialState.aiConfigured;
-  const needsKey = provider !== "ollama";
+  const needsKey = providerRequiresApiKey(provider);
+  const needsApiUrl = isCustomOpenAIProvider(provider);
   const canSubmit =
     !busy
     && userName.trim().length > 0
-    && (!needsModel || (model.trim().length > 0 && (!needsKey || apiKey.trim().length > 0)));
+    && (!needsModel || (
+      model.trim().length > 0
+      && (!needsApiUrl || apiUrl.trim().length > 0)
+      && (!needsKey || apiKey.trim().length > 0)
+    ));
 
   async function startChatting() {
     if (!canSubmit) return;
@@ -71,7 +78,11 @@ export function SetupPage({
         const result = await withSetupTimeout(
           saveSettingsWithSetupGateRefresh({
             data: {
-              runtime: { aiProvider: provider, aiModel: model.trim() },
+              runtime: {
+                aiProvider: provider,
+                aiApiUrl: needsApiUrl ? apiUrl.trim() : null,
+                aiModel: model.trim(),
+              },
               apiKey: needsKey ? apiKey.trim() : undefined,
             },
           }),
@@ -79,7 +90,7 @@ export function SetupPage({
         );
         aiConfigured = result.aiConfigured;
         if (!aiConfigured) {
-          setError("Saved settings, but Aithy still needs a model and API key.");
+          setError("Saved profile, but Aithy still needs complete model settings.");
           return;
         }
       }
@@ -100,6 +111,7 @@ export function SetupPage({
 
   function changeProvider(nextProvider: string) {
     setProvider(nextProvider);
+    if (!isCustomOpenAIProvider(nextProvider)) setApiUrl("");
     if (!initialState.config.aiModel) {
       setModel(defaultModelForProvider(nextProvider));
     }
@@ -169,6 +181,18 @@ export function SetupPage({
                   placeholder="e.g. gpt-4.1"
                 />
               </Field>
+              {needsApiUrl ? (
+                <div className="sm:col-span-2">
+                  <Field label="Base URL">
+                    <input
+                      className="h-11 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5 text-sm outline-none transition placeholder:text-[rgb(var(--muted-foreground))] focus:border-[rgb(var(--foreground))]"
+                      value={apiUrl}
+                      onChange={(event) => setApiUrl(event.target.value)}
+                      placeholder="https://api.example.com/v1"
+                    />
+                  </Field>
+                </div>
+              ) : null}
             </div>
             <Field label={needsKey ? "API key" : "API key (not required)"}>
               <ApiKeyInput

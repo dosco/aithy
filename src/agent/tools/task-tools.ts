@@ -30,9 +30,15 @@ export function createTaskTools(ctx: ToolContext): AxAgentFunction[] {
           limit: 10,
         });
         return { tasks: tasks.map((task) => ({
-          ...task,
+          id: task.id,
+          title: task.title,
+          kind: task.kind,
+          status: task.status,
           reason: task.reason ?? undefined,
+          canRetry: task.canRetry,
+          canCancel: task.canCancel,
           relatedSessionId: task.relatedSessionId ?? undefined,
+          updatedAt: task.updatedAt,
         })) };
       })
       .build(),

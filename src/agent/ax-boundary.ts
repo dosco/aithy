@@ -26,6 +26,8 @@ export type AxAgentConfigBoundary = {
   runtime: unknown;
   functionDiscovery: boolean;
   onSkillsSearch?: unknown;
+  onLoadedSkills?: unknown;
+  onUsedSkills?: unknown;
   onMemoriesSearch?: unknown;
   onFunctionCall?: (call: AxFunctionCallTrace | AxAgentFunctionCall) => void | Promise<void>;
 };

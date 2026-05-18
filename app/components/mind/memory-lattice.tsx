@@ -1,108 +1,51 @@
 import { AnimatePresence, LayoutGroup } from "framer-motion";
-import { cn } from "@/lib/utils";
+import { Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import type { MemoryDto } from "@/server/dto";
-import {
-  MemoryEditorTile,
-  MemoryTile,
-  NewMemoryTile,
-  type MemoryEditorTileProps,
-} from "./memory-tile";
-import { KIND_GLYPH, KIND_TINT_TEXT } from "./kind-glyph";
-import { MEMORY_KINDS, type MemoryKind } from "../../../src/memory/types";
-
-export const NEW_MEMORY_ID = "__new__";
-
-export function KindFilterRow({
-  value,
-  onChange,
-}: {
-  value: MemoryKind | "all";
-  onChange: (v: MemoryKind | "all") => void;
-}) {
-  const items: Array<MemoryKind | "all"> = ["all", ...MEMORY_KINDS];
-  return (
-    <div className="flex flex-wrap items-center gap-1 rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/60 p-1">
-      {items.map((kind) => {
-        const active = value === kind;
-        const tint = kind === "all" ? "" : KIND_TINT_TEXT[kind];
-        const glyph = kind === "all" ? "·" : KIND_GLYPH[kind];
-        return (
-          <button
-            key={kind}
-            type="button"
-            onClick={() => onChange(kind)}
-            className={cn(
-              "group inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs transition",
-              active
-                ? "bg-[rgb(var(--foreground))] text-[rgb(var(--background))]"
-                : "text-[rgb(var(--muted-foreground))] hover:text-[rgb(var(--foreground))]",
-            )}
-          >
-            <span aria-hidden className={cn("text-sm leading-none", !active && tint)}>
-              {glyph}
-            </span>
-            <span>{kind}</span>
-          </button>
-        );
-      })}
-    </div>
-  );
-}
+import { MemoryTile } from "./memory-tile";
 
 interface MemoryLatticeProps {
   memories: MemoryDto[];
-  openId: string | null;
-  editorProps: MemoryEditorTileProps;
   onOpen: (entry: MemoryDto) => void;
   onStartNew: () => void;
   emptyAll: boolean;
+  emptyFiltered: boolean;
+  filter: string;
+  loading: boolean;
   sentinelRef?: ((node: HTMLElement | null) => void) | null;
 }
 
 export function MemoryLattice({
   memories,
-  openId,
-  editorProps,
   onOpen,
   onStartNew,
   emptyAll,
+  emptyFiltered,
+  filter,
+  loading,
   sentinelRef,
 }: MemoryLatticeProps) {
-  const newest = memories.reduce<MemoryDto | null>((acc, m) => {
-    if (!m.lastRecalledAt) return acc;
-    if (!acc || (acc.lastRecalledAt && m.lastRecalledAt > acc.lastRecalledAt)) return m;
+  const newest = memories.reduce<MemoryDto | null>((acc, memory) => {
+    if (!memory.lastRecalledAt) return acc;
+    if (!acc || (acc.lastRecalledAt && memory.lastRecalledAt > acc.lastRecalledAt)) return memory;
     return acc;
   }, null);
 
-  if (emptyAll && openId !== NEW_MEMORY_ID) {
-    return <EmptyLattice onStartNew={onStartNew} />;
-  }
+  if (emptyAll && !loading) return <EmptyLattice onStartNew={onStartNew} />;
+  if (emptyFiltered && !loading) return <EmptyFilter filter={filter} />;
 
   return (
     <LayoutGroup id="memory-lattice">
-      <ul
-        className="grid grid-flow-row-dense grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4"
-        style={{ gridAutoRows: "84px" }}
-      >
+      <ul className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         <AnimatePresence initial={false} mode="popLayout">
-          {openId === NEW_MEMORY_ID ? (
-            <MemoryEditorTile key="__editor_new" {...editorProps} />
-          ) : (
-            <NewMemoryTile key="__new" onClick={onStartNew} />
-          )}
-          {memories.map((entry) => {
-            if (openId === entry.id) {
-              return <MemoryEditorTile key={`__editor_${entry.id}`} {...editorProps} />;
-            }
-            return (
-              <MemoryTile
-                key={entry.id}
-                entry={entry}
-                onOpen={() => onOpen(entry)}
-                breathing={newest?.id === entry.id}
-              />
-            );
-          })}
+          {memories.map((entry) => (
+            <MemoryTile
+              key={entry.id}
+              entry={entry}
+              onOpen={() => onOpen(entry)}
+              breathing={newest?.id === entry.id}
+            />
+          ))}
         </AnimatePresence>
         {sentinelRef ? (
           <li ref={sentinelRef} aria-hidden className="col-span-full h-1" />
@@ -114,25 +57,25 @@ export function MemoryLattice({
 
 function EmptyLattice({ onStartNew }: { onStartNew: () => void }) {
   return (
-    <div className="grid place-items-center py-16">
-      <button
-        type="button"
-        onClick={onStartNew}
-        className="group flex flex-col items-center gap-3 rounded-2xl border border-dashed border-[rgb(var(--border))] px-10 py-8 text-center transition hover:border-[rgb(var(--foreground))]/40"
-      >
-        <pre
-          aria-hidden
-          className="select-none whitespace-pre font-mono text-[11px] leading-tight tracking-[0.2em] text-[rgb(var(--ascii))]"
-        >
-{`·   ·   ·
-  ◇   ·
-·   ·   ·`}
-        </pre>
-        <p className="max-w-sm text-sm text-[rgb(var(--muted-foreground))]">
-          i'm fresh — nothing remembered yet. tell me something or click here to write the first
-          memory.
-        </p>
-      </button>
+    <div className="rounded-lg border border-dashed border-[rgb(var(--border))] bg-[rgb(var(--panel))]/45 px-6 py-12 text-center">
+      <h2 className="text-xl font-medium">No memories yet</h2>
+      <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-[rgb(var(--muted-foreground))]">
+        Write a memory manually or let conversations build this library over time.
+      </p>
+      <Button type="button" onClick={onStartNew} className="mt-5 rounded-lg">
+        <Plus className="h-4 w-4" /> New memory
+      </Button>
+    </div>
+  );
+}
+
+function EmptyFilter({ filter }: { filter: string }) {
+  return (
+    <div className="rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/45 px-6 py-10 text-center">
+      <h2 className="text-lg font-medium">No matching memories</h2>
+      <p className="mt-2 text-sm text-[rgb(var(--muted-foreground))]">
+        {filter ? <>Nothing matches &ldquo;{filter}&rdquo;. Try a different search or filter.</> : "Try a different filter."}
+      </p>
     </div>
   );
 }

@@ -2,6 +2,7 @@ import {
   AxAIServiceAbortedError,
   type AxAgentSkillResult,
   type AxAgentSkillsSearchFn,
+  type AxAgentUsedSkill,
 } from "@ax-llm/ax";
 import type { ActiveRunRegistry } from "./active-runs";
 import type { StoppableProgram } from "./active-runs";
@@ -9,11 +10,14 @@ import type { ChannelMessage, ChannelReply } from "../channel/types";
 import type { AppConfig } from "../config/env";
 import type { EventBus } from "../events/bus";
 import type { SqliteMemoryStore } from "../memory/memory-store";
+import type { SqliteEpisodeStore } from "../episodes/episode-store";
 import type { SqliteArtifactStore } from "../artifacts/artifact-store";
 import type { MemoryQueue } from "../memory/memory-queue";
 import type { NotificationCreate } from "../notifications/types";
 import { formatMemoryForRecall } from "../memory/format";
+import { formatEpisodeForRecall } from "../episodes/format";
 import type { SqliteUsageStore } from "../usage/usage-store";
+import type { SqliteSkillsStore } from "../skills/skills-store";
 import { captureProgramUsage } from "../usage/capture";
 import type { SandboxProvider } from "../sandbox/provider";
 import type { SessionManager } from "../session/session-manager";
@@ -45,6 +49,7 @@ import { createAgentTools } from "./tools";
 import type { CapabilityBroker } from "../security/capability-broker";
 import type { RuntimeStore } from "../runtime/runtime-store";
 import type { SqliteTaskStore } from "../tasks/task-store";
+import type { AutomationToolActions } from "../automations/tool-actions";
 import { appendChatLogToTraces } from "./trace-writer";
 import {
   prefetchUrlsForMessage,
@@ -65,11 +70,16 @@ export interface RunMessageDeps {
   soul?: SoulProfile;
   profile?: UserProfile;
   memory?: SqliteMemoryStore;
+  episodes?: SqliteEpisodeStore;
   artifacts?: SqliteArtifactStore;
   memoryQueue?: MemoryQueue;
   usage?: SqliteUsageStore;
   skillsSearch?: AxAgentSkillsSearchFn;
   skills?: readonly AxAgentSkillResult[];
+  skillsStore?: SqliteSkillsStore;
+  loadedSkillIds?: Set<string>;
+  onLoadedSkills?: (results: readonly AxAgentSkillResult[]) => void | Promise<void>;
+  onUsedSkills?: (usedSkills: readonly AxAgentUsedSkill[]) => void | Promise<void>;
   agentFactory?: typeof createAithyAgent;
   activeRuns?: ActiveRunRegistry;
   notify?: (input: NotificationCreate) => void;
@@ -77,6 +87,7 @@ export interface RunMessageDeps {
   capabilities?: CapabilityBroker;
   runtimeStore?: RuntimeStore;
   tasks?: SqliteTaskStore;
+  automations?: AutomationToolActions;
   taskId?: string;
   flushSessionState?: () => Promise<void>;
   urlPrefetcher?: UrlPrefetcher;
@@ -104,6 +115,8 @@ export async function runMessage(
     workspacePath: deps.config.workspaceRoot,
     events: deps.events,
     memory: deps.memory,
+    skills: deps.skillsStore,
+    loadedSkillIds: deps.loadedSkillIds,
     enqueueRemember: memoryQueue
       ? (req) => memoryQueue.enqueueExplicit(req.sessionId, req.hint)
       : undefined,
@@ -114,6 +127,7 @@ export async function runMessage(
     capabilities: deps.capabilities,
     runtimeStore: deps.runtimeStore,
     tasks: deps.tasks,
+    automations: deps.automations,
     taskId: deps.taskId,
     flushSessionState: deps.flushSessionState,
   };
@@ -132,16 +146,39 @@ export async function runMessage(
   };
   const onSkillsSearch = wrapSkillsSearch(deps.skillsSearch, toolCallMessages, publishToolCall);
   const memoryStore = deps.memory;
-  const onMemoriesSearch: AxAgentMemoriesSearchFn | undefined = memoryStore
+  const episodeStore = deps.episodes;
+  const onMemoriesSearch: AxAgentMemoriesSearchFn | undefined = memoryStore || episodeStore
     ? async (searches, alreadyLoaded) => {
-      const hits = await memoryStore.search([...searches], {
-        limit: 5,
-        excludeIds: alreadyLoaded.map((m) => m.id),
-      });
-      const results = hits.map((m) => ({
-        id: m.id,
-        content: formatMemoryForRecall(m),
-      }));
+      const excludeMemoryIds = alreadyLoaded
+        .map((m) => m.id)
+        .flatMap((id) => id.startsWith("memory:") ? [id.slice("memory:".length)] : id.startsWith("episode:") ? [] : [id]);
+      const excludeEpisodeIds = alreadyLoaded
+        .map((m) => m.id)
+        .flatMap((id) => id.startsWith("episode:") ? [id.slice("episode:".length)] : []);
+      const [memoryHits, episodeHits] = await Promise.all([
+        memoryStore
+          ? memoryStore.search([...searches], {
+              limit: 5,
+              excludeIds: excludeMemoryIds,
+            })
+          : [],
+        episodeStore
+          ? episodeStore.search([...searches], {
+              limit: 3,
+              excludeIds: excludeEpisodeIds,
+            })
+          : [],
+      ]);
+      const results = [
+        ...memoryHits.map((m) => ({
+          id: `memory:${m.id}`,
+          content: formatMemoryForRecall(m),
+        })),
+        ...episodeHits.map((episode) => ({
+          id: `episode:${episode.id}`,
+          content: formatEpisodeForRecall(episode),
+        })),
+      ];
       const toolMessage: AssistantToolCallMessage = {
         role: "assistant",
         kind: "tool_call",
@@ -171,6 +208,8 @@ export async function runMessage(
     conversationId: message.conversationId,
     soul: deps.soul,
     onSkillsSearch,
+    onLoadedSkills: deps.onLoadedSkills,
+    onUsedSkills: deps.onUsedSkills,
     onMemoriesSearch,
     onFunctionCall: (call) => {
       if (!shouldRecordFunctionCall(call)) return;

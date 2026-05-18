@@ -25,6 +25,8 @@ export interface UserChatJobData {
   createdAt: string;
   skillIds: readonly string[];
   taskId?: string;
+  automationId?: string;
+  automationRunId?: string;
 }
 
 export interface UserChatJobResult {

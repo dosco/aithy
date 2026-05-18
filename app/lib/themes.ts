@@ -55,7 +55,7 @@ export interface ThemeSwatch {
 }
 
 export const themePreviews: Record<ThemeName, ThemeSwatch> = {
-  paper: { bg: "#f8f7f4", fg: "#101010", panel: "#fffffc", muted: "#ebeae6", accent: "#0a24ff", ascii: "#9a58ff" },
+  paper: { bg: "#faf9f5", fg: "#11110f", panel: "#fffef9", muted: "#edebe4", accent: "#26333f", ascii: "#606662" },
   graphite: { bg: "#eeeeeb", fg: "#111212", panel: "#fafaf7", muted: "#e0e0dc", accent: "#222222", ascii: "#565656" },
   "violet-ascii": { bg: "#faf7ff", fg: "#130d1e", panel: "#fffcff", muted: "#efe7ff", accent: "#9655ff", ascii: "#a45cff" },
   "terminal-glow": { bg: "#0a140e", fg: "#dcffec", panel: "#0d1a14", muted: "#13241a", accent: "#5affa5", ascii: "#50ffa0" },

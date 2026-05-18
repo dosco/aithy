@@ -1,5 +1,5 @@
 import doclingProcessor from "../../config/skills/docling-processor.md" with { type: "text" };
-import { parseSkillMarkdown } from "./frontmatter";
+import { frontmatterString, parseSkillMarkdown } from "./frontmatter";
 import type { SqliteSkillsStore, SkillUpsert } from "./skills-store";
 
 const seedSources: Record<string, string> = {
@@ -17,10 +17,11 @@ function seedToUpsert(id: string, raw: string): SkillUpsert {
   const { frontmatter, body } = parseSkillMarkdown(raw);
   return {
     id,
-    name: frontmatter.name ?? id,
-    description: frontmatter.description ?? "",
+    name: frontmatterString(frontmatter, ["name"]) ?? id,
+    description: frontmatterString(frontmatter, ["description"]) ?? "",
+    whenToUse: frontmatterString(frontmatter, ["when_to_use", "when-to-use"]),
     body,
-    allowedTools: frontmatter["allowed-tools"] ?? null,
-    tags: frontmatter.tags ?? null,
+    allowedTools: frontmatterString(frontmatter, ["allowed-tools", "allowed_tools", "tools"]),
+    tags: frontmatterString(frontmatter, ["tags"]),
   };
 }

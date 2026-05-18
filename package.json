@@ -25,7 +25,7 @@
     "ci": "bun ci && bun run check"
   },
   "dependencies": {
-    "@ax-llm/ax": "^21.0.5",
+    "@ax-llm/ax": "21.0.8",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@radix-ui/react-popover": "1.1.15",
     "@radix-ui/react-select": "2.2.6",

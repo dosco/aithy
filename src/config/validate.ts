@@ -1,4 +1,5 @@
 import type { AppConfig } from "./env";
+import { isCustomOpenAIProvider } from "../agent/ai-providers";
 
 const providersWithoutApiKey = new Set(["ollama"]);
 
@@ -7,19 +8,44 @@ const providersWithoutApiKey = new Set(["ollama"]);
  * actually run? Drives the /setup gate in the UI.
  */
 export function isAiConfigured(config: AppConfig): boolean {
-  if (!config.aiModel) return false;
-  if (requiresApiKey(config.aiProvider) && !config.aiApiKey) return false;
-  return true;
+  return aiConfigurationIssues(config).length === 0;
 }
 
-export function assertStartupConfig(config: AppConfig): void {
-  if (isAiConfigured(config)) return;
+export function aiConfigurationIssues(config: AppConfig): string[] {
   const missing: string[] = [];
   if (!config.aiModel) missing.push("model");
+  if (isCustomOpenAIProvider(config.aiProvider) && !config.aiApiUrl) {
+    missing.push("OpenAI-compatible base URL");
+  }
   if (requiresApiKey(config.aiProvider) && !config.aiApiKey) {
     missing.push("provider API key");
   }
+  return missing;
+}
+
+export function fastAiConfigurationIssues(config: AppConfig): string[] {
+  if (!config.fastAiProvider) return [];
+  const missing: string[] = [];
+  if (isCustomOpenAIProvider(config.fastAiProvider) && !config.fastAiApiUrl) {
+    missing.push("fast OpenAI-compatible base URL");
+  }
+  const fastApiKey = config.fastAiProvider === config.aiProvider
+    ? config.fastAiApiKey ?? config.aiApiKey
+    : config.fastAiApiKey;
+  if (requiresApiKey(config.fastAiProvider) && !fastApiKey) {
+    missing.push("fast provider API key");
+  }
+  return missing;
+}
+
+export function assertStartupConfig(config: AppConfig): void {
+  const missing = aiConfigurationIssues(config);
+  if (missing.length === 0) return;
   throw new Error(`Aithy requires AI configuration: missing ${missing.join(", ")}`);
+}
+
+export function providerRequiresApiKey(provider: string): boolean {
+  return requiresApiKey(provider);
 }
 
 function requiresApiKey(provider: string): boolean {

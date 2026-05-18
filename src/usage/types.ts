@@ -2,6 +2,7 @@ export type UsagePurpose =
   | "chat"
   | "memory.triage"
   | "memory.consolidate"
+  | "memory.dream"
   | "skill.promote"
   | "other";
 

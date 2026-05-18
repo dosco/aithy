@@ -4,6 +4,7 @@ export const PURPOSE_TINT: Record<string, string> = {
   chat: "fill-sky-500",
   "memory.triage": "fill-violet-500",
   "memory.consolidate": "fill-emerald-500",
+  "memory.dream": "fill-fuchsia-500",
   "skill.promote": "fill-amber-500",
   other: "fill-zinc-500",
 };
@@ -12,6 +13,7 @@ export const PURPOSE_LABEL: Record<string, string> = {
   chat: "chat",
   "memory.triage": "memory triage",
   "memory.consolidate": "memory consolidate",
+  "memory.dream": "memory dream",
   "skill.promote": "skill promote",
   other: "other",
 };

@@ -15,6 +15,7 @@ import { GlobalMountsSection } from "@/components/settings-global-mounts";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { ConfigDto, SecretStatusDto } from "@/server/dto";
+import { isCustomOpenAIProvider } from "../../src/agent/ai-providers";
 
 interface RuntimeTabProps {
   config: ConfigDto;
@@ -55,6 +56,18 @@ export function ModelSettingsTab(props: ModelTabProps) {
               onClear={() => props.setPrimaryClearAction("model")}
             />
           </Field>
+          {isCustomOpenAIProvider(config.aiProvider) ? (
+            <div className="sm:col-span-2">
+              <Field label="Base URL">
+                <input
+                  className={fieldClass}
+                  value={config.aiApiUrl}
+                  onChange={(event) => setConfigValue(setConfig, "aiApiUrl", event.target.value)}
+                  placeholder="https://api.example.com/v1"
+                />
+              </Field>
+            </div>
+          ) : null}
         </div>
         <Field label="API key">
           <ApiKeyInput
@@ -85,6 +98,18 @@ export function ModelSettingsTab(props: ModelTabProps) {
               onChange={(value) => setConfigValue(setConfig, "fastAiModel", value)}
             />
           </Field>
+          {isCustomOpenAIProvider(config.fastAiProvider) ? (
+            <div className="sm:col-span-2">
+              <Field label="Base URL">
+                <input
+                  className={fieldClass}
+                  value={config.fastAiApiUrl}
+                  onChange={(event) => setConfigValue(setConfig, "fastAiApiUrl", event.target.value)}
+                  placeholder="https://api.example.com/v1"
+                />
+              </Field>
+            </div>
+          ) : null}
         </div>
         <Field label="API key">
           <ApiKeyInput

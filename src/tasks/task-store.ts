@@ -5,6 +5,8 @@ import { applySqliteMigrations } from "../sqlite/migrations";
 import { taskMigrations } from "./migrations";
 import {
   ACTIVE_TASK_STATUSES,
+  type CreateOrReusePlannedTaskInput,
+  type CreateOrReusePlannedTaskResult,
   NOT_ACTIVE_TASK_STATUSES,
   type CreateTaskInput,
   type TaskEventRecord,
@@ -21,6 +23,7 @@ interface TaskRow {
   kind: TaskRecord["kind"];
   status: TaskStatus;
   title: string;
+  dedupe_key: string | null;
   conversation_id: string | null;
   related_session_id: string | null;
   runtime_command_id: string | null;
@@ -68,6 +71,7 @@ export class SqliteTaskStore {
       kind: input.kind,
       status: "planned",
       title: input.title,
+      dedupeKey: input.dedupeKey ?? null,
       conversationId: input.conversationId ?? null,
       relatedSessionId: input.relatedSessionId ?? input.conversationId ?? null,
       runtimeCommandId: null,
@@ -88,10 +92,10 @@ export class SqliteTaskStore {
     };
     this.db.query(`
       INSERT INTO tasks (
-        id, kind, status, title, conversation_id, related_session_id,
+        id, kind, status, title, dedupe_key, conversation_id, related_session_id,
         retry_of_task_id, attempt, reason, metadata_json, created_at, updated_at
       ) VALUES (
-        $id, $kind, $status, $title, $conversationId, $relatedSessionId,
+        $id, $kind, $status, $title, $dedupeKey, $conversationId, $relatedSessionId,
         $retryOfTaskId, $attempt, $reason, $metadata, $createdAt, $updatedAt
       )
     `).run({
@@ -99,6 +103,7 @@ export class SqliteTaskStore {
       $kind: task.kind,
       $status: task.status,
       $title: task.title,
+      $dedupeKey: task.dedupeKey,
       $conversationId: task.conversationId,
       $relatedSessionId: task.relatedSessionId,
       $retryOfTaskId: task.retryOfTaskId,
@@ -110,6 +115,26 @@ export class SqliteTaskStore {
     });
     this.recordEvent(task.id, task.status, task.reason, now);
     return task;
+  }
+
+  createOrReusePlanned(input: CreateOrReusePlannedTaskInput): CreateOrReusePlannedTaskResult {
+    const existing = this.getPlannedByDedupeKey(input.dedupeKey);
+    if (existing) return this.reusePlanned(existing, input.update);
+
+    try {
+      return {
+        task: this.create({
+          ...input.create,
+          dedupeKey: input.dedupeKey,
+        }),
+        reused: false,
+      };
+    } catch (error) {
+      if (!isDedupeKeyConstraintError(error)) throw error;
+      const raced = this.getPlannedByDedupeKey(input.dedupeKey);
+      if (!raced) throw error;
+      return this.reusePlanned(raced, input.update);
+    }
   }
 
   get(id: string): TaskRecord | null {
@@ -227,6 +252,27 @@ export class SqliteTaskStore {
     this.db.close();
   }
 
+  private getPlannedByDedupeKey(dedupeKey: string): TaskRecord | null {
+    const row = this.db.query(`
+      SELECT * FROM tasks
+      WHERE dedupe_key = $dedupeKey AND status = 'planned'
+      ORDER BY updated_at DESC, id DESC
+      LIMIT 1
+    `).get({ $dedupeKey: dedupeKey }) as TaskRow | undefined;
+    return row ? rowToTask(row) : null;
+  }
+
+  private reusePlanned(
+    existing: TaskRecord,
+    patch: CreateOrReusePlannedTaskInput["update"],
+  ): CreateOrReusePlannedTaskResult {
+    if (!patch) return { task: existing, reused: true };
+    return {
+      task: this.update(existing.id, patch) ?? existing,
+      reused: true,
+    };
+  }
+
   private listByStatuses(
     statuses: TaskStatus[] | undefined,
     input: { conversationId?: string | null; limit?: number },
@@ -273,6 +319,7 @@ function rowToTask(row: TaskRow): TaskRecord {
     kind: row.kind,
     status: row.status,
     title: row.title,
+    dedupeKey: row.dedupe_key,
     conversationId: row.conversation_id,
     relatedSessionId: row.related_session_id,
     runtimeCommandId: row.runtime_command_id,
@@ -304,6 +351,12 @@ function parseObject(raw: string): Record<string, unknown> {
 
 function isTerminal(status: TaskStatus): boolean {
   return NOT_ACTIVE_TASK_STATUSES.includes(status);
+}
+
+function isDedupeKeyConstraintError(error: unknown): boolean {
+  return error instanceof Error
+    && error.message.includes("UNIQUE constraint failed")
+    && error.message.includes("tasks.dedupe_key");
 }
 
 function uniqueById(tasks: TaskRecord[]): TaskRecord[] {

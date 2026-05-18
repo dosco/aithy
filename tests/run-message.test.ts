@@ -327,7 +327,7 @@ describe("runMessage", () => {
           toolArgs: { queries: ["Vancouver"], excludeIds: [] },
           toolResult: {
             matches: [expect.objectContaining({
-              id: "mem-1",
+              id: "memory:mem-1",
               contentPreview: expect.stringContaining("Favorite city"),
             })],
           },

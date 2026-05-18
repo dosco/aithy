@@ -32,9 +32,9 @@ export function ArtifactCard({ artifact }: { artifact: ArtifactMessage }) {
   }
 
   return (
-    <div className="app-chat-bubble-frame w-fit max-w-[min(72%,36rem)] overflow-hidden rounded-[18px] border border-[rgb(var(--border))] bg-[rgb(var(--panel))] text-sm shadow-[0_14px_30px_rgba(24,24,27,0.08)]">
+    <div className="app-chat-bubble-frame w-fit max-w-[min(62%,30rem)] overflow-hidden rounded-lg border border-[rgb(var(--border)/0.42)] bg-[rgb(var(--panel))] text-sm shadow-[0_2px_8px_rgba(24,24,27,0.05)]">
       <div className="flex items-start gap-3 px-4 py-3">
-        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[rgb(var(--muted))] text-[rgb(var(--muted-foreground))]">
+        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-[rgb(var(--muted))] text-[rgb(var(--muted-foreground))]">
           <Icon className="h-4 w-4" />
         </div>
         <div className="min-w-0 flex-1">
@@ -56,7 +56,7 @@ export function ArtifactCard({ artifact }: { artifact: ArtifactMessage }) {
                 type="button"
                 aria-label={copied ? "Path copied" : "Copy artifact path"}
                 title={copied ? "Path copied" : "Copy artifact path"}
-                className="grid h-8 w-8 place-items-center rounded-full text-[rgb(var(--muted-foreground))] transition-colors hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
+                className="grid h-8 w-8 place-items-center rounded-md text-[rgb(var(--muted-foreground))] transition-colors hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
                 onClick={copyPath}
               >
                 {copied ? <Check className="h-4 w-4" /> : <Clipboard className="h-4 w-4" />}
@@ -68,7 +68,7 @@ export function ArtifactCard({ artifact }: { artifact: ArtifactMessage }) {
                   aria-controls={detailsId}
                   aria-label={expanded ? "Collapse artifact preview" : "Expand artifact preview"}
                   title={expanded ? "Collapse artifact preview" : "Expand artifact preview"}
-                  className="grid h-8 w-8 place-items-center rounded-full text-[rgb(var(--muted-foreground))] transition-colors hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
+                  className="grid h-8 w-8 place-items-center rounded-md text-[rgb(var(--muted-foreground))] transition-colors hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
                   onClick={() => setExpanded((value) => !value)}
                 >
                   <ChevronDown className={`h-4 w-4 transition-transform ${expanded ? "rotate-180" : ""}`} />
@@ -82,13 +82,13 @@ export function ArtifactCard({ artifact }: { artifact: ArtifactMessage }) {
               href={artifact.openUrl}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex h-8 items-center justify-center gap-2 rounded-full border border-[rgb(var(--border))] px-3 transition hover:bg-[rgb(var(--muted))]"
+              className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-[rgb(var(--border)/0.5)] px-3 transition hover:bg-[rgb(var(--muted))]"
             >
               <ExternalLink className="h-4 w-4" /> Open
             </a>
             <a
               href={artifact.downloadUrl}
-              className="inline-flex h-8 items-center justify-center gap-2 rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--foreground))] px-3 text-[rgb(var(--background))] transition hover:opacity-90"
+              className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-transparent bg-[rgb(var(--foreground))] px-3 text-[rgb(var(--background))] transition hover:opacity-90"
             >
               <Download className="h-4 w-4" /> Download
             </a>

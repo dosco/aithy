@@ -6,6 +6,9 @@ export type NotificationKind =
   | "session.clarification"
   | "skill.suggested"
   | "task.failed"
+  | "automation.completed"
+  | "automation.needs_attention"
+  | "automation.failed"
   | "mount.added"
   | "info";
 

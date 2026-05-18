@@ -12,6 +12,7 @@ export type TaskKind =
   | "memory.explicit"
   | "memory.consolidate"
   | "memory.expiry"
+  | "memory.dream"
   | "skill.candidate"
   | "skill.promote";
 
@@ -22,6 +23,7 @@ export interface TaskRecord {
   kind: TaskKind;
   status: TaskStatus;
   title: string;
+  dedupeKey: string | null;
   conversationId: string | null;
   relatedSessionId: string | null;
   runtimeCommandId: string | null;
@@ -44,12 +46,24 @@ export interface TaskRecord {
 export interface CreateTaskInput {
   kind: TaskKind;
   title: string;
+  dedupeKey?: string | null;
   conversationId?: string | null;
   relatedSessionId?: string | null;
   retryOfTaskId?: string | null;
   attempt?: number;
   reason?: string | null;
   metadata?: Record<string, unknown>;
+}
+
+export interface CreateOrReusePlannedTaskInput {
+  dedupeKey: string;
+  create: CreateTaskInput;
+  update?: Omit<TaskPatch, "status">;
+}
+
+export interface CreateOrReusePlannedTaskResult {
+  task: TaskRecord;
+  reused: boolean;
 }
 
 export interface TaskPatch {
@@ -74,10 +88,23 @@ export interface TaskSummary {
   kind: TaskKind;
   status: TaskStatus;
   reason: string | null;
+  resultSummary: string | null;
+  errorSummary: string | null;
   canRetry: boolean;
   canCancel: boolean;
+  conversationId: string | null;
   relatedSessionId: string | null;
+  runtimeCommandId: string | null;
+  queueJobId: string | null;
+  memoryRunId: string | null;
+  skillCandidateId: string | null;
+  permissionRequestId: string | null;
+  retryOfTaskId: string | null;
+  attempt: number;
+  createdAt: string;
   updatedAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
 }
 
 export interface TaskEventRecord {
@@ -99,4 +126,3 @@ export const NOT_ACTIVE_TASK_STATUSES: readonly TaskStatus[] = [
   "failed",
   "cancelled",
 ];
-

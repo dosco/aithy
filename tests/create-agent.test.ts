@@ -63,7 +63,12 @@ describe("createAithyAgent", () => {
     expect(description).toContain("call web.fetch on the URL before answering");
     expect(description).toContain("use artifact.write");
     expect(description).toContain("call artifact.publish");
+    expect(description).toContain("Existing/published artifacts");
+    expect(description).toContain("conversationHistory as \"Published artifact:\" lines");
     expect(description).toContain("bot-shared");
+    expect(description).toContain("retrieval judged potentially relevant");
+    expect(description).toContain("Treat them as optional context");
+    expect(description).toContain("validity windows and evidence");
     expect(description).not.toContain("microVM");
     expect(description).not.toContain("/cache");
     expect(description).not.toContain("Mounting policy");
@@ -80,6 +85,8 @@ describe("createAithyAgent", () => {
     expect(description).toContain("call web.fetch on the URL before answering");
     expect(description).toContain("use artifact.write");
     expect(description).toContain("call artifact.publish");
+    expect(description).toContain("Existing/published artifacts");
+    expect(description).toContain("conversationHistory as \"Published artifact:\" lines");
     expect(description).toContain("Mounting policy");
     // New topology: top-level /mounts/<name> + bot-shared /workspace, no /cache
     // mount, no "per-session" framing.
@@ -113,6 +120,8 @@ describe("createAithyAgent", () => {
     expect(description).toContain("context distiller");
     expect(description).toContain("inputs.conversationHistory");
     expect(description).toContain("resolvedRequest");
+    expect(description).toContain("Published artifact");
+    expect(description).toContain("exact sandboxPath");
     expect(description).toContain("yes yes yes");
     expect(description).toContain("downtown Vancouver");
     expect(description).toContain("treat that URL as concrete context");

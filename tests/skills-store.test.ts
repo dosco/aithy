@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, test } from "bun:test";
 import { SqliteSkillsStore, formatSkillContent } from "../src/skills/skills-store";
 import { seedSkillsIfEmpty } from "../src/skills/seed";
+import { diffSkillBundle, parseSkillBundleFiles } from "../src/skills/bundle";
 
 async function tempDbPath(): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), "aithy-skills-"));
@@ -273,6 +274,151 @@ describe("SqliteSkillsStore", () => {
       tags: null,
     });
     expect(store.countDistinctTools()).toBe(3);
+  });
+
+  test("stores bundle files, skill links, and usage events", async () => {
+    const store = new SqliteSkillsStore(await tempDbPath());
+    const skill = store.upsert({
+      id: "bundle-skill",
+      name: "Bundle Skill",
+      description: "Uses references.",
+      whenToUse: "When a bundle is needed.",
+      body: "Read [Ax Agent](skill:ax-agent).",
+      allowedTools: null,
+      tags: "bundle",
+      disableModelInvocation: true,
+      userInvocable: false,
+      files: [{ path: "refs/guide.md", content: "extra guidance" }],
+    });
+
+    expect(skill.when_to_use).toBe("When a bundle is needed.");
+    expect(skill.disable_model_invocation).toBe(true);
+    expect(skill.user_invocable).toBe(false);
+    expect(skill.files.map((file) => file.path)).toEqual(["refs/guide.md"]);
+    expect(skill.links).toEqual(["ax-agent"]);
+    expect(store.getFile("bundle-skill", "refs/guide.md")?.content).toBe("extra guidance");
+
+    store.recordEvent({
+      eventType: "used",
+      skillId: "bundle-skill",
+      sessionId: "s1",
+      taskId: "t1",
+      stage: "task",
+      reason: "followed supporting guidance",
+    });
+    const updated = store.get("bundle-skill")!;
+    expect(updated.used_count).toBe(1);
+    expect(updated.last_used_at).toBeTruthy();
+    expect(updated.recent_usage[0]).toMatchObject({
+      reason: "followed supporting guidance",
+      stage: "task",
+    });
+  });
+
+  test("resolveSearchQueries prefers id then name before FTS fallback", async () => {
+    const store = new SqliteSkillsStore(await tempDbPath());
+    store.upsert({
+      id: "coffee-finder",
+      name: "Coffee Finder",
+      description: "Find cafes.",
+      body: "",
+      allowedTools: null,
+      tags: "coffee",
+    });
+    store.upsert({
+      id: "shell-helper",
+      name: "Shell Helper",
+      description: "Careful shell workflow.",
+      body: "",
+      allowedTools: null,
+      tags: "terminal",
+    });
+    store.upsert({
+      id: "espresso-guide",
+      name: "Cafe Guide",
+      description: "Cafe planning.",
+      body: "",
+      allowedTools: null,
+      tags: "espresso",
+    });
+
+    expect(store.resolveSearchQueries(["coffee-finder"]).map((match) => `${match.skill.id}:${match.matchKind}`))
+      .toEqual(["coffee-finder:id"]);
+    expect(store.resolveSearchQueries(["coffee finder"]).map((match) => `${match.skill.id}:${match.matchKind}`))
+      .toEqual(["coffee-finder:id"]);
+    expect(store.resolveSearchQueries(["Shell Helper"]).map((match) => `${match.skill.id}:${match.matchKind}`))
+      .toEqual(["shell-helper:id"]);
+    expect(store.resolveSearchQueries(["Cafe Guide"]).map((match) => `${match.skill.id}:${match.matchKind}`))
+      .toEqual(["espresso-guide:name"]);
+    expect(store.resolveSearchQueries(["terminal"]).map((match) => `${match.skill.id}:${match.matchKind}`))
+      .toEqual(["shell-helper:search"]);
+  });
+});
+
+describe("parseSkillBundleFiles", () => {
+  test("parses a folder upload into a skill bundle", () => {
+    const bundle = parseSkillBundleFiles([
+      {
+        path: "ax-agent/SKILL.md",
+        content: [
+          "---",
+          "name: Ax Agent",
+          "description: Agent guidance",
+          "when_to_use: When building agents",
+          "allowed-tools: Read Bash",
+          "tags: [ax, agents]",
+          "disable-model-invocation: true",
+          "---",
+          "",
+          "# Steps",
+        ].join("\n"),
+      },
+      { path: "ax-agent/references/runtime.md", content: "Runtime notes" },
+    ]);
+
+    expect(bundle).toMatchObject({
+      id: "ax-agent",
+      name: "Ax Agent",
+      description: "Agent guidance",
+      whenToUse: "When building agents",
+      allowedTools: "Read Bash",
+      tags: "ax agents",
+      disableModelInvocation: true,
+    });
+    expect(bundle.files).toEqual([{ path: "references/runtime.md", content: "Runtime notes" }]);
+  });
+
+  test("rejects missing entrypoint and unsafe paths", () => {
+    expect(() => parseSkillBundleFiles([{ path: "note.md", content: "x" }])).toThrow("SKILL.md");
+    expect(() => parseSkillBundleFiles([
+      { path: "bundle/SKILL.md", content: "---\nname: Bad\n---\n" },
+      { path: "bundle/../secret.md", content: "x" },
+    ])).toThrow("Unsafe");
+  });
+
+  test("builds an update diff for bundle review", async () => {
+    const store = new SqliteSkillsStore(await tempDbPath());
+    const existing = store.upsert({
+      id: "review-skill",
+      name: "Review Skill",
+      description: "Old",
+      body: "Old body",
+      allowedTools: null,
+      tags: null,
+      files: [{ path: "old.md", content: "old" }],
+    });
+    const next = parseSkillBundleFiles([
+      { path: "SKILL.md", content: "---\nname: Review Skill\ndescription: New\n---\n\nNew body" },
+      { path: "new.md", content: "new" },
+    ]);
+
+    expect(diffSkillBundle(existing, next)).toMatchObject({
+      metadataChanged: ["description"],
+      addedFiles: ["new.md"],
+      removedFiles: ["old.md"],
+      modifiedFiles: [],
+      skillMarkdownChanged: true,
+    });
   });
 });
 

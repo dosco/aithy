@@ -37,6 +37,9 @@ describe("tasks.getTasks tool", () => {
       expect.objectContaining({ id: active.id, title: "Write report", status: "planned" }),
     ]);
     expect(JSON.stringify(activeTasks)).not.toContain("private prompt");
+    expect(activeTasks[0]).not.toHaveProperty("createdAt");
+    expect(activeTasks[0]).not.toHaveProperty("runtimeCommandId");
+    expect(activeTasks[0]).not.toHaveProperty("errorSummary");
 
     const inactiveResult = await tool.func({ status: "not-active" });
     const inactiveTasks = inactiveResult.tasks;

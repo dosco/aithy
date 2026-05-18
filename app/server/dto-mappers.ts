@@ -7,6 +7,8 @@ import type { MemoryEntry } from "../../src/memory/types";
 import type { MemoryRun } from "../../src/memory/memory-runs";
 import type { NotificationEntry } from "../../src/notifications/types";
 import type { UsageBucket } from "../../src/usage/types";
+import type { AutomationRecord, AutomationRunRecord } from "../../src/automations/types";
+import type { SqliteAutomationStore } from "../../src/automations/store";
 import { serializableSession } from "../../src/web/live-events";
 import type {
   ConfigDto,
@@ -20,6 +22,8 @@ import type {
   SkillDto,
   SoulDto,
   UsageBucketDto,
+  AutomationDto,
+  AutomationRunDto,
 } from "./dto-types";
 
 export function sessionDto(session: BotSessionSummary): SessionSummaryDto {
@@ -29,8 +33,10 @@ export function sessionDto(session: BotSessionSummary): SessionSummaryDto {
 export function configDto(config: AppConfig): ConfigDto {
   return {
     aiProvider: config.aiProvider,
+    aiApiUrl: config.aiApiUrl ?? "",
     aiModel: config.aiModel ?? "",
     fastAiProvider: config.fastAiProvider ?? "",
+    fastAiApiUrl: config.fastAiApiUrl ?? "",
     fastAiModel: config.fastAiModel ?? "",
     sandboxProvider: config.sandboxProvider,
     sandboxImage: config.sandboxImage,
@@ -92,6 +98,20 @@ export function notificationDto(entry: NotificationEntry): NotificationDto {
   return { ...entry };
 }
 
+export function automationDto(entry: AutomationRecord, store: SqliteAutomationStore): AutomationDto {
+  return {
+    ...entry,
+    schedule: entry.schedule.human,
+    scheduleKind: entry.schedule.kind,
+    scheduleRunAt: entry.schedule.kind === "once" ? entry.schedule.runAt : null,
+    recentRuns: store.recentRuns(entry.id, 6).map(automationRunDto),
+  };
+}
+
+export function automationRunDto(entry: AutomationRunRecord): AutomationRunDto {
+  return { ...entry };
+}
+
 export function usageBucketDto(bucket: UsageBucket): UsageBucketDto {
   return { ...bucket };
 }
@@ -127,10 +147,28 @@ export function skillDto(skill: SkillEntry): SkillDto {
     id: skill.id,
     name: skill.name,
     description: skill.description,
+    whenToUse: skill.when_to_use,
     body: skill.body,
     allowedTools: skill.allowed_tools,
     tags: skill.tags,
+    disableModelInvocation: skill.disable_model_invocation,
+    userInvocable: skill.user_invocable,
+    files: skill.files.map((file) => ({
+      path: file.path,
+      content: file.content,
+      bytes: file.bytes,
+      updatedAt: file.updated_at,
+    })),
+    links: skill.links,
+    recentUsage: skill.recent_usage.map((event) => ({
+      reason: event.reason,
+      stage: event.stage,
+      createdAt: event.created_at,
+    })),
     retrievedCount: skill.retrieved_count,
+    usedCount: skill.used_count,
+    lastRetrievedAt: skill.last_retrieved_at,
+    lastUsedAt: skill.last_used_at,
     updatedAt: skill.updated_at,
   };
 }

@@ -3,6 +3,7 @@ import { getRequest } from "@tanstack/react-start/server";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
+import { isCustomOpenAIProvider } from "../../src/agent/ai-providers";
 import { isAiConfigured } from "../../src/config/validate";
 import { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import { parallelWebSearch } from "../../src/search/parallel-search-client";
@@ -16,7 +17,7 @@ import {
 } from "../../src/settings/secrets";
 import type { RuntimeSettings } from "../../src/settings/types";
 import { parallelSearchTestInput, settingsInput } from "./action-schemas";
-import { assertPrimaryAiSettings } from "./ai-settings-test";
+import { assertAiSettings } from "./ai-settings-test";
 import {
   configDto,
   parallelSearchStatus,
@@ -39,6 +40,22 @@ export const saveSettings = createServerFn({ method: "POST" })
     if (apiKey && !data.clearApiKey) runtimePatch = { ...(runtimePatch ?? {}), aiApiKey: undefined };
     if (data.clearApiKey) runtimePatch = { ...(runtimePatch ?? {}), aiApiKey: null };
     if (data.clearAiModel) runtimePatch = { ...(runtimePatch ?? {}), aiModel: null };
+    if (runtimePatch?.aiApiUrl !== undefined) {
+      runtimePatch = {
+        ...runtimePatch,
+        aiApiUrl: isCustomOpenAIProvider(provider)
+          ? normalizeOpenAiApiUrl(runtimePatch.aiApiUrl)
+          : null,
+      };
+    }
+    if (runtimePatch?.fastAiApiUrl !== undefined) {
+      runtimePatch = {
+        ...runtimePatch,
+        fastAiApiUrl: fastProvider && isCustomOpenAIProvider(fastProvider)
+          ? normalizeOpenAiApiUrl(runtimePatch.fastAiApiUrl)
+          : null,
+      };
+    }
     if (parallelApiKey && !data.clearParallelApiKey) {
       runtimePatch = { ...(runtimePatch ?? {}), parallelApiKey: undefined };
     }
@@ -53,7 +70,7 @@ export const saveSettings = createServerFn({ method: "POST" })
           : normalizeParallelSearchMcpUrl(runtimePatch.parallelSearchMcpUrl),
       };
     }
-    await assertPrimaryAiSettings(runtime.config, { ...data, runtime: runtimePatch });
+    await assertAiSettings(runtime.config, { ...data, runtime: runtimePatch });
 
     let skippedPaths: string[] = [];
     if (runtimePatch?.globalMounts) {
@@ -160,6 +177,24 @@ function normalizeParallelSearchMcpUrl(value: string): string {
   }
   if (url.username || url.password) {
     throw new Error("Parallel Search MCP URL must not include embedded credentials.");
+  }
+  return url.href;
+}
+
+function normalizeOpenAiApiUrl(value: string | null | undefined): string {
+  const trimmed = value?.trim();
+  if (!trimmed) throw new Error("Custom OpenAI base URL is required.");
+  let url: URL;
+  try {
+    url = new URL(trimmed);
+  } catch {
+    throw new Error("Custom OpenAI base URL must be a valid URL.");
+  }
+  if (url.protocol !== "https:" && url.protocol !== "http:") {
+    throw new Error("Custom OpenAI base URL must start with http:// or https://.");
+  }
+  if (url.username || url.password) {
+    throw new Error("Custom OpenAI base URL must not include embedded credentials.");
   }
   return url.href;
 }

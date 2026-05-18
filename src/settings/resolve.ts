@@ -1,5 +1,6 @@
 import type { AppConfig } from "../config/env";
 import { MAX_PARALLEL_AGENTS } from "../config/limits";
+import { isCustomOpenAIProvider } from "../agent/ai-providers";
 import type { RuntimeSettings } from "./types";
 
 export function applyRuntimeSettings(
@@ -10,12 +11,23 @@ export function applyRuntimeSettings(
   parallelApiKey?: string | null,
 ): AppConfig {
   const fastProvider = cleanString(settings.fastAiProvider);
+  const aiProvider = cleanString(settings.aiProvider) ?? config.aiProvider;
   return {
     ...config,
-    aiProvider: cleanString(settings.aiProvider) ?? config.aiProvider,
+    aiProvider,
+    aiApiUrl: isCustomOpenAIProvider(aiProvider)
+      ? settings.aiApiUrl === null
+        ? undefined
+        : cleanString(settings.aiApiUrl) ?? config.aiApiUrl
+      : undefined,
     aiApiKey: apiKey === null ? undefined : config.aiApiKey ?? apiKey,
     aiModel: settings.aiModel === null ? undefined : cleanString(settings.aiModel) ?? config.aiModel,
     fastAiProvider: fastProvider,
+    fastAiApiUrl: fastProvider && isCustomOpenAIProvider(fastProvider)
+      ? settings.fastAiApiUrl === null
+        ? undefined
+        : cleanString(settings.fastAiApiUrl) ?? config.fastAiApiUrl
+      : undefined,
     fastAiModel: fastProvider ? cleanString(settings.fastAiModel) : undefined,
     fastAiApiKey: fastProvider ? (fastApiKey === null ? undefined : fastApiKey) : undefined,
     sandboxProvider: normalizeSandboxProvider(settings.sandboxProvider) ?? config.sandboxProvider,

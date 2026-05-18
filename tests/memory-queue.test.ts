@@ -21,6 +21,7 @@ import { MockSandboxProvider } from "../src/sandbox/mock-provider";
 import { SessionManager } from "../src/session/session-manager";
 import { SqliteSessionStateStore } from "../src/session/sqlite-state-store";
 import type { BotMessage } from "../src/session/types";
+import { SqliteTaskStore } from "../src/tasks/task-store";
 
 const queues: MemoryQueue[] = [];
 const stores: Array<{ close(): void }> = [];
@@ -54,6 +55,7 @@ async function makeQueue() {
   const stateDbPath = path.join(dir, "state.db");
   const memory = new SqliteMemoryStore(stateDbPath);
   const runs = new SqliteMemoryRunsStore(stateDbPath);
+  const tasks = new SqliteTaskStore(stateDbPath);
 
   const queueErrors: string[] = [];
   // Stub session manager — auto jobs for missing sessions complete as no-ops.
@@ -74,12 +76,13 @@ async function makeQueue() {
     memory,
     sessions,
     runs,
+    tasks,
     postFailureToSubSession: post,
     onQueueError: (message) => queueErrors.push(message),
   });
   queues.push(queue);
-  stores.push(memory, runs);
-  return { queue, runs, queueErrors };
+  stores.push(memory, runs, tasks);
+  return { queue, runs, tasks, queueErrors };
 }
 
 describe("MemoryQueue", () => {
@@ -99,12 +102,32 @@ describe("MemoryQueue", () => {
     await queue.close();
   });
 
+  test("enqueueAuto reuses the planned task while the job is debounced", async () => {
+    const { queue, tasks } = await makeQueue();
+
+    await queue.enqueueAuto("session-a");
+    await queue.enqueueAuto("session-b");
+
+    const active = tasks.recent({ status: "active", limit: 10 })
+      .filter((task) => task.kind === "memory.auto");
+    expect(active).toHaveLength(1);
+    expect(active[0]).toMatchObject({
+      status: "planned",
+      dedupeKey: "memory:auto",
+      conversationId: "session-b",
+      relatedSessionId: "session-b",
+      metadata: {
+        sourceSessionId: "session-b",
+      },
+    });
+  });
+
   test("auto memory jobs are delayed and globally debounced", () => {
     const opts = autoMemoryJobOptions("run-y");
 
     expect(opts.delay).toBe(AUTO_MEMORY_BATCH_DELAY_MS);
     expect(opts.deduplication).toEqual({
-      id: "auto",
+      id: "memory:auto",
       ttl: AUTO_MEMORY_DEDUP_TTL_MS,
       extend: true,
       replace: true,
@@ -196,6 +219,46 @@ describe("MemoryQueue", () => {
     expect(fx.runs.recent(5)).toEqual([]);
   });
 
+  test("auto triage skips cleanly when AI settings are incomplete", async () => {
+    let called = false;
+    const fx = await makeProcessingQueue({
+      configPatch: { aiApiKey: undefined },
+      forward: async () => {
+        called = true;
+        return { summary: "should not run" };
+      },
+    });
+    fx.sessions.ensureLogicalSession("main");
+    append(fx.sessions, "main", user("my favourite city is Vancouver"));
+
+    const result = await runAuto(fx.queue);
+
+    expect(result.summary).toContain("memory triage skipped");
+    expect(result.summary).toContain("provider API key");
+    expect(called).toBe(false);
+    expect(fx.runs.recent(5)).toEqual([]);
+  });
+
+  test("auto triage uses refreshed queue config after settings reload", async () => {
+    let called = false;
+    const fx = await makeProcessingQueue({
+      forward: async () => {
+        called = true;
+        return { summary: "should not run" };
+      },
+    });
+    fx.queue.updateConfig({ ...fx.config, aiApiKey: undefined });
+    fx.sessions.ensureLogicalSession("main");
+    append(fx.sessions, "main", user("my favourite city is Vancouver"));
+
+    const result = await runAuto(fx.queue);
+
+    expect(result.summary).toContain("memory triage skipped");
+    expect(result.summary).toContain("provider API key");
+    expect(called).toBe(false);
+    expect(fx.runs.recent(5)).toEqual([]);
+  });
+
   test("auto processing skips sub-session messages while advancing past them", async () => {
     const fx = await makeProcessingQueue();
     fx.sessions.ensureLogicalSession("main");
@@ -260,6 +323,7 @@ describe("MemoryQueue", () => {
 });
 
 async function makeProcessingQueue(options: {
+  configPatch?: Partial<AppConfig>;
   forward?: (
     input: { trigger: "auto" | "explicit"; hint?: string; thread: string },
     ctx: { config: AppConfig; memory: SqliteMemoryStore },
@@ -275,6 +339,8 @@ async function makeProcessingQueue(options: {
     stateDbPath,
     aiProvider: "openai",
     aiModel: "test",
+    aiApiKey: "sk-test",
+    ...options.configPatch,
   } as unknown as AppConfig;
   const sessions = new SessionManager({
     sandbox: new MockSandboxProvider(),
@@ -307,7 +373,7 @@ async function makeProcessingQueue(options: {
   });
   queues.push(queue);
   stores.push(state, memory, runs, extractions);
-  return { queue, sessions, memory, runs, extractions, seenThreads, queueErrors, notifications };
+  return { queue, sessions, memory, runs, extractions, config, seenThreads, queueErrors, notifications };
 }
 
 async function runAuto(queue: MemoryQueue): Promise<{ summary: string }> {

@@ -24,6 +24,7 @@ import type {
   SettingsPageStateDto,
   SoulDto,
 } from "@/server/dto";
+import { CUSTOM_OPENAI_PROVIDER } from "../../src/agent/ai-providers";
 
 export function SettingsPage({ initialState }: { initialState: SettingsPageStateDto }) {
   const router = useRouter();
@@ -62,8 +63,16 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
         data: {
           runtime: {
             aiProvider: config.aiProvider,
+            aiApiUrl:
+              config.aiProvider === CUSTOM_OPENAI_PROVIDER
+                ? config.aiApiUrl.trim()
+                : null,
             aiModel: clearAiModel ? null : config.aiModel,
             fastAiProvider: config.fastAiProvider,
+            fastAiApiUrl:
+              config.fastAiProvider === CUSTOM_OPENAI_PROVIDER
+                ? config.fastAiApiUrl.trim()
+                : null,
             fastAiModel: config.fastAiModel,
             sandboxProvider:
               config.sandboxProvider === "disabled"

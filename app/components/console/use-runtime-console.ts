@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useLiveEvent } from "@/components/live-events";
 import { getRuntimeConsole } from "@/server/console.functions";
-import type { RuntimeConsoleDto, RuntimeLogDto } from "@/server/runtime-console.dto";
+import type { RuntimeConsoleDto, RuntimeLogDto, RuntimeSetupStatusDto } from "@/server/runtime-console.dto";
 import type { JsonValue, WebLiveEvent } from "../../../src/web/live-events";
 
 export interface RuntimeConsoleLimits {
@@ -14,7 +14,7 @@ export function useRuntimeConsole(
   limits: RuntimeConsoleLimits = { logLimit: 120, commandLimit: 120 },
 ) {
   const [state, setState] = useState<RuntimeConsoleDto>(
-    initial ?? { services: [], logs: [], commands: [], queues: [] },
+    initial ?? { services: [], setupStatuses: [], logs: [], commands: [], queues: [] },
   );
 
   useEffect(() => {
@@ -50,6 +50,12 @@ export function useRuntimeConsole(
         }),
       }));
     }
+    if (event.type === "setup-status") {
+      setState((current) => ({
+        ...current,
+        setupStatuses: mergeSetupStatus(current.setupStatuses, event),
+      }));
+    }
     if (event.type === "queue-status") {
       setState((current) => ({
         ...current,
@@ -59,6 +65,16 @@ export function useRuntimeConsole(
   }, [limits.logLimit]);
 
   return state;
+}
+
+function mergeSetupStatus(
+  statuses: RuntimeSetupStatusDto[],
+  event: RuntimeSetupStatusDto,
+): RuntimeSetupStatusDto[] {
+  const next = event.active || event.tone === "danger"
+    ? upsertBy(statuses, event.key, event)
+    : statuses.filter((status) => status.key !== event.key);
+  return next.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 function liveLog(event: Extract<WebLiveEvent, { type: "log" }>): RuntimeLogDto {
@@ -89,8 +105,8 @@ function upsertBy<T>(items: T[], key: string, next: T): T[] {
 }
 
 function itemKey(item: unknown): string {
-  const value = item as { id?: string; role?: string };
-  return value.id ?? value.role ?? "";
+  const value = item as { id?: string; role?: string; key?: string };
+  return value.key ?? value.id ?? value.role ?? "";
 }
 
 function errorMessage(error: unknown): string {

@@ -80,7 +80,7 @@ function renderBlock(block: Block, index: number): ReactNode {
     return (
       <pre
         key={index}
-        className="overflow-x-auto rounded-2xl bg-[rgb(var(--muted))] px-4 py-3 font-mono text-sm leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap"
+        className="overflow-x-auto rounded-lg bg-[rgb(var(--muted))] px-4 py-3 font-mono text-sm leading-relaxed [overflow-wrap:anywhere] whitespace-pre-wrap"
       >
         <code>{block.body}</code>
       </pre>
@@ -127,7 +127,7 @@ function renderInline(text: string): ReactNode {
       nodes.push(
         <code
           key={key++}
-          className="rounded-md bg-[rgb(var(--muted))] px-[0.4em] py-[0.1em] font-mono text-[0.88em]"
+          className="rounded bg-[rgb(var(--muted))] px-[0.35em] py-[0.08em] font-mono text-[0.88em]"
         >
           {match[2]}
         </code>,

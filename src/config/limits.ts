@@ -11,7 +11,7 @@ export const MAX_TOOL_OUTPUT_CHARS = 24_000;
 export const MAX_BASH_TIMEOUT_MS = 1000 * 60 * 2;
 export const DEFAULT_BASH_TIMEOUT_MS = 1000 * 30;
 export const MAX_SANDBOX_INLINE_BYTES = 1024 * 1024 * 2;
-export const MAX_CONVERSATION_HISTORY_MESSAGES = 40;
+export const MAX_CONVERSATION_HISTORY_MESSAGES = 1000;
 export const MAX_CONVERSATION_HISTORY_TEXT_CHARS = 4_000;
 
 // Per-attempt processing budget for one agent run. Generous so multi-step tool

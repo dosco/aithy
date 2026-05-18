@@ -1,5 +1,6 @@
 import path from "node:path";
 import { EmbedService } from "../../../memory/embed";
+import { SqliteEpisodeStore } from "../../../episodes/episode-store";
 import { SqliteMemoryStore } from "../../../memory/memory-store";
 import { RerankerService } from "../../../memory/rerank";
 import { assertVecExtensionReady, probeAndConfigureSqlite } from "../../../memory/vec-extension";
@@ -27,6 +28,7 @@ export class EmbeddingWorkerRuntime {
     private readonly settings: SqliteSettingsStore,
     private readonly queue: QueueServiceClient,
     private readonly memory: SqliteMemoryStore,
+    private readonly episodes: SqliteEpisodeStore,
     private readonly embedder: EmbedService,
     private readonly reranker: RerankerService,
   ) {}
@@ -63,15 +65,16 @@ export class EmbeddingWorkerRuntime {
     const embedder = new EmbedService({ cacheDir, log, onStatus: setupStatus });
     const reranker = new RerankerService({ cacheDir, log, onStatus: setupStatus });
     const memory = new SqliteMemoryStore(config.stateDbPath, { embedder, reranker, log });
-    return new EmbeddingWorkerRuntime(config, settings, queue, memory, embedder, reranker);
+    const episodes = new SqliteEpisodeStore(config.stateDbPath, { embedder, reranker, log });
+    return new EmbeddingWorkerRuntime(config, settings, queue, memory, episodes, embedder, reranker);
   }
 
   start(): void {
-    this.heartbeat("starting", { model: this.embedder.modelId });
+    this.heartbeat("starting", this.modelDetail());
     this.heartbeatTimer = setInterval(() => {
       this.heartbeat(
         this.ready ? "ready" : "starting",
-        { model: this.embedder.modelId },
+        this.modelDetail(),
       );
     }, 2_000);
     this.heartbeatTimer.unref();
@@ -92,7 +95,7 @@ export class EmbeddingWorkerRuntime {
       if (!this.embedder.available()) throw new Error(this.embedder.initFailureReason() ?? "embedder unavailable");
       if (!this.reranker.available()) throw new Error(this.reranker.initFailureReason() ?? "reranker unavailable");
       this.ready = true;
-      this.heartbeat("ready", { model: this.embedder.modelId });
+      this.heartbeat("ready", this.modelDetail());
       await this.runBackfill("startup");
     } catch (error) {
       this.ready = false;
@@ -103,6 +106,7 @@ export class EmbeddingWorkerRuntime {
         message: error instanceof Error ? error.message : String(error),
       });
       this.heartbeat("failed", {
+        ...this.modelDetail(),
         error: error instanceof Error ? error.message : String(error),
       });
     }
@@ -176,16 +180,22 @@ export class EmbeddingWorkerRuntime {
     this.backfilling = true;
     try {
       const result = await this.memory.backfillEmbeddings();
-      if (result.done > 0 || source !== "timer") {
+      const episodeResult = await this.episodes.backfillEmbeddings();
+      if (result.done > 0 || episodeResult.done > 0 || source !== "timer") {
         this.appendLog({
           role: "embedding-worker",
           level: "info",
           source: "backfill",
-          message: `memory embedding backfill ${source}: ${result.done} indexed, ${result.skipped} skipped`,
-          detail: { done: result.done, skipped: result.skipped },
+          message: `embedding backfill ${source}: memories ${result.done} indexed, episodes ${episodeResult.done} indexed`,
+          detail: {
+            memoryDone: result.done,
+            memorySkipped: result.skipped,
+            episodeDone: episodeResult.done,
+            episodeSkipped: episodeResult.skipped,
+          },
         });
       }
-      return { done: result.done, skipped: result.skipped };
+      return { done: result.done + episodeResult.done, skipped: result.skipped + episodeResult.skipped };
     } finally {
       this.backfilling = false;
     }
@@ -197,6 +207,7 @@ export class EmbeddingWorkerRuntime {
     this.queue.beginShutdown();
     this.heartbeat("stopping");
     this.memory.close();
+    this.episodes.close();
     this.settings.close();
     this.queue.close();
   }
@@ -207,6 +218,13 @@ export class EmbeddingWorkerRuntime {
 
   private heartbeat(state: Parameters<QueueServiceClient["heartbeat"]>[1], detail?: unknown): void {
     void this.queue.heartbeat("embedding-worker", state, detail);
+  }
+
+  private modelDetail(): { embedderModel: string; rerankerModel: string } {
+    return {
+      embedderModel: this.embedder.modelId,
+      rerankerModel: this.reranker.modelId,
+    };
   }
 }
 

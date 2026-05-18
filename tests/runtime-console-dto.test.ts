@@ -31,6 +31,15 @@ describe("runtime console dto", () => {
       dependencyRoles: ["sandbox-worker"],
       updatedAt: "2026-05-14T00:00:00.000Z",
     });
+    store.appendEvent({
+      type: "setup-status",
+      id: "setup-1",
+      createdAt: "2026-05-14T00:00:01.000Z",
+      key: "memory.embedder",
+      label: "downloading memory model Xenova/all-MiniLM-L6-v2",
+      active: true,
+      progress: 0.5,
+    });
     store.close();
 
     try {
@@ -50,6 +59,11 @@ describe("runtime console dto", () => {
       expect(dto.queues).toContainEqual(expect.objectContaining({
         id: "agent.chat",
         state: "blocked",
+      }));
+      expect(dto.setupStatuses).toContainEqual(expect.objectContaining({
+        key: "memory.embedder",
+        label: "downloading memory model Xenova/all-MiniLM-L6-v2",
+        progress: 0.5,
       }));
     } finally {
       if (previousStateDir === undefined) delete process.env.AITHY_STATE_DIR;

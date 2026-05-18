@@ -14,9 +14,6 @@ export const Route = createFileRoute("/sessions")({
 function SessionsPending() {
   return (
     <PageFrame eyebrow="Memory" title="Saved sessions without the sidebar ceremony.">
-      <div className="app-sessions-actions mb-5 flex justify-end">
-        <div className="h-10 w-32 rounded-xl bg-[rgb(var(--muted))]" />
-      </div>
       <div className="app-sessions-grid grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 6 }, (_, index) => (
           <div

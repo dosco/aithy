@@ -15,6 +15,7 @@ const defaultLocalCapabilities = [
   "artifact.write",
   "artifact.publish",
   "memory.remember",
+  "automation.manage",
   "audio.input",
   "audio.output",
 ] as const;

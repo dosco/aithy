@@ -1,5 +1,6 @@
 import type { Job, JobOptions } from "bunqueue/client";
 import type { AppConfig } from "../config/env";
+import { aiConfigurationIssues } from "../config/validate";
 import type { SessionManager } from "../session/session-manager";
 import type { BotMessage } from "../session/types";
 import {
@@ -27,6 +28,7 @@ export const AUTO_MEMORY_BATCH_DELAY_MS = 10 * 60_000;
 export const AUTO_MEMORY_DEDUP_TTL_MS = 15 * 60_000;
 export const AUTO_MEMORY_MAX_MESSAGES_PER_RUN = 200;
 export const AUTO_MEMORY_OVERLAP_MESSAGES = 20;
+const AUTO_MEMORY_DEDUP_ID = "memory:auto";
 const MAX_ATTEMPTS = 3;
 // Hard cap on a single triage attempt. A wedged LLM call would otherwise tie up
 // the worker indefinitely; bunqueue's TTL kills the job and lets the dedup
@@ -113,15 +115,25 @@ export class MemoryQueue {
 
   async enqueueAuto(sourceSessionId: string): Promise<void> {
     const runId = crypto.randomUUID();
-    const task = this.deps.tasks?.create({
-      kind: "memory.auto",
-      title: "Update memory from recent conversation",
-      conversationId: sourceSessionId,
-      relatedSessionId: sourceSessionId,
-      reason: "Queued for memory triage",
-      metadata: { sourceSessionId },
+    const planned = this.deps.tasks?.createOrReusePlanned({
+      dedupeKey: AUTO_MEMORY_DEDUP_ID,
+      create: {
+        kind: "memory.auto",
+        title: "Update memory from recent conversation",
+        conversationId: sourceSessionId,
+        relatedSessionId: sourceSessionId,
+        reason: "Queued for memory triage",
+        metadata: { sourceSessionId },
+      },
+      update: {
+        conversationId: sourceSessionId,
+        relatedSessionId: sourceSessionId,
+        reason: "Queued for memory triage",
+        metadata: { sourceSessionId },
+      },
     });
-    if (task) this.deps.onTaskStatus?.(task);
+    if (planned) this.deps.onTaskStatus?.(planned.task);
+    const task = planned?.task;
     try {
       await this.app.queue.add(
         "memory.auto",
@@ -130,7 +142,7 @@ export class MemoryQueue {
       );
     } catch (error) {
       if (isDuplicateJobWriteError(error)) {
-        if (task) {
+        if (task && !planned?.reused) {
           const cancelled = this.deps.tasks?.update(task.id, {
             status: "cancelled",
             reason: "Duplicate memory task was already queued",
@@ -140,7 +152,7 @@ export class MemoryQueue {
         this.deps.onQueueError?.("[aithy.memory] duplicate auto-memory job ignored", error as Error);
         return;
       }
-      if (task) {
+      if (task && !planned?.reused) {
         const failed = this.deps.tasks?.update(task.id, {
           status: "failed",
           reason: "Could not queue memory task",
@@ -182,6 +194,10 @@ export class MemoryQueue {
     if (this.ownsExtractions) this.extractions.close();
   }
 
+  updateConfig(config: AppConfig): void {
+    this.deps.config = config;
+  }
+
   private async processJob(job: Job<MemoryJobData>): Promise<{ summary: string }> {
     this.updateTask(job.data.taskId, {
       status: "running",
@@ -215,6 +231,10 @@ export class MemoryQueue {
   }
 
   private async process(data: MemoryJobData): Promise<{ summary: string }> {
+    const missingAi = aiConfigurationIssues(this.deps.config);
+    if (missingAi.length > 0) {
+      return { summary: `memory triage skipped: missing ${missingAi.join(", ")}` };
+    }
     if (data.trigger === "auto") return this.processAuto();
     return this.processExplicit(data);
   }
@@ -362,7 +382,7 @@ export function autoMemoryJobOptions(runId: string): JobOptions {
     backoff: { type: "exponential", delay: 10_000 },
     delay: AUTO_MEMORY_BATCH_DELAY_MS,
     deduplication: {
-      id: "auto",
+      id: AUTO_MEMORY_DEDUP_ID,
       ttl: AUTO_MEMORY_DEDUP_TTL_MS,
       extend: true,
       replace: true,

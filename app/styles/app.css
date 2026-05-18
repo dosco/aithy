@@ -4,36 +4,36 @@
 
 :root {
   color-scheme: light;
-  --background: 248 247 244;
-  --foreground: 16 16 16;
-  --muted: 235 234 230;
-  --muted-foreground: 103 101 96;
-  --border: 218 216 209;
-  --panel: 255 255 252;
-  --bubble-user: 244 243 240;
-  --bubble-bot: 226 222 250;
-  --accent: 10 36 255;
-  --accent-foreground: 255 255 255;
+  --background: 250 249 245;
+  --foreground: 17 17 15;
+  --muted: 237 235 228;
+  --muted-foreground: 104 100 92;
+  --border: 217 214 205;
+  --panel: 255 254 249;
+  --bubble-user: 18 18 16;
+  --bubble-bot: 246 244 237;
+  --accent: 38 51 63;
+  --accent-foreground: 255 254 249;
   --danger: 210 40 36;
-  --dot: 198 196 188;
-  --ascii: 154 88 255;
+  --dot: 196 192 181;
+  --ascii: 96 102 98;
 }
 
 .dark {
   color-scheme: dark;
-  --background: 14 15 15;
-  --foreground: 239 238 232;
-  --muted: 35 36 36;
-  --muted-foreground: 168 166 158;
-  --border: 58 59 58;
-  --panel: 20 21 21;
-  --bubble-user: 22 23 23;
-  --bubble-bot: 42 38 70;
-  --accent: 179 134 255;
-  --accent-foreground: 20 16 26;
+  --background: 13 14 14;
+  --foreground: 239 237 230;
+  --muted: 35 36 34;
+  --muted-foreground: 164 160 150;
+  --border: 58 58 54;
+  --panel: 20 21 20;
+  --bubble-user: 232 230 222;
+  --bubble-bot: 28 29 28;
+  --accent: 213 221 224;
+  --accent-foreground: 14 15 15;
   --danger: 255 104 94;
-  --dot: 63 64 63;
-  --ascii: 183 119 255;
+  --dot: 63 63 59;
+  --ascii: 152 160 160;
 }
 
 [data-theme="graphite"] {
@@ -269,9 +269,9 @@ body {
   margin: 0;
   min-width: 320px;
   background:
-    radial-gradient(rgb(var(--dot) / 0.6) 1px, transparent 1px),
+    radial-gradient(rgb(var(--dot) / 0.22) 1px, transparent 1px),
     rgb(var(--background));
-  background-size: 12px 12px;
+  background-size: 24px 24px;
   color: rgb(var(--foreground));
   font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   letter-spacing: 0;
@@ -343,16 +343,19 @@ html[data-layout="work"] .app-chat-page {
   padding-top: 5.5rem;
 }
 
-html[data-layout="work"] .app-page-frame > div:first-child,
-html[data-layout="work"] .app-chat-header {
+html[data-layout="work"] .app-page-frame > div:first-child {
   border-bottom: 1px solid rgb(var(--border) / 0.7);
   margin-bottom: 1.5rem;
   padding-bottom: 1.25rem;
 }
 
+html[data-layout="work"] .app-chat-header {
+  margin-bottom: 0.75rem;
+}
+
 html[data-layout="work"] .app-page-frame h1 {
-  font-size: clamp(2rem, 4vw, 3.25rem);
-  max-width: 48rem;
+  font-size: clamp(1.6rem, 3vw, 2.25rem);
+  max-width: 40rem;
 }
 
 html[data-layout="work"] .app-chat-timeline {
@@ -382,9 +385,10 @@ html[data-layout="work"] .app-chat-bubble-user {
 }
 
 html[data-layout="work"] .app-chat-bubble-assistant {
-  background: transparent;
-  border-radius: 0;
-  padding: 0;
+  background: rgb(var(--bubble-bot));
+  border-radius: 8px;
+  padding: 0.65rem 0.9rem;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.04);
 }
 
 html[data-layout="work"] .app-chat-composer-wrap {
@@ -395,10 +399,6 @@ html[data-layout="work"] .app-chat-composer {
   border-radius: 14px;
   box-shadow: 0 1px 2px rgb(0 0 0 / 0.05);
   padding: 0.4rem 0.5rem 0.4rem 0.875rem;
-}
-
-html[data-layout="work"] .app-sessions-actions {
-  margin-bottom: 1rem;
 }
 
 html[data-layout="work"] .app-session-empty {
@@ -416,6 +416,19 @@ select {
 pre,
 code {
   font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+}
+
+.app-page-frame h1,
+.app-chat-header h1 {
+  text-wrap: balance;
+}
+
+.app-chat-bubble-assistant {
+  color: rgb(var(--foreground));
+}
+
+details > summary {
+  list-style-position: outside;
 }
 
 @keyframes mind-breath {

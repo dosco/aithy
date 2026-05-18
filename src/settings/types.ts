@@ -26,9 +26,11 @@ export interface UiPreferences {
 
 export interface RuntimeSettings {
   aiProvider?: string;
+  aiApiUrl?: string | null;
   aiApiKey?: string | null;
   aiModel?: string | null;
   fastAiProvider?: string;
+  fastAiApiUrl?: string | null;
   fastAiModel?: string;
   sandboxProvider?: SandboxProviderKind;
   sandboxImage?: string;

@@ -87,6 +87,7 @@ export function wrapSkillsSearch(
       toolArgs: { queries: [...queries] },
       toolResult: {
         matches: results.map((r) => ({
+          id: r.id,
           name: r.name,
           contentBytes: r.content.length,
           contentPreview: compactPreview(r.content),
@@ -136,7 +137,7 @@ function historyEntryFor(message: BotMessage): { role: "user" | "assistant"; con
   if (message.kind === "artifact") {
     return {
       role: "assistant",
-      content: `Published artifact: ${message.title} (${message.sandboxPath})`,
+      content: `Published artifact: ${message.title}; filename=${message.filename}; id=${message.id}; sandboxPath=${message.sandboxPath}; openUrl=${message.openUrl}`,
       createdAt: message.createdAt,
     };
   }

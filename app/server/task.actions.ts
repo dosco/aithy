@@ -40,6 +40,8 @@ export const retryTask = createServerFn({ method: "POST" })
     }
     const text = original.metadata.text;
     const skillIds = original.metadata.skillIds;
+    const automationId = typeof original.metadata.automationId === "string" ? original.metadata.automationId : undefined;
+    const automationRunId = typeof original.metadata.automationRunId === "string" ? original.metadata.automationRunId : undefined;
     if (typeof text !== "string") throw new Error("Task is missing retry text");
     const conversationId = original.conversationId ?? original.relatedSessionId;
     if (!conversationId) throw new Error("Task is missing a related session");
@@ -63,6 +65,8 @@ export const retryTask = createServerFn({ method: "POST" })
       createdAt: new Date().toISOString(),
       skillIds: Array.isArray(skillIds) ? skillIds.filter((id): id is string => typeof id === "string") : [],
       taskId: next.id,
+      ...(automationId ? { automationId } : {}),
+      ...(automationRunId ? { automationRunId } : {}),
     });
     const linked = runtime.tasks.update(next.id, {
       queueJobId: queued.jobId,

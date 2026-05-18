@@ -20,6 +20,8 @@ import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as ConsoleRouteImport } from './routes/console'
 import { Route as ChatRouteImport } from './routes/chat'
+import { Route as AutomationsRouteImport } from './routes/automations'
+import { Route as AttentionsRouteImport } from './routes/attentions'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChatSessionIdRouteImport } from './routes/chat.$sessionId'
 import { Route as ApiEventsRouteImport } from './routes/api.events'
@@ -80,6 +82,16 @@ const ChatRoute = ChatRouteImport.update({
   path: '/chat',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AutomationsRoute = AutomationsRouteImport.update({
+  id: '/automations',
+  path: '/automations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AttentionsRoute = AttentionsRouteImport.update({
+  id: '/attentions',
+  path: '/attentions',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
@@ -103,6 +115,8 @@ const ApiArtifactsArtifactIdRoute = ApiArtifactsArtifactIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/attentions': typeof AttentionsRoute
+  '/automations': typeof AutomationsRoute
   '/chat': typeof ChatRouteWithChildren
   '/console': typeof ConsoleRoute
   '/memory': typeof MemoryRoute
@@ -120,6 +134,8 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/attentions': typeof AttentionsRoute
+  '/automations': typeof AutomationsRoute
   '/chat': typeof ChatRouteWithChildren
   '/console': typeof ConsoleRoute
   '/memory': typeof MemoryRoute
@@ -138,6 +154,8 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/attentions': typeof AttentionsRoute
+  '/automations': typeof AutomationsRoute
   '/chat': typeof ChatRouteWithChildren
   '/console': typeof ConsoleRoute
   '/memory': typeof MemoryRoute
@@ -157,6 +175,8 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/attentions'
+    | '/automations'
     | '/chat'
     | '/console'
     | '/memory'
@@ -174,6 +194,8 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/attentions'
+    | '/automations'
     | '/chat'
     | '/console'
     | '/memory'
@@ -191,6 +213,8 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/'
+    | '/attentions'
+    | '/automations'
     | '/chat'
     | '/console'
     | '/memory'
@@ -209,6 +233,8 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AttentionsRoute: typeof AttentionsRoute
+  AutomationsRoute: typeof AutomationsRoute
   ChatRoute: typeof ChatRouteWithChildren
   ConsoleRoute: typeof ConsoleRoute
   MemoryRoute: typeof MemoryRoute
@@ -303,6 +329,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/automations': {
+      id: '/automations'
+      path: '/automations'
+      fullPath: '/automations'
+      preLoaderRoute: typeof AutomationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/attentions': {
+      id: '/attentions'
+      path: '/attentions'
+      fullPath: '/attentions'
+      preLoaderRoute: typeof AttentionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/': {
       id: '/'
       path: '/'
@@ -346,6 +386,8 @@ const ChatRouteWithChildren = ChatRoute._addFileChildren(ChatRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AttentionsRoute: AttentionsRoute,
+  AutomationsRoute: AutomationsRoute,
   ChatRoute: ChatRouteWithChildren,
   ConsoleRoute: ConsoleRoute,
   MemoryRoute: MemoryRoute,

@@ -1,6 +1,6 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Trash2 } from "lucide-react";
 import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PageFrame } from "@/components/page-frame";
 import { ThemeSync } from "@/components/theme-sync";
@@ -34,12 +34,6 @@ export function SessionsPage({ initialState }: { initialState: SessionsPageState
   return (
     <PageFrame eyebrow="Memory" title="Saved sessions without the sidebar ceremony.">
       <ThemeSync ui={initialState.settings.ui} />
-      <div className="app-sessions-actions mb-5 flex justify-end">
-        <Button onClick={() => void navigate({ to: "/chat" })}>
-          <Plus className="h-4 w-4" />
-          New session
-        </Button>
-      </div>
       {sessions.length === 0 ? (
         <div className="app-session-empty rounded-[24px] border border-[rgb(var(--border))] p-8 text-[rgb(var(--muted-foreground))]">
           No sessions yet.

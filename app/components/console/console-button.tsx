@@ -16,7 +16,7 @@ export function ConsoleButton() {
         <button
           type="button"
           aria-label="Runtime console"
-          className="relative flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-[rgb(var(--muted))]"
+          className="relative flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-[rgb(var(--muted))]"
         >
           <SquareTerminal className="h-4 w-4" />
           {hasIssue ? (
@@ -30,7 +30,7 @@ export function ConsoleButton() {
           align="end"
           sideOffset={10}
           collisionPadding={12}
-          className="z-40 flex max-h-96 w-[24rem] flex-col overflow-hidden rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] p-2 shadow-xl outline-none"
+          className="z-40 flex max-h-96 w-[24rem] flex-col overflow-hidden rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] p-2 shadow-[0_12px_34px_rgb(0_0_0/0.12)] outline-none"
         >
           <div className="flex items-center gap-2 px-2 pb-2">
             <div className="min-w-0 flex-1">
@@ -41,7 +41,7 @@ export function ConsoleButton() {
             </div>
             <Link
               to="/console"
-              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[rgb(var(--muted-foreground))] transition hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[rgb(var(--muted-foreground))] transition hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
               title="Open console"
             >
               <ChevronRight className="h-4 w-4" />
@@ -52,7 +52,7 @@ export function ConsoleButton() {
               <span
                 key={service.role}
                 className={cn(
-                  "rounded-full border px-2 py-1 font-mono text-[10px]",
+                  "rounded-md border px-2 py-1 font-mono text-[10px]",
                   service.state === "ready"
                     ? "border-emerald-500/40 text-emerald-700 dark:text-emerald-300"
                     : service.state === "failed"
@@ -72,7 +72,7 @@ export function ConsoleButton() {
             ) : (
               <ul className="flex flex-col gap-1">
                 {state.logs.slice(0, 8).map((log) => (
-                  <li key={`${log.id}-${log.createdAt}`} className="rounded-xl px-3 py-2 hover:bg-[rgb(var(--muted))]/55">
+                  <li key={`${log.id}-${log.createdAt}`} className="rounded-md px-3 py-2 hover:bg-[rgb(var(--muted))]/55">
                     <div className="flex items-center justify-between gap-3">
                       <span className="font-mono text-[10px] uppercase text-[rgb(var(--muted-foreground))]">
                         {log.role} · {log.level}

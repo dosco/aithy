@@ -57,7 +57,7 @@ export function NotificationBell() {
         <button
           type="button"
           aria-label={`Notifications${unread > 0 ? ` (${unread} unread)` : ""}`}
-          className="relative flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-[rgb(var(--muted))]"
+          className="relative flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-[rgb(var(--muted))]"
         >
           <Bell className="h-4 w-4" />
           {unread > 0 ? (
@@ -73,7 +73,7 @@ export function NotificationBell() {
           align="end"
           sideOffset={10}
           collisionPadding={12}
-          className="z-40 flex max-h-96 w-[22rem] flex-col overflow-hidden rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] p-2 shadow-xl outline-none"
+          className="z-40 flex max-h-96 w-[22rem] flex-col overflow-hidden rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] p-2 shadow-[0_12px_34px_rgb(0_0_0/0.12)] outline-none"
         >
           <div className="flex items-center gap-2 px-2 pb-2">
             <div className="min-w-0 flex-1">
@@ -85,7 +85,7 @@ export function NotificationBell() {
             <Link
               to="/notifications"
               onClick={() => setOpen(false)}
-              className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[rgb(var(--muted-foreground))] transition hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[rgb(var(--muted-foreground))] transition hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
               title="View all notifications"
             >
               <ChevronRight className="h-4 w-4" />
@@ -94,7 +94,7 @@ export function NotificationBell() {
               <button
                 type="button"
                 onClick={() => void clearAll()}
-                className="inline-flex h-7 w-7 items-center justify-center rounded-full text-[rgb(var(--muted-foreground))] transition hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
+                className="inline-flex h-7 w-7 items-center justify-center rounded-md text-[rgb(var(--muted-foreground))] transition hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
                 title="Mark all read"
               >
                 <Check className="h-4 w-4" />
@@ -154,7 +154,7 @@ function NotificationRow({
     </div>
   );
   const className = cn(
-    "block w-full rounded-xl text-left transition",
+    "block w-full rounded-md text-left transition",
     item.read
       ? "hover:bg-[rgb(var(--muted))]/50"
       : "bg-[rgb(var(--muted))]/45 hover:bg-[rgb(var(--muted))]/70",

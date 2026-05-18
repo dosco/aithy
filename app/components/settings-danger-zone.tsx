@@ -50,19 +50,49 @@ export function SettingsDangerZone({ onSystemReset }: { onSystemReset: (state: W
         title="Danger zone"
         subtitle={`These actions require typing ${CONFIRM_TEXT}. They cannot be undone.`}
       >
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Button type="button" variant="danger" onClick={() => setDangerAction("sessions")}>
-            <Trash2 className="h-4 w-4" />
-            Delete all sessions
-          </Button>
-          <Button type="button" variant="danger" onClick={() => setDangerAction("memories")}>
-            <Trash2 className="h-4 w-4" />
-            Reset memories
-          </Button>
-          <Button type="button" variant="danger" onClick={() => setDangerAction("system")}>
-            <RotateCcw className="h-4 w-4" />
-            Reset system options
-          </Button>
+        <div className="grid gap-3">
+          <ResetActionRow
+            description="Deletes every conversation, sub-session, and related task record."
+            button={
+              <Button
+                type="button"
+                variant="danger"
+                className="w-full justify-start"
+                onClick={() => setDangerAction("sessions")}
+              >
+                <Trash2 className="h-4 w-4" />
+                Delete all sessions
+              </Button>
+            }
+          />
+          <ResetActionRow
+            description="Removes stored memories, memory index rows, and memory task runs."
+            button={
+              <Button
+                type="button"
+                variant="danger"
+                className="w-full justify-start"
+                onClick={() => setDangerAction("memories")}
+              >
+                <Trash2 className="h-4 w-4" />
+                Reset memories
+              </Button>
+            }
+          />
+          <ResetActionRow
+            description="Stops active work, recreates SQLite databases, clears app-managed provider secrets, and resets SQLite-backed app data."
+            button={
+              <Button
+                type="button"
+                variant="danger"
+                className="w-full justify-start"
+                onClick={() => setDangerAction("system")}
+              >
+                <RotateCcw className="h-4 w-4" />
+                Reset system options
+              </Button>
+            }
+          />
         </div>
         {dangerSaved ? (
           <p className="text-sm text-[rgb(var(--muted-foreground))]">{dangerSaved}</p>
@@ -81,6 +111,21 @@ export function SettingsDangerZone({ onSystemReset }: { onSystemReset: (state: W
         }}
       />
     </>
+  );
+}
+
+function ResetActionRow({
+  button,
+  description,
+}: {
+  button: ReactNode;
+  description: string;
+}) {
+  return (
+    <div className="grid gap-2 sm:grid-cols-[minmax(13rem,auto)_1fr] sm:items-center">
+      <div className="sm:w-56">{button}</div>
+      <p className="text-sm text-[rgb(var(--muted-foreground))]">{description}</p>
+    </div>
   );
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { loadConfig } from "../src/config/env";
-import { assertStartupConfig } from "../src/config/validate";
+import { assertStartupConfig, fastAiConfigurationIssues, providerRequiresApiKey } from "../src/config/validate";
+import { CUSTOM_OPENAI_PROVIDER } from "../src/agent/ai-providers";
 import { createSandboxProvider } from "../src/sandbox/create-provider";
 import { DisabledSandboxProvider } from "../src/sandbox/disabled-provider";
 
@@ -112,6 +113,19 @@ describe("loadConfig", () => {
     })).toThrow(/provider API key/);
   });
 
+  test("exposes provider API key requirements for setup UI", () => {
+    expect(providerRequiresApiKey("openai")).toBe(true);
+    expect(providerRequiresApiKey("ollama")).toBe(false);
+  });
+
+  test("reports incomplete fast AI provider settings", () => {
+    expect(fastAiConfigurationIssues({
+      ...loadConfig({}),
+      fastAiProvider: "openai",
+      fastAiModel: "gpt-fast",
+    })).toEqual(["fast provider API key"]);
+  });
+
   test("accepts startup with model and provider credentials", () => {
     const config = {
       ...loadConfig({}),
@@ -119,5 +133,20 @@ describe("loadConfig", () => {
       aiApiKey: "sk-test",
     };
     expect(() => assertStartupConfig(config)).not.toThrow();
+  });
+
+  test("requires custom OpenAI provider base URL", () => {
+    const missingUrl = {
+      ...loadConfig({}),
+      aiProvider: CUSTOM_OPENAI_PROVIDER,
+      aiModel: "gpt-test",
+      aiApiKey: "sk-test",
+    };
+    expect(() => assertStartupConfig(missingUrl)).toThrow(/base URL/);
+
+    expect(() => assertStartupConfig({
+      ...missingUrl,
+      aiApiUrl: "https://api.example.test/v1",
+    })).not.toThrow();
   });
 });

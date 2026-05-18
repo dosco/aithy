@@ -5,6 +5,8 @@ export {
 } from "./dto-types";
 export {
   configDto,
+  automationDto,
+  automationRunDto,
   memoryDto,
   memoryRunDto,
   notificationDto,
@@ -19,6 +21,7 @@ export {
 export { parallelSearchStatus, secretStatus, secretStatusForProvider } from "./secret.dto";
 export {
   memoryPageStateDto,
+  automationsPageStateDto,
   notificationsPageStateDto,
   sessionMessagePageDto,
   sessionsPageStateDto,

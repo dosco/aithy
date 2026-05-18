@@ -6,6 +6,7 @@ import { serializableMessage, serializablePermissionRequest } from "../../src/we
 import type { JsonValue, WebLiveEvent } from "../../src/web/live-events";
 import {
   configDto,
+  automationDto,
   memoryDto,
   memoryRunDto,
   notificationDto,
@@ -20,6 +21,7 @@ import { preloadExistingSessionMessagePage } from "./session-message-loading";
 import {
   MEMORIES_PAGE_SIZE,
   type ActivityDto,
+  type AutomationsPageStateDto,
   type MemoryPageStateDto,
   SKILLS_PAGE_SIZE,
   type NotificationsPageStateDto,
@@ -219,6 +221,14 @@ export function tasksPageStateDto(runtime: AithyRuntime): TasksPageStateDto {
   return {
     settings: runtime.settings.load(),
     tasks: runtime.tasks.recent({ limit: 100 }).map(taskSummary),
+  };
+}
+
+export function automationsPageStateDto(runtime: AithyRuntime): AutomationsPageStateDto {
+  return {
+    settings: runtime.settings.load(),
+    automations: runtime.automations.list().map((automation) => automationDto(automation, runtime.automations)),
+    sessions: runtime.sessions.listSessions().map(sessionDto),
   };
 }
 

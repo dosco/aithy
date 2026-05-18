@@ -19,6 +19,14 @@ export { saveSoul } from "./soul.actions";
 export { getWebState } from "./web-state.actions";
 export { cancelTask, retryTask } from "./task.actions";
 export {
+  archiveAutomation,
+  createAutomation,
+  pauseAutomation,
+  resumeAutomation,
+  runAutomationNow,
+  updateAutomation,
+} from "./automation.actions";
+export {
   createPermissionRule,
   deletePermissionRule,
   resetPermissionRules,

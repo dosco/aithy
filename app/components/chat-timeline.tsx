@@ -1,33 +1,22 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import { GitBranch } from "lucide-react";
+import { AnimatePresence } from "framer-motion";
 import { AsciiSplash } from "@/components/ascii-splash";
-import { ArtifactCard } from "@/components/artifact-card";
-import { Markdown } from "@/components/markdown";
-import { PermissionCard } from "@/components/permission-card";
+import {
+  displayToolName,
+  TimelineItem,
+  TypingIndicator,
+  type TimelineEntry,
+} from "@/components/chat-timeline-entry";
 import type { SessionSummaryDto } from "@/server/dto";
 import type { SerializableBotMessage, SerializableSystemPermissionRequest, WebLiveEvent } from "../../src/web/live-events";
 
 type ActivityEvent = Extract<WebLiveEvent, { type: "activity" }>;
-type Usage = { input: number; output: number; thought: number; total: number };
 
 export interface ChatMessageItem {
   id: number | string;
   message: SerializableBotMessage;
 }
-
-type TimelineEntry =
-  | { kind: "user"; key: string; content: string }
-  | { kind: "assistant"; key: string; content: string; usage?: Usage }
-  | { kind: "artifact"; key: string; message: Extract<SerializableBotMessage, { kind: "artifact" }> }
-  | { kind: "permission"; key: string; message: Extract<SerializableBotMessage, { kind: "permission" }> }
-  | { kind: "permission-request"; key: string; request: SerializableSystemPermissionRequest }
-  | { kind: "thought"; key: string; content: string }
-  | { kind: "tool"; key: string; toolName: string; toolArgs: unknown; toolResult?: unknown; usage?: Usage }
-  | { kind: "sub-session"; key: string; session: SessionSummaryDto }
-  | { kind: "activity"; key: string; label: string }
-  | { kind: "typing"; key: string };
 
 const ESTIMATED_ROW_HEIGHT = 132;
 const OVERSCAN_PX = 800;
@@ -139,7 +128,7 @@ export function ChatTimeline({
   }
 
   return (
-    <div ref={listRef} className="app-chat-message-list flex flex-col gap-5">
+    <div ref={listRef} className="app-chat-message-list flex flex-col gap-4">
       {hasMoreBefore ? (
         <div className="text-center font-mono text-[10px] uppercase tracking-[0.2em] text-[rgb(var(--muted-foreground))]">
           {loadingMore ? "Loading history" : "Scroll up for history"}
@@ -313,175 +302,6 @@ function MeasuredRow({
     return () => observer.disconnect();
   }, [itemKey, onHeight]);
   return <div ref={ref}>{children}</div>;
-}
-
-function TimelineItem({
-  item,
-  onOpenSession,
-  onPermissionDecision,
-  onPermissionRetry,
-}: {
-  item: Exclude<TimelineEntry, { kind: "typing" }>;
-  onOpenSession: (session: SessionSummaryDto) => void;
-  onPermissionDecision: (requestId: string, decision: "allow" | "deny", persist?: string) => void;
-  onPermissionRetry: (message: Extract<SerializableBotMessage, { kind: "permission" }>) => void;
-}) {
-  const reduce = useReducedMotion();
-  const motionProps = reduce
-    ? {}
-    : {
-        layout: true,
-        initial: { opacity: 0, y: 8, scale: 0.98 },
-        animate: { opacity: 1, y: 0, scale: 1 },
-        exit: { opacity: 0, transition: { duration: 0.12 } },
-        transition: { type: "spring" as const, stiffness: 380, damping: 30 },
-      };
-  if (item.kind === "user") {
-    return (
-      <motion.div
-        {...motionProps}
-        className="app-chat-bubble app-chat-bubble-user ml-auto w-fit max-w-[min(68%,42rem)] rounded-[20px] rounded-br-md bg-[rgb(var(--accent))] px-5 py-3 text-base leading-relaxed text-[rgb(var(--accent-foreground))]"
-      >
-        <Markdown text={item.content} />
-      </motion.div>
-    );
-  }
-  if (item.kind === "assistant") {
-    return (
-      <motion.div {...motionProps} className="app-chat-bubble-frame w-fit max-w-[min(72%,46rem)]">
-        <div className="app-chat-bubble app-chat-bubble-assistant rounded-[20px] rounded-bl-md bg-[rgb(var(--bubble-bot))] px-5 py-3 text-base leading-relaxed">
-          <Markdown text={item.content} />
-        </div>
-        {item.usage ? <UsageLine usage={item.usage} /> : null}
-      </motion.div>
-    );
-  }
-  if (item.kind === "thought") {
-    return (
-      <motion.div
-        {...motionProps}
-        className="app-chat-bubble-frame w-fit max-w-[min(72%,46rem)] rounded-[20px] border border-dashed border-[rgb(var(--border))] px-5 py-3 text-sm leading-relaxed text-[rgb(var(--muted-foreground))] [overflow-wrap:anywhere]"
-      >
-        <span className="mr-2 font-mono text-[10px] uppercase tracking-[0.2em]">thinking</span>
-        <span className="italic whitespace-pre-wrap">{item.content}</span>
-      </motion.div>
-    );
-  }
-  if (item.kind === "permission") return <motion.div {...motionProps}><PermissionCard message={item.message} onRetry={onPermissionRetry} /></motion.div>;
-  if (item.kind === "permission-request") return <motion.div {...motionProps}><PermissionCard request={item.request} onDecision={onPermissionDecision} /></motion.div>;
-  if (item.kind === "artifact") return <motion.div {...motionProps}><ArtifactCard artifact={item.message} /></motion.div>;
-  if (item.kind === "tool") {
-    return (
-      <motion.div
-        {...motionProps}
-        className="app-chat-bubble-frame w-fit max-w-[min(72%,46rem)] rounded-[20px] bg-[rgb(var(--muted))] px-4 py-3 font-mono text-xs leading-relaxed text-[rgb(var(--muted-foreground))]"
-      >
-        <div className="mb-1 font-sans text-[10px] uppercase tracking-[0.2em]">tool · {item.toolName}</div>
-        <div className="overflow-x-auto whitespace-pre-wrap break-all">
-          {JSON.stringify(item.toolArgs, null, 2)}
-        </div>
-        {item.toolResult === undefined ? null : (
-          <>
-            <div className="mb-1 mt-3 font-sans text-[10px] uppercase tracking-[0.2em]">result</div>
-            <div className="overflow-x-auto whitespace-pre-wrap break-all">
-              {JSON.stringify(item.toolResult, null, 2)}
-            </div>
-          </>
-        )}
-        {item.usage ? <UsageLine usage={item.usage} /> : null}
-      </motion.div>
-    );
-  }
-  if (item.kind === "sub-session") {
-    return (
-      <motion.div
-        {...motionProps}
-        className="app-chat-bubble-frame flex w-fit max-w-[min(72%,46rem)] items-center gap-3 rounded-[20px] border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3 py-2 shadow-sm"
-      >
-        <button
-          type="button"
-          onClick={() => onOpenSession(item.session)}
-          aria-label={`Open sub-session ${item.session.name}`}
-          title="Open sub-session"
-          className="grid h-10 w-10 shrink-0 place-items-center rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] transition hover:scale-105 focus:outline-none focus:ring-2 focus:ring-[rgb(var(--accent))] focus:ring-offset-2 focus:ring-offset-[rgb(var(--background))]"
-        >
-          <GitBranch className="h-5 w-5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => onOpenSession(item.session)}
-          className="min-w-0 text-left"
-        >
-          <div className="font-mono text-[10px] uppercase tracking-[0.18em] text-[rgb(var(--muted-foreground))]">
-            sub-session
-          </div>
-          <div className="truncate text-sm font-medium">{item.session.name}</div>
-        </button>
-      </motion.div>
-    );
-  }
-  return (
-    <motion.div
-      {...motionProps}
-      className="app-chat-bubble-frame max-w-[72%] font-mono text-xs text-[rgb(var(--muted-foreground))]"
-    >
-      · {item.label}
-    </motion.div>
-  );
-}
-
-function TypingIndicator() {
-  const reduce = useReducedMotion();
-  return (
-    <motion.div
-      layout
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
-      transition={{ duration: 0.2 }}
-      className="flex items-center gap-1.5 px-2"
-      aria-label="Assistant is thinking"
-    >
-      {[0, 1, 2].map((i) => (
-        <motion.span
-          key={i}
-          className="block h-2 w-2 rounded-full bg-[rgb(var(--accent))]"
-          animate={reduce ? undefined : { y: [0, -4, 0], opacity: [0.4, 1, 0.4] }}
-          transition={
-            reduce
-              ? undefined
-              : { duration: 1, ease: "easeInOut", repeat: Infinity, delay: i * 0.15 }
-          }
-        />
-      ))}
-    </motion.div>
-  );
-}
-
-function UsageLine({ usage }: { usage: Usage }) {
-  return (
-    <div className="mt-2 flex flex-wrap gap-3 font-mono text-[10px] uppercase tracking-[0.18em] text-[rgb(var(--muted-foreground))]">
-      <span>in {usage.input}</span>
-      <span>out {usage.output}</span>
-      {usage.thought ? <span>thought {usage.thought}</span> : null}
-      <span>· {usage.total} total</span>
-    </div>
-  );
-}
-
-function displayToolName(toolName: string | undefined, toolArgs: unknown): string {
-  if (toolName?.trim()) return toolName;
-  if (hasKeys(toolArgs, ["query", "task"])) return "web.search";
-  if (hasKeys(toolArgs, ["url"])) return "web.fetch";
-  if (hasKeys(toolArgs, ["queries", "excludeIds"])) return "memory.recall";
-  if (hasKeys(toolArgs, ["queries"])) return "skills.search";
-  if (hasKeys(toolArgs, ["command"])) return "sandbox.bash";
-  return "unknown";
-}
-
-function hasKeys(value: unknown, keys: string[]): boolean {
-  if (!value || typeof value !== "object") return false;
-  return keys.every((key) => key in value);
 }
 
 function currentViewport(): { scrollY: number; height: number } {

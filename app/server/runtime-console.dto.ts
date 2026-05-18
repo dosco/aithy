@@ -1,4 +1,4 @@
-import type { JsonValue } from "../../src/web/live-events";
+import type { JsonValue, WebLiveEvent } from "../../src/web/live-events";
 import type { AithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import { loadBaseConfig } from "../../src/runtime/resolve-effective-config";
 import type {
@@ -40,8 +40,11 @@ export interface RuntimeCommandDto {
   detail: JsonValue | null;
 }
 
+export type RuntimeSetupStatusDto = Extract<WebLiveEvent, { type: "setup-status" }>;
+
 export interface RuntimeConsoleDto {
   services: RuntimeServiceDto[];
+  setupStatuses: RuntimeSetupStatusDto[];
   logs: RuntimeLogDto[];
   commands: RuntimeCommandDto[];
   queues: RuntimeQueueStatus[];
@@ -75,6 +78,7 @@ export function staleRuntimeConsoleDto(
     const refreshedAt = new Date().toISOString();
     return {
       services: store.services().map(runtimeServiceDto),
+      setupStatuses: recentSetupStatuses(store),
       logs: [
         {
           id: "console-stale",
@@ -100,10 +104,23 @@ export function staleRuntimeConsoleDto(
 function runtimeConsoleSnapshotDto(snapshot: RuntimeConsoleSnapshot): RuntimeConsoleDto {
   return {
     services: snapshot.services.map(runtimeServiceDto),
+    setupStatuses: snapshot.setupStatuses,
     logs: snapshot.logs.flatMap(runtimeLogDto),
     commands: snapshot.commands.map(runtimeCommandDto),
     queues: snapshot.queues,
   };
+}
+
+function recentSetupStatuses(store: RuntimeStore): RuntimeSetupStatusDto[] {
+  const latest = new Map<string, RuntimeSetupStatusDto>();
+  const rows = store.recentEvents({ kinds: ["setup-status"], limit: 100 }).reverse();
+  for (const row of rows) {
+    const event = row.payload;
+    if (event.type !== "setup-status") continue;
+    if (event.active || event.tone === "danger") latest.set(event.key, event);
+    else latest.delete(event.key);
+  }
+  return [...latest.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 }
 
 function recentQueues(store: RuntimeStore): RuntimeQueueStatus[] {

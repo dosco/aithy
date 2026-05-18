@@ -1,4 +1,4 @@
-import type { ReactNode, TextareaHTMLAttributes } from "react";
+import { forwardRef, type ReactNode, type TextareaHTMLAttributes } from "react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
@@ -24,17 +24,20 @@ export function Field({
   );
 }
 
-export function FormTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  return (
-    <Textarea
-      {...props}
-      className={cn(
-        "rounded-lg border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3 py-2 text-sm",
-        props.className,
-      )}
-    />
-  );
-}
+export const FormTextarea = forwardRef<
+  HTMLTextAreaElement,
+  TextareaHTMLAttributes<HTMLTextAreaElement>
+>(({ className, ...props }, ref) => (
+  <Textarea
+    ref={ref}
+    {...props}
+    className={cn(
+      "rounded-lg border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3 py-2 text-sm",
+      className,
+    )}
+  />
+));
+FormTextarea.displayName = "FormTextarea";
 
 export function FormError({ message }: { message: string | null }) {
   if (!message) return null;

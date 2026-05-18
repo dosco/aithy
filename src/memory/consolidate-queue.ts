@@ -3,6 +3,7 @@ import type { AppConfig } from "../config/env";
 import {
   bunqueueDataPath,
   createEmbeddedQueueWorker,
+  isDuplicateJobWriteError,
   type EmbeddedQueueWorker,
   type QueueErrorReporter,
 } from "../queue/embedded";
@@ -17,6 +18,7 @@ import type { TaskRecord } from "../tasks/types";
 const MAX_ATTEMPTS = 2;
 const JOB_TTL_MS = 5 * 60_000;
 const CRON_PATTERN = "0 3 * * *"; // every day at 03:00 local time
+const ADHOC_DEDUP_ID = "consolidate:adhoc";
 
 interface JobData {
   runId: string;
@@ -47,7 +49,7 @@ export class MemoryConsolidateProducer implements MemoryConsolidateHandle {
       {
         attempts: MAX_ATTEMPTS,
         backoff: { type: "exponential", delay: 30_000 },
-        deduplication: { id: "consolidate:adhoc", ttl: 30_000 },
+        deduplication: { id: ADHOC_DEDUP_ID, ttl: 30_000 },
         jobId: `memory:consolidate:${runId}`,
       },
     );
@@ -110,27 +112,59 @@ export class MemoryConsolidateQueue implements MemoryConsolidateHandle {
   /** Trigger an immediate consolidation pass (e.g. from a UI button). */
   async runNow(): Promise<void> {
     const runId = crypto.randomUUID();
-    const task = this.deps.tasks?.create({
-      kind: "memory.consolidate",
-      title: "Consolidate memories",
-      conversationId: null,
-      reason: "Queued for memory consolidation",
-    });
-    if (task) this.deps.onTaskStatus?.(task);
-    await this.app.queue.add(
-      "memory.consolidate.now",
-      { runId, triggeredAt: new Date().toISOString(), ...(task ? { taskId: task.id } : {}) },
-      {
-        attempts: MAX_ATTEMPTS,
-        backoff: { type: "exponential", delay: 30_000 },
-        deduplication: { id: "consolidate:adhoc", ttl: 30_000 },
-        jobId: `memory:consolidate:${runId}`,
+    const planned = this.deps.tasks?.createOrReusePlanned({
+      dedupeKey: ADHOC_DEDUP_ID,
+      create: {
+        kind: "memory.consolidate",
+        title: "Consolidate memories",
+        conversationId: null,
+        reason: "Queued for memory consolidation",
       },
-    );
+      update: {
+        reason: "Queued for memory consolidation",
+      },
+    });
+    if (planned) this.deps.onTaskStatus?.(planned.task);
+    const task = planned?.task;
+    try {
+      await this.app.queue.add(
+        "memory.consolidate.now",
+        { runId, triggeredAt: new Date().toISOString(), ...(task ? { taskId: task.id } : {}) },
+        {
+          attempts: MAX_ATTEMPTS,
+          backoff: { type: "exponential", delay: 30_000 },
+          deduplication: { id: ADHOC_DEDUP_ID, ttl: 30_000 },
+          jobId: `memory:consolidate:${runId}`,
+        },
+      );
+    } catch (error) {
+      if (isDuplicateJobWriteError(error)) {
+        if (task && !planned?.reused) {
+          this.updateTask(task.id, {
+            status: "cancelled",
+            reason: "Duplicate memory consolidation task was already queued",
+          });
+        }
+        this.deps.onQueueError?.("[aithy.memory.consolidate] duplicate adhoc job ignored", error as Error);
+        return;
+      }
+      if (task && !planned?.reused) {
+        this.updateTask(task.id, {
+          status: "failed",
+          reason: "Could not queue memory consolidation",
+          errorSummary: error instanceof Error ? error.message : String(error),
+        });
+      }
+      throw error;
+    }
   }
 
   async close(): Promise<void> {
     await this.app.close();
+  }
+
+  updateConfig(config: AppConfig): void {
+    this.deps.config = config;
   }
 
   private async processJob(job: Job<JobData>): Promise<{ summary: string }> {

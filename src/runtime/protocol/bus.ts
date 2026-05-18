@@ -98,6 +98,7 @@ export interface ServiceStatusParams {
 
 export interface RuntimeConsoleSnapshot {
   services: RuntimeServiceStatus[];
+  setupStatuses: Array<WebLiveEvent & { type: "setup-status" }>;
   logs: Array<{ id: number | string; event: WebLiveEvent; createdAt: string }>;
   commands: RuntimeCommandRow[];
   queues: RuntimeQueueStatus[];

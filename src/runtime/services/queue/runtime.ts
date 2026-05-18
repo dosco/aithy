@@ -294,6 +294,7 @@ export class QueueServiceRuntime {
     }
     return {
       services: [...this.services.values()],
+      setupStatuses: this.recentSetupStatuses(),
       logs: this.runtimeStore.recentEvents({ kinds: ["log"], limit: logLimit }).map((row) => ({
         id: row.id,
         createdAt: row.createdAt,
@@ -302,6 +303,18 @@ export class QueueServiceRuntime {
       commands: this.runtimeStore.recentCommands(commandLimit),
       queues: [...queueById.values()],
     };
+  }
+
+  private recentSetupStatuses(): Array<WebLiveEvent & { type: "setup-status" }> {
+    const latest = new Map<string, WebLiveEvent & { type: "setup-status" }>();
+    const rows = this.runtimeStore.recentEvents({ kinds: ["setup-status"], limit: 100 }).reverse();
+    for (const row of rows) {
+      const event = row.payload;
+      if (event.type !== "setup-status") continue;
+      if (event.active || event.tone === "danger") latest.set(event.key, event);
+      else latest.delete(event.key);
+    }
+    return [...latest.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
 
   private publishChatQueueStatus(): void {

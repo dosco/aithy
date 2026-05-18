@@ -14,9 +14,11 @@ export interface GlobalMount {
 
 export interface AppConfig {
   aiProvider: string;
+  aiApiUrl?: string;
   aiApiKey?: string;
   aiModel?: string;
   fastAiProvider?: string;
+  fastAiApiUrl?: string;
   fastAiApiKey?: string;
   fastAiModel?: string;
   sandboxProvider: SandboxProviderKind;

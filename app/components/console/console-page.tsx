@@ -11,6 +11,7 @@ import type {
   RuntimeServiceDto,
 } from "@/server/runtime-console.dto";
 import { ConsoleFilters, LoadMoreRow } from "./console-filters";
+import { SetupStatusList } from "./console-setup-status";
 import { useRuntimeConsole } from "./use-runtime-console";
 
 const DEFAULT_LIMIT = 120;
@@ -85,6 +86,7 @@ export function ConsolePage({ initialState }: { initialState: RuntimeConsoleDto 
                   <ConsoleMetric icon={ListTree} label="queue depth" value={queueDepth.toString()} />
                   <ConsoleMetric icon={HardDrive} label="errors" value={errorLogs.toString()} tone={errorLogs ? "bad" : "ok"} />
                 </div>
+                <SetupStatusList statuses={state.setupStatuses} />
               </div>
 
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">

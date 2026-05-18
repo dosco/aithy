@@ -40,9 +40,15 @@ export interface SkillRow {
   name: string;
   description: string;
   content: string;
+  when_to_use: string | null;
   allowed_tools: string | null;
   tags: string | null;
   retrieved_count: number;
+  used_count: number;
+  disable_model_invocation: number;
+  user_invocable: number;
+  last_retrieved_at: string | null;
+  last_used_at: string | null;
   updated_at: string;
 }
 
@@ -215,6 +221,86 @@ export const sessionMigrations = [
     sql: `
       ALTER TABLE messages ADD COLUMN message_kind TEXT;
       ALTER TABLE messages ADD COLUMN metadata_json TEXT;
+    `,
+  },
+  {
+    version: 7,
+    precondition: hasSkillTable(),
+    sql: `
+      ALTER TABLE skills ADD COLUMN when_to_use TEXT;
+      ALTER TABLE skills ADD COLUMN disable_model_invocation INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE skills ADD COLUMN user_invocable INTEGER NOT NULL DEFAULT 1;
+      ALTER TABLE skills ADD COLUMN used_count INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE skills ADD COLUMN last_retrieved_at TEXT;
+      ALTER TABLE skills ADD COLUMN last_used_at TEXT;
+
+      CREATE TABLE skill_files (
+        skill_id TEXT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+        path TEXT NOT NULL,
+        content TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        bytes INTEGER NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (skill_id, path)
+      );
+
+      CREATE TABLE skill_links (
+        skill_id TEXT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+        target_skill_id TEXT NOT NULL,
+        PRIMARY KEY (skill_id, target_skill_id)
+      );
+
+      CREATE TABLE skill_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        event_type TEXT NOT NULL CHECK (event_type IN ('loaded', 'used')),
+        skill_id TEXT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+        session_id TEXT,
+        task_id TEXT,
+        stage TEXT,
+        reason TEXT,
+        query TEXT,
+        match_kind TEXT,
+        queries_json TEXT,
+        created_at TEXT NOT NULL
+      );
+
+      CREATE INDEX skill_events_skill_idx ON skill_events(skill_id, created_at DESC);
+      CREATE INDEX skill_events_session_idx ON skill_events(session_id, created_at DESC);
+
+      DROP TRIGGER IF EXISTS skills_ai;
+      DROP TRIGGER IF EXISTS skills_ad;
+      DROP TRIGGER IF EXISTS skills_au;
+      DROP TABLE IF EXISTS skills_fts;
+
+      CREATE VIRTUAL TABLE skills_fts USING fts5(
+        name,
+        description,
+        when_to_use,
+        tags,
+        content='skills',
+        content_rowid='rowid',
+        tokenize='unicode61 remove_diacritics 2'
+      );
+
+      INSERT INTO skills_fts(rowid, name, description, when_to_use, tags)
+      SELECT rowid, name, description, COALESCE(when_to_use, ''), COALESCE(tags, '') FROM skills;
+
+      CREATE TRIGGER skills_ai AFTER INSERT ON skills BEGIN
+        INSERT INTO skills_fts(rowid, name, description, when_to_use, tags)
+        VALUES (new.rowid, new.name, new.description, COALESCE(new.when_to_use, ''), COALESCE(new.tags, ''));
+      END;
+
+      CREATE TRIGGER skills_ad AFTER DELETE ON skills BEGIN
+        INSERT INTO skills_fts(skills_fts, rowid, name, description, when_to_use, tags)
+        VALUES ('delete', old.rowid, old.name, old.description, COALESCE(old.when_to_use, ''), COALESCE(old.tags, ''));
+      END;
+
+      CREATE TRIGGER skills_au AFTER UPDATE ON skills BEGIN
+        INSERT INTO skills_fts(skills_fts, rowid, name, description, when_to_use, tags)
+        VALUES ('delete', old.rowid, old.name, old.description, COALESCE(old.when_to_use, ''), COALESCE(old.tags, ''));
+        INSERT INTO skills_fts(rowid, name, description, when_to_use, tags)
+        VALUES (new.rowid, new.name, new.description, COALESCE(new.when_to_use, ''), COALESCE(new.tags, ''));
+      END;
     `,
   },
 ];

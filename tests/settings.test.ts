@@ -2,6 +2,7 @@ import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
+import { CUSTOM_OPENAI_PROVIDER } from "../src/agent/ai-providers";
 import { loadConfig } from "../src/config/env";
 import { isLoopbackRequest } from "../src/settings/localhost";
 import {
@@ -50,7 +51,8 @@ describe("web settings", () => {
   test("merges persisted runtime settings into base config", () => {
     const base = loadConfig({});
     const next = applyRuntimeSettings(base, {
-      aiProvider: "openai",
+      aiProvider: CUSTOM_OPENAI_PROVIDER,
+      aiApiUrl: "https://api.example.test/v1",
       aiModel: "gpt-next",
       sandboxProvider: "disabled",
       sandboxImage: "ubuntu:24.04",
@@ -58,12 +60,28 @@ describe("web settings", () => {
       parallelSearchMcpUrl: "https://search.example.test/mcp",
     });
 
+    expect(next.aiProvider).toBe(CUSTOM_OPENAI_PROVIDER);
+    expect(next.aiApiUrl).toBe("https://api.example.test/v1");
     expect(next.aiModel).toBe("gpt-next");
     expect(next.aiApiKey).toBeUndefined();
     expect(next.sandboxProvider).toBe("disabled");
     expect(next.systemBashEnabled).toBe(false);
     expect(next.parallelSearchMcpUrl).toBe("https://search.example.test/mcp");
     expect(runtimeSandboxChanged(base, next)).toBe(true);
+  });
+
+  test("clears custom OpenAI base URL when provider changes away", () => {
+    const base = {
+      ...loadConfig({}),
+      aiProvider: CUSTOM_OPENAI_PROVIDER,
+      aiApiUrl: "https://api.example.test/v1",
+    };
+    const next = applyRuntimeSettings(base, {
+      aiProvider: "openai",
+    });
+
+    expect(next.aiProvider).toBe("openai");
+    expect(next.aiApiUrl).toBeUndefined();
   });
 
   test("merges Parallel search key overrides without requiring one", () => {

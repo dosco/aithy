@@ -83,6 +83,7 @@ describe("SqliteSessionStateStore", () => {
       { scope: "session", version: 4 },
       { scope: "session", version: 5 },
       { scope: "session", version: 6 },
+      { scope: "session", version: 7 },
     ]);
     expect(new Database(dbPath).query(`
       SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'messages'

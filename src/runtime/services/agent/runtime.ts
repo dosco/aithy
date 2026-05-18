@@ -2,6 +2,11 @@ import { mkdir } from "node:fs/promises";
 import { shutdownManager } from "bunqueue/client";
 import { ActiveRunRegistry } from "../../../agent/active-runs";
 import { SqliteArtifactStore } from "../../../artifacts/artifact-store";
+import { createAutomationActions } from "../../../automations/actions";
+import { completeAutomationRun, failAutomationRun } from "../../../automations/completion";
+import { AutomationQueue, sessionsEvent } from "../../../automations/queue";
+import { SqliteAutomationStore } from "../../../automations/store";
+import type { AutomationToolActions } from "../../../automations/tool-actions";
 import { AgentDispatcher, type UserChatJobData, type UserChatJobResult } from "../../../agent/dispatcher";
 import { EventBus } from "../../../events/bus";
 import { MemoryConsolidateQueue } from "../../../memory/consolidate-queue";
@@ -9,6 +14,8 @@ import { MemoryExpiryQueue } from "../../../memory/expiry-queue";
 import { SqliteMemoryRunsStore } from "../../../memory/memory-runs";
 import { MemoryQueue } from "../../../memory/memory-queue";
 import { SqliteMemoryStore } from "../../../memory/memory-store";
+import { DreamQueue } from "../../../episodes/dream-queue";
+import { SqliteEpisodeStore } from "../../../episodes/episode-store";
 import { SqliteNotificationStore } from "../../../notifications/notification-store";
 import type { NotificationCreate, NotificationEntry } from "../../../notifications/types";
 import { CapabilityBroker } from "../../../security/capability-broker";
@@ -38,6 +45,7 @@ import { RemoteEmbedder, RemoteReranker } from "../embedding/client";
 import { SandboxCommandClient } from "../sandbox/client";
 import { QueueServiceClient } from "../queue/client";
 import { RemoteSessionStateStore } from "../queue/session-state-client";
+import { payloadString, userChatPayload } from "./command-payloads";
 
 export class AgentWorkerRuntime {
   private heartbeatTimer?: Timer;
@@ -54,17 +62,22 @@ export class AgentWorkerRuntime {
     public readonly sessions: SessionManager,
     public readonly soul: SoulProfile,
     public readonly memory: SqliteMemoryStore,
+    public readonly episodes: SqliteEpisodeStore,
     public readonly artifacts: SqliteArtifactStore,
     public readonly usage: SqliteUsageStore,
     public readonly activeRuns: ActiveRunRegistry,
     public readonly skills: SqliteSkillsStore,
     public readonly runtimeStore: RuntimeStore,
     public readonly tasks: SqliteTaskStore,
+    public readonly automations: SqliteAutomationStore,
+    public readonly automationActions: AutomationToolActions,
+    private readonly automationQueue: AutomationQueue,
     public readonly capabilities: CapabilityBroker,
     public readonly notifications: SqliteNotificationStore,
     private readonly dispatcher: AgentDispatcher,
     private readonly sessionState: RemoteSessionStateStore,
     public readonly memoryQueue: MemoryQueue,
+    public readonly dreamQueue: DreamQueue,
     private readonly memoryConsolidate: MemoryConsolidateQueue,
     private readonly memoryExpiry: MemoryExpiryQueue,
     public readonly skillCandidates: SqliteSkillCandidateStore,
@@ -84,6 +97,7 @@ export class AgentWorkerRuntime {
     await queue.services();
     const runtimeStore = new RuntimeStore(config.stateDbPath);
     const tasks = new SqliteTaskStore(config.stateDbPath);
+    const automations = new SqliteAutomationStore(config.stateDbPath);
     const capabilities = new CapabilityBroker(runtimeStore);
     capabilities.ensureDefaultLocalGrants();
 
@@ -102,6 +116,12 @@ export class AgentWorkerRuntime {
     const embedder = new RemoteEmbedder(queue);
     const reranker = new RemoteReranker(queue);
     const memory = new SqliteMemoryStore(config.stateDbPath, {
+      embedder,
+      reranker,
+      inlineEmbeds: false,
+      log: logMemory,
+    });
+    const episodes = new SqliteEpisodeStore(config.stateDbPath, {
       embedder,
       reranker,
       inlineEmbeds: false,
@@ -170,6 +190,14 @@ export class AgentWorkerRuntime {
     });
     const memoryConsolidate = new MemoryConsolidateQueue({ config, memory, runs: memoryRuns, tasks, onTaskStatus: publishTask, usage, notify, onQueueError });
     const memoryExpiry = new MemoryExpiryQueue({ config, memory, tasks, onTaskStatus: publishTask, notify, onQueueError });
+    const dreamQueue = new DreamQueue({
+      config,
+      episodes,
+      tasks,
+      onTaskStatus: publishTask,
+      usage,
+      onQueueError,
+    });
     const skillCandidateQueue = new SkillCandidateQueue({
       config,
       candidates: skillCandidates,
@@ -179,7 +207,7 @@ export class AgentWorkerRuntime {
       notify,
       onQueueError,
     });
-    await Promise.all([memoryConsolidate.schedule(), memoryExpiry.schedule()]);
+    await Promise.all([memoryConsolidate.schedule(), memoryExpiry.schedule(), dreamQueue.schedule()]);
 
     const dispatcher = new AgentDispatcher({
       stateDbPath: config.stateDbPath,
@@ -195,34 +223,47 @@ export class AgentWorkerRuntime {
           reason: "Agent is working",
         });
         if (task) runtimeRef.events.emit({ type: "task.status", task });
+        if (data.automationRunId) runtimeRef.automations.updateRun(data.automationRunId, { status: "running" });
       },
       onCompleted: (_data, result) => {
         if (runtimeRef) {
+          const rt = runtimeRef;
           if (_data.taskId) {
             const status = result.text === "[stopped]" ? "cancelled" : result.text.startsWith("Error:") ? "failed" : "completed";
-            const task = runtimeRef.tasks.update(_data.taskId, {
+            const task = rt.tasks.update(_data.taskId, {
               status,
               reason: status === "completed" ? "Done" : status === "cancelled" ? "Stopped by user" : "Agent returned an error",
               resultSummary: status === "completed" ? result.text.slice(0, 500) : null,
               errorSummary: status === "failed" ? result.text.slice(0, 500) : null,
             });
-            if (task) runtimeRef.events.emit({ type: "task.status", task });
+            if (task) rt.events.emit({ type: "task.status", task });
           }
-          publishUserChatReply(runtimeRef, result);
-          runtimeRef.publishQueueStatus();
+          if (_data.automationId && _data.automationRunId) {
+            completeAutomationRun({
+              automations: rt.automations,
+              automationId: _data.automationId,
+              automationRunId: _data.automationRunId,
+              text: result.text,
+              conversationId: result.conversationId,
+              notify: (input) => rt.notify(input),
+            });
+          }
+          publishUserChatReply(rt, result);
+          rt.publishQueueStatus();
         }
       },
       onFailed: (data, error) => {
         if (runtimeRef) {
+          const rt = runtimeRef;
           if (data.taskId) {
-            const task = runtimeRef.tasks.update(data.taskId, {
+            const task = rt.tasks.update(data.taskId, {
               status: "failed",
               reason: "Agent run failed",
               errorSummary: error.message,
             });
             if (task) {
-              runtimeRef.events.emit({ type: "task.status", task });
-              runtimeRef.notify({
+              rt.events.emit({ type: "task.status", task });
+              rt.notify({
                 kind: "task.failed",
                 title: task.title,
                 body: error.message,
@@ -230,9 +271,17 @@ export class AgentWorkerRuntime {
               });
             }
           }
-          publishUserChatFailure(runtimeRef, data, error);
-          void runtimeRef.flushSessionState();
-          runtimeRef.publishQueueStatus();
+          failAutomationRun({
+            automations: rt.automations,
+            automationId: data.automationId,
+            automationRunId: data.automationRunId,
+            error,
+            conversationId: data.conversationId,
+            notify: (input) => rt.notify(input),
+          });
+          publishUserChatFailure(rt, data, error);
+          void rt.flushSessionState();
+          rt.publishQueueStatus();
         }
       },
       process: async (data: UserChatJobData): Promise<UserChatJobResult> => {
@@ -240,6 +289,20 @@ export class AgentWorkerRuntime {
         return processUserChatJob(runtimeRef, data);
       },
     });
+
+    const automationQueue = new AutomationQueue({
+      config,
+      automations,
+      sessions,
+      tasks,
+      enqueueUserChat: (data) => dispatcher.enqueueUserChat(data),
+      onTaskStatus: publishTask,
+      publishSessions: (items) => live.publish(sessionsEvent(items)),
+      flushSessionState: () => sessionState.flush(),
+      notify,
+      onQueueError,
+    });
+    const automationActions = createAutomationActions({ automations, queue: automationQueue });
 
     const runtime = new AgentWorkerRuntime(
       config,
@@ -251,25 +314,31 @@ export class AgentWorkerRuntime {
       sessions,
       soul,
       memory,
+      episodes,
       artifacts,
       usage,
       activeRuns,
       skills,
       runtimeStore,
       tasks,
+      automations,
+      automationActions,
+      automationQueue,
       capabilities,
       notifications,
       dispatcher,
       sessionState,
       memoryQueue,
+      dreamQueue,
       memoryConsolidate,
       memoryExpiry,
       skillCandidates,
       skillCandidateQueue,
       skillPromotions,
-      [settings, skills, skillCandidates, skillPromotions, memory, memoryRuns, artifacts, notifications, usage, soulStore, runtimeStore, tasks],
+      [settings, skills, skillCandidates, skillPromotions, memory, episodes, memoryRuns, artifacts, notifications, usage, soulStore, runtimeStore, tasks, automations],
     );
     runtimeRef = runtime;
+    await automationQueue.syncSchedules();
     return runtime;
   }
 
@@ -338,6 +407,16 @@ export class AgentWorkerRuntime {
       await this.reloadSettings();
       return { reloaded: true };
     }
+    if (command.kind === "automations.sync") {
+      await this.automationQueue.syncSchedules();
+      return { synced: true };
+    }
+    if (command.kind === "automation.run_now") {
+      const automationId = payloadString(command.payload, "automationId");
+      if (!automationId) throw new Error("automation.run_now requires automationId");
+      await this.automationQueue.runNow(automationId);
+      return { queued: true };
+    }
     throw new Error(`Unknown agent command: ${command.kind}`);
   }
 
@@ -368,6 +447,10 @@ export class AgentWorkerRuntime {
       this.sessions.refreshAllMounts();
     }
     await this.queue.submitCommand("embedding-worker", "embedding.reload_settings");
+    this.memoryQueue.updateConfig(next);
+    this.memoryConsolidate.updateConfig(next);
+    this.dreamQueue.updateConfig(next);
+    this.skillCandidateQueue.updateConfig(next);
     this.config = next;
     this.publishQueueStatus();
   }
@@ -379,8 +462,10 @@ export class AgentWorkerRuntime {
     await Promise.allSettled([
       this.dispatcher.close(),
       this.memoryQueue.close(),
+      this.dreamQueue.close(),
       this.memoryConsolidate.close(),
       this.memoryExpiry.close(),
+      this.automationQueue.close(),
       this.skillCandidateQueue.close(),
       this.sessions.parkAll(),
       this.sessionState.flush(),
@@ -407,30 +492,4 @@ export class AgentWorkerRuntime {
   flushSessionState(): Promise<void> {
     return this.sessionState.flush();
   }
-}
-
-function userChatPayload(payload: unknown): UserChatJobData {
-  if (!payload || typeof payload !== "object") throw new Error("Invalid user chat command payload");
-  const value = payload as Record<string, unknown>;
-  const conversationId = value.conversationId;
-  const text = value.text;
-  const createdAt = value.createdAt;
-  const skillIds = value.skillIds;
-  if (
-    typeof conversationId !== "string"
-    || typeof text !== "string"
-    || typeof createdAt !== "string"
-    || !Array.isArray(skillIds)
-    || !skillIds.every((id) => typeof id === "string")
-  ) {
-    throw new Error("Invalid user chat command payload");
-  }
-  const taskId = typeof value.taskId === "string" ? value.taskId : undefined;
-  return { conversationId, text, createdAt, skillIds, ...(taskId ? { taskId } : {}) };
-}
-
-function payloadString(payload: unknown, key: string): string | undefined {
-  if (!payload || typeof payload !== "object") return undefined;
-  const value = (payload as Record<string, unknown>)[key];
-  return typeof value === "string" ? value : undefined;
 }

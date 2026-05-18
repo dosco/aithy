@@ -1,8 +1,9 @@
 import { useCallback, useState } from "react";
 import * as Popover from "@radix-ui/react-popover";
-import { ArrowDownWideNarrow, Check, ChevronDown, Clock3, SlidersHorizontal } from "lucide-react";
+import { ArrowDownWideNarrow, Check, ChevronDown, Clock3, Plus, Search, SlidersHorizontal } from "lucide-react";
 import { PageFrame } from "@/components/page-frame";
 import { ThemeSync } from "@/components/theme-sync";
+import { Button } from "@/components/ui/button";
 import { fieldClass } from "./lib/form-bits";
 import {
   useDebouncedValue,
@@ -16,17 +17,15 @@ import {
 } from "@/server/skills-memory.functions";
 import type { MemoriesCursor, MemoryDto, MemoryPageStateDto } from "@/server/dto";
 import type { MemoryKind, MemoryLabel } from "../../src/memory/types";
-import { AnimatedCount } from "./mind/animated-count";
 import { LivenessRibbon } from "./mind/liveness-ribbon";
-import {
-  MemoryLattice,
-  NEW_MEMORY_ID,
-} from "./mind/memory-lattice";
+import { MemoryLattice } from "./mind/memory-lattice";
+import { MemoryDrawer, type MemoryDrawerMode } from "./mind/memory-drawer";
 import { emptyMemoryForm, type MemoryForm } from "./mind/memory-tile";
 import { KIND_GLYPH, KIND_TINT_TEXT } from "./mind/kind-glyph";
 import { MEMORY_KINDS, MEMORY_LABELS } from "../../src/memory/types";
 
 export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto }) {
+  const [drawerMode, setDrawerMode] = useState<MemoryDrawerMode | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [form, setForm] = useState<MemoryForm>(emptyMemoryForm);
   const [error, setError] = useState<string | null>(null);
@@ -35,14 +34,17 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
   const [labelFilter, setLabelFilter] = useState<MemoryLabel | "all">("all");
   const [sort, setSort] = useState<"recent" | "retrieved">("recent");
   const [memoriesCount, setMemoriesCount] = useState(initialState.memoriesCount);
+  const [filteredCount, setFilteredCount] = useState(initialState.memoriesCount);
   const [mostRecent, setMostRecent] = useState<{ title: string } | null>(
     initialState.memoriesMostRecent,
   );
+  const [refreshToken, setRefreshToken] = useState(0);
 
   const debouncedFilter = useDebouncedValue(filter, 200);
   const queryArg = debouncedFilter.trim();
   const kindArg = kindFilter === "all" ? undefined : kindFilter;
-  const resetKey = `${queryArg}|${kindFilter}|${labelFilter}|${sort}`;
+  const filtering = !!queryArg || kindFilter !== "all" || labelFilter !== "all";
+  const resetKey = `${queryArg}|${kindFilter}|${labelFilter}|${sort}|${refreshToken}`;
 
   const fetchPage = useCallback(
     async (cursor: MemoriesCursor | null) => {
@@ -56,7 +58,7 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
         },
       });
       if (cursor === null && res.total !== null) {
-        setMemoriesCount(res.total);
+        setFilteredCount(res.total);
       }
       return { items: res.items, nextCursor: res.nextCursor };
     },
@@ -70,6 +72,7 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
     replaceItem,
     removeItem,
     done,
+    loading,
   } = useInfinitePage<MemoryDto, MemoriesCursor>({
     initial: {
       items: initialState.memories,
@@ -80,28 +83,21 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
   });
 
   function openMemory(entry: MemoryDto) {
+    setDrawerMode("edit");
     setOpenId(entry.id);
-    setForm({
-      kind: entry.kind,
-      title: entry.title,
-      body: entry.body,
-      labels: entry.labels,
-      validFrom: entry.validFrom ?? "",
-      validUntil: entry.validUntil ?? "",
-      evidence: entry.evidence ?? "",
-      frequency: entry.frequency ?? "",
-      importance: entry.importance,
-    });
+    setForm(memoryToForm(entry));
     setError(null);
   }
 
   function startNew() {
-    setOpenId(NEW_MEMORY_ID);
+    setDrawerMode("new");
+    setOpenId(null);
     setForm(emptyMemoryForm);
     setError(null);
   }
 
-  function close() {
+  function closeDrawer() {
+    setDrawerMode(null);
     setOpenId(null);
     setForm(emptyMemoryForm);
     setError(null);
@@ -119,8 +115,8 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
       return;
     }
     try {
-      const editing = openId !== null && openId !== NEW_MEMORY_ID;
-      const entry = await upsertMemory({
+      const editing = drawerMode === "edit" && openId !== null;
+      const result = await upsertMemory({
         data: {
           id: editing ? openId : undefined,
           kind: form.kind,
@@ -135,13 +131,15 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
         },
       });
       if (editing) {
-        replaceItem(entry.id, entry);
+        replaceItem(openId, result.memory);
       } else {
-        prependItem(entry);
-        setMemoriesCount((c) => c + 1);
+        prependItem(result.memory);
       }
-      setMostRecent({ title: entry.title });
-      close();
+      setMemoriesCount(result.memoriesCount);
+      setFilteredCount((count) => (filtering ? count : result.memoriesCount));
+      setMostRecent(result.memoriesMostRecent);
+      setRefreshToken((value) => value + 1);
+      closeDrawer();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save memory");
     }
@@ -152,66 +150,101 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
     if (result.removed) {
       removeItem(id);
       setMemoriesCount(result.memoriesCount);
+      setFilteredCount((count) => Math.max(0, count - 1));
       setMostRecent(result.memoriesMostRecent);
+      setRefreshToken((value) => value + 1);
     }
-    if (openId === id) close();
+    if (openId === id) closeDrawer();
   }
 
-  const title =
-    memoriesCount === 0 ? (
-      <span>i don't remember anything yet.</span>
-    ) : (
-      <span>
-        i remember <AnimatedCount value={memoriesCount} />{" "}
-        {memoriesCount === 1 ? "thing" : "things"}.
-      </span>
-    );
-  const subtitle = mostRecent ? <>most recent · &ldquo;{mostRecent.title}&rdquo;</> : undefined;
-
-  const editorProps = {
-    form,
-    onChange: setForm,
-    error,
-    onSave: save,
-    onCancel: close,
-    onDelete: openId && openId !== NEW_MEMORY_ID ? () => void remove(openId) : undefined,
-    editing: openId !== null && openId !== NEW_MEMORY_ID,
-  };
+  const subtitle = mostRecent
+    ? `${plural(memoriesCount, "memory")} · recent: ${mostRecent.title}`
+    : plural(memoriesCount, "memory");
+  const showing =
+    filtering || filteredCount !== memoriesCount
+      ? `Showing ${filteredCount.toLocaleString()} of ${memoriesCount.toLocaleString()}`
+      : `${memoriesCount.toLocaleString()} total`;
+  const openMemoryEntry = openId
+    ? memories.find((memory) => memory.id === openId) ?? null
+    : null;
 
   return (
-    <PageFrame eyebrow="Memory" title={title} subtitle={subtitle}>
+    <PageFrame eyebrow="Memory" title="Memory library" subtitle={subtitle}>
       <ThemeSync ui={initialState.settings.ui} />
 
       <LivenessRibbon initialRuns={initialState.memoryRuns} />
 
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        <input
-          className={cn(fieldClass, "max-w-sm flex-1 rounded-full sm:flex-none")}
-          placeholder="filter memories…"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        />
-        <MemoryViewMenu
-          kind={kindFilter}
-          label={labelFilter}
-          sort={sort}
-          onKindChange={setKindFilter}
-          onLabelChange={setLabelFilter}
-          onSortChange={setSort}
-        />
+      <div className="mb-4 grid gap-3 md:grid-cols-[minmax(18rem,1fr)_auto_auto] md:items-center">
+        <label className="relative min-w-0">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[rgb(var(--muted-foreground))]" />
+          <input
+            className={cn(fieldClass, "rounded-lg pl-9")}
+            placeholder="Search memories"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+          />
+        </label>
+        <div className="grid grid-cols-2 gap-2 md:contents">
+          <Button type="button" onClick={startNew} className="w-full rounded-lg md:w-auto">
+            <Plus className="h-4 w-4" /> New memory
+          </Button>
+          <MemoryViewMenu
+            kind={kindFilter}
+            label={labelFilter}
+            sort={sort}
+            onKindChange={setKindFilter}
+            onLabelChange={setLabelFilter}
+            onSortChange={setSort}
+          />
+        </div>
+      </div>
+
+      <div className="mb-3 flex items-center justify-between gap-2 text-xs text-[rgb(var(--muted-foreground))]">
+        <span>{showing}</span>
+        {loading ? <span>Loading...</span> : null}
       </div>
 
       <MemoryLattice
         memories={memories}
-        openId={openId}
-        editorProps={editorProps}
         onOpen={openMemory}
         onStartNew={startNew}
         emptyAll={memoriesCount === 0 && memories.length === 0}
+        emptyFiltered={memoriesCount > 0 && memories.length === 0 && filtering}
+        filter={queryArg}
+        loading={loading}
         sentinelRef={done ? null : sentinelRef}
+      />
+
+      <MemoryDrawer
+        mode={drawerMode}
+        form={form}
+        memory={openMemoryEntry}
+        error={error}
+        onChange={setForm}
+        onSave={save}
+        onClose={closeDrawer}
+        onDelete={drawerMode === "edit" && openId ? () => void remove(openId) : undefined}
       />
     </PageFrame>
   );
+}
+
+function memoryToForm(entry: MemoryDto): MemoryForm {
+  return {
+    kind: entry.kind,
+    title: entry.title,
+    body: entry.body,
+    labels: entry.labels,
+    validFrom: entry.validFrom ?? "",
+    validUntil: entry.validUntil ?? "",
+    evidence: entry.evidence ?? "",
+    frequency: entry.frequency ?? "",
+    importance: entry.importance,
+  };
+}
+
+function plural(value: number, noun: string): string {
+  return `${value.toLocaleString()} ${value === 1 ? noun : `${noun}s`}`;
 }
 
 function validateMemoryDates(form: MemoryForm): string | null {
@@ -249,24 +282,24 @@ function MemoryViewMenu({
 }) {
   const sortItems = [
     { value: "recent" as const, label: "Recent", icon: Clock3 },
-    { value: "retrieved" as const, label: "Top retrieved", icon: ArrowDownWideNarrow },
+    { value: "retrieved" as const, label: "Most recalled", icon: ArrowDownWideNarrow },
   ];
   const kindItems: Array<MemoryKind | "all"> = ["all", ...MEMORY_KINDS];
   const labelItems: Array<MemoryLabel | "all"> = ["all", ...MEMORY_LABELS];
   const kindLabel = kind === "all" ? "All kinds" : kind;
   const labelLabel = label === "all" ? "All labels" : label.replace("_", " ");
-  const sortLabel = sort === "recent" ? "Recent" : "Top retrieved";
+  const sortLabel = sort === "recent" ? "Recent" : "Most recalled";
 
   return (
     <Popover.Root>
       <Popover.Trigger asChild>
         <button
           type="button"
-          className="inline-flex h-10 items-center gap-2 rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/75 px-3 text-sm text-[rgb(var(--foreground))] transition hover:bg-[rgb(var(--panel))]"
+          className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/75 px-3 text-sm text-[rgb(var(--foreground))] transition hover:bg-[rgb(var(--panel))] md:w-auto md:justify-start"
         >
           <SlidersHorizontal className="h-4 w-4 text-[rgb(var(--muted-foreground))]" />
-          <span className="hidden sm:inline">View</span>
-          <span className="text-[rgb(var(--muted-foreground))]">
+          <span>Filters</span>
+          <span className="hidden text-[rgb(var(--muted-foreground))] lg:inline">
             {kindLabel} · {labelLabel} · {sortLabel}
           </span>
           <ChevronDown className="h-3.5 w-3.5 text-[rgb(var(--muted-foreground))]" />

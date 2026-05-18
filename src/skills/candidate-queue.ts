@@ -19,6 +19,8 @@ import {
 
 export const SKILL_CANDIDATE_BATCH_DELAY_MS = 5 * 60_000;
 export const SKILL_CANDIDATE_DEDUP_TTL_MS = 10 * 60_000;
+const SKILL_CANDIDATE_DEDUP_ID = "skill-candidates:auto";
+const SKILL_CANDIDATE_ADHOC_DEDUP_ID = "skill-candidates:adhoc";
 const MAX_MESSAGES_PER_RUN = 200;
 const OVERLAP_MESSAGES_PER_SESSION = 20;
 const SUGGESTION_CONFIDENCE = 0.7;
@@ -81,13 +83,20 @@ export class SkillCandidateQueue {
   }
 
   async enqueueAuto(): Promise<void> {
-    const task = this.deps.tasks?.create({
-      kind: "skill.candidate",
-      title: "Look for reusable skill ideas",
-      conversationId: null,
-      reason: "Queued for skill idea detection",
+    const planned = this.deps.tasks?.createOrReusePlanned({
+      dedupeKey: SKILL_CANDIDATE_DEDUP_ID,
+      create: {
+        kind: "skill.candidate",
+        title: "Look for reusable skill ideas",
+        conversationId: null,
+        reason: "Queued for skill idea detection",
+      },
+      update: {
+        reason: "Queued for skill idea detection",
+      },
     });
-    if (task) this.deps.onTaskStatus?.(task);
+    if (planned) this.deps.onTaskStatus?.(planned.task);
+    const task = planned?.task;
     try {
       await this.app.queue.add(
         "skill.candidates.auto",
@@ -96,7 +105,7 @@ export class SkillCandidateQueue {
           attempts: 1,
           delay: SKILL_CANDIDATE_BATCH_DELAY_MS,
           deduplication: {
-            id: "skill-candidates:auto",
+            id: SKILL_CANDIDATE_DEDUP_ID,
             ttl: SKILL_CANDIDATE_DEDUP_TTL_MS,
             extend: true,
             replace: true,
@@ -106,7 +115,7 @@ export class SkillCandidateQueue {
       );
     } catch (error) {
       if (isDuplicateJobWriteError(error)) {
-        if (task) {
+        if (task && !planned?.reused) {
           const cancelled = this.deps.tasks?.update(task.id, {
             status: "cancelled",
             reason: "Duplicate skill idea task was already queued",
@@ -116,7 +125,7 @@ export class SkillCandidateQueue {
         this.deps.onQueueError?.("[aithy.skill.candidates] duplicate auto job ignored", error as Error);
         return;
       }
-      if (task) {
+      if (task && !planned?.reused) {
         const failed = this.deps.tasks?.update(task.id, {
           status: "failed",
           reason: "Could not queue skill idea task",
@@ -129,26 +138,60 @@ export class SkillCandidateQueue {
   }
 
   async runNow(): Promise<void> {
-    const task = this.deps.tasks?.create({
-      kind: "skill.candidate",
-      title: "Look for reusable skill ideas",
-      conversationId: null,
-      reason: "Queued for skill idea detection",
-    });
-    if (task) this.deps.onTaskStatus?.(task);
-    await this.app.queue.add(
-      "skill.candidates.now",
-      { triggeredAt: new Date().toISOString(), ...(task ? { taskId: task.id } : {}) },
-      {
-        attempts: 1,
-        deduplication: { id: "skill-candidates:adhoc", ttl: 30_000 },
-        jobId: `skill:candidates:${crypto.randomUUID()}`,
+    const planned = this.deps.tasks?.createOrReusePlanned({
+      dedupeKey: SKILL_CANDIDATE_ADHOC_DEDUP_ID,
+      create: {
+        kind: "skill.candidate",
+        title: "Look for reusable skill ideas",
+        conversationId: null,
+        reason: "Queued for skill idea detection",
       },
-    );
+      update: {
+        reason: "Queued for skill idea detection",
+      },
+    });
+    if (planned) this.deps.onTaskStatus?.(planned.task);
+    const task = planned?.task;
+    try {
+      await this.app.queue.add(
+        "skill.candidates.now",
+        { triggeredAt: new Date().toISOString(), ...(task ? { taskId: task.id } : {}) },
+        {
+          attempts: 1,
+          deduplication: { id: SKILL_CANDIDATE_ADHOC_DEDUP_ID, ttl: 30_000 },
+          jobId: `skill:candidates:${crypto.randomUUID()}`,
+        },
+      );
+    } catch (error) {
+      if (isDuplicateJobWriteError(error)) {
+        if (task && !planned?.reused) {
+          const cancelled = this.deps.tasks?.update(task.id, {
+            status: "cancelled",
+            reason: "Duplicate skill idea task was already queued",
+          });
+          if (cancelled) this.deps.onTaskStatus?.(cancelled);
+        }
+        this.deps.onQueueError?.("[aithy.skill.candidates] duplicate adhoc job ignored", error as Error);
+        return;
+      }
+      if (task && !planned?.reused) {
+        const failed = this.deps.tasks?.update(task.id, {
+          status: "failed",
+          reason: "Could not queue skill idea task",
+          errorSummary: error instanceof Error ? error.message : String(error),
+        });
+        if (failed) this.deps.onTaskStatus?.(failed);
+      }
+      throw error;
+    }
   }
 
   async close(): Promise<void> {
     await this.app.close();
+  }
+
+  updateConfig(config: AppConfig): void {
+    this.deps.config = config;
   }
 
   private async processJob(job: Job<JobData>): Promise<{ inspected: number; candidates: number; suggested: number }> {

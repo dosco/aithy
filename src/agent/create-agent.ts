@@ -3,7 +3,9 @@ import {
   AxJSRuntime,
   agent,
   type AxAgentFunctionCall,
+  type AxAgentSkillResult,
   type AxAgentSkillsSearchFn,
+  type AxAgentUsedSkill,
   type AxFunctionCallTrace,
 } from "@ax-llm/ax";
 import type { AppConfig } from "../config/env";
@@ -40,6 +42,8 @@ export interface CreateAithyAgentOptions {
   conversationId: string;
   soul?: SoulProfile;
   onSkillsSearch?: AxAgentSkillsSearchFn;
+  onLoadedSkills?: (results: readonly AxAgentSkillResult[]) => void | Promise<void>;
+  onUsedSkills?: (usedSkills: readonly AxAgentUsedSkill[]) => void | Promise<void>;
   onMemoriesSearch?: AxAgentMemoriesSearchFn;
   onFunctionCall?: AgentFunctionCallHandler;
 }
@@ -56,6 +60,7 @@ Efficient JavaScript strategy:
 - Parse inputs.conversationHistory into turns, for example with /^\\[(.*?)\\] (user|assistant): (.*)$/.
 - Inspect from newest to oldest to find the most recent assistant question, offered choices, and unresolved topic.
 - Also carry forward the latest concrete user-provided facts: target object, location, filters, names, ids, files, and requested action.
+- When conversationHistory contains a "Published artifact:" line, carry forward its filename, title, artifact id, open URL, and exact sandboxPath. Existing artifact paths are stable across turns; do not rewrite them into the current run outbox.
 - If inputs.urlContext is present, include its useful fetched answer, page content, sources, and errors in the evidence object.
 - If inputs.searchContext is present, include its useful result text, sources, and errors in the evidence object.
 - Build a compact evidence object such as { latestRequest, resolvedIntent, activeTopic, location, clarificationAnswer, supportingTurns }. Keep supportingTurns short and quote only the lines needed to justify the resolution.
@@ -75,8 +80,8 @@ When the transcript exceeds its budget, the oldest entries are dropped first, so
 const conversationHistoryPromptChars = 2_000;
 
 const durableMemoryDescription = `Durable memory:
-- \`inputs.memories\` is auto-populated with relevant prior facts, preferences, instructions, and events. Read it before answering questions that might depend on user/project context not in the current conversation.
-- Call \`recall([...])\` with extra topic queries when you need more than what's already loaded — additional matches accumulate into \`inputs.memories\`.
+- \`inputs.memories\` is auto-populated with prior facts, preferences, instructions, and events that retrieval judged potentially relevant. Treat them as optional context: use them when they materially help, and ignore them when they are stale, invalid, contradicted, or unrelated.
+- Call \`recall([...])\` with extra topic queries when you need more than what's already loaded — additional matches accumulate into \`inputs.memories\`. Recalled memories may include validity windows and evidence; honor those limits before relying on the memory.
 - The memory triage agent runs after each of your turns. You do NOT decide what to persist. Use \`memory.remember(hint)\` ONLY when the user explicitly asks you to remember something ("remember that…", "save this…"); it queues the request for triage. The user does not need to be told a queue exists — just acknowledge naturally.
 
 Keep your prompt focused on the user's request; do not narrate memory decisions.`;
@@ -99,6 +104,7 @@ const artifactGuidance = `
 Artifacts:
 - When the user asks you to create, save, write, export, or generate a file for them, treat that file as a user-facing artifact.
 - The current run outbox is provided in artifactContext and as $AITHY_OUTBOX for shell commands.
+- The current run outbox is for new artifacts in this turn. Existing/published artifacts may appear in conversationHistory as "Published artifact:" lines; when the user asks about a previous file, use that exact sandboxPath rather than the current run outbox.
 - For text-like artifacts, use artifact.write; it writes under the current run outbox and publishes the chat card in one step.
 - For artifacts created by another tool or command, write them under $AITHY_OUTBOX, then call artifact.publish with that path.
 - Keep scratch files, package output, and intermediates elsewhere in /workspace unless the user explicitly asked to receive them.`;
@@ -153,6 +159,8 @@ export function createAithyAgent({
   conversationId,
   soul,
   onSkillsSearch,
+  onLoadedSkills,
+  onUsedSkills,
   onMemoriesSearch,
   onFunctionCall,
 }: CreateAithyAgentOptions): CreatedAgent {
@@ -188,6 +196,8 @@ export function createAithyAgent({
     runtime: new AxJSRuntime(),
     functionDiscovery: false,
     onSkillsSearch,
+    onLoadedSkills,
+    onUsedSkills,
     onMemoriesSearch,
     onFunctionCall: onFunctionCall
       ? (call: unknown) => onFunctionCall(call as AxFunctionCallTrace | AxAgentFunctionCall)

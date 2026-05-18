@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import { listMemoryRuns } from "@/server/actions.functions";
 import type { MemoryRunDto } from "@/server/dto";
 import { cn } from "@/lib/utils";
+import { memoryRunSummaryForDisplay } from "./memory-run-display";
 
 type Status = "running" | "idle" | "failed";
 
@@ -21,7 +22,7 @@ const STATUS_DOT: Record<Status, string> = {
 
 const STATUS_LABEL: Record<Status, string> = {
   running: "thinking",
-  idle: "settled",
+  idle: "ready",
   failed: "stumbled",
 };
 
@@ -56,13 +57,12 @@ export function LivenessRibbon({ initialRuns }: { initialRuns: MemoryRunDto[] })
 
   const status = deriveStatus(runs);
   const recent = runs[0];
-  const summary =
-    recent?.summary ?? recent?.error ?? (status === "running" ? "running…" : null);
+  const summary = memoryRunSummaryForDisplay(recent, status);
 
   return (
-    <div className="mb-5 max-w-3xl">
-      <div className="flex items-start gap-2 text-[13px] text-[rgb(var(--muted-foreground))]">
-        <span className={cn("h-2 w-2 shrink-0 rounded-full", STATUS_DOT[status])} />
+    <div className="mb-4 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/45 px-3 py-2">
+      <div className="flex items-start gap-2 text-xs text-[rgb(var(--muted-foreground))]">
+        <span className={cn("mt-1.5 h-2 w-2 shrink-0 rounded-full", STATUS_DOT[status])} />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
             <span className="font-mono text-[10px] uppercase tracking-[0.2em] text-[rgb(var(--foreground))]/70">

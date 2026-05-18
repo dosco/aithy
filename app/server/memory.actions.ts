@@ -11,7 +11,9 @@ export const resetMemories = createServerFn({ method: "POST" })
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
     await runtime.memory.flushPendingEmbeds();
+    await runtime.episodes.flushPendingEmbeds();
     runtime.memory.resetAll();
+    runtime.episodes.resetAll();
     runtime.memoryRuns.resetAll();
     return {
       memoriesCount: runtime.memory.count(),

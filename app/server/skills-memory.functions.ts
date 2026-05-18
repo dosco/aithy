@@ -4,6 +4,7 @@ import { z } from "zod";
 import { MEMORY_KINDS, MEMORY_LABELS } from "../../src/memory/types";
 import { assertLoopbackRequest } from "../../src/settings/localhost";
 import { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
+import { diffSkillBundle, parseSkillBundleFiles } from "../../src/skills/bundle";
 import {
   MEMORIES_PAGE_SIZE,
   SKILLS_PAGE_SIZE,
@@ -15,9 +16,16 @@ const skillUpsertInput = z.object({
   id: z.string().min(1).max(120).regex(/^[a-z0-9][a-z0-9-]*$/, "id must be a slug"),
   name: z.string().min(1).max(120),
   description: z.string().max(2000),
+  whenToUse: z.string().max(2000).nullable().optional(),
   body: z.string().max(50_000),
   allowedTools: z.string().max(500).nullable().optional(),
   tags: z.string().max(500).nullable().optional(),
+  disableModelInvocation: z.boolean().optional(),
+  userInvocable: z.boolean().optional(),
+  files: z.array(z.object({
+    path: z.string().min(1).max(240),
+    content: z.string().max(100_000),
+  })).max(40).optional(),
 });
 
 export const upsertSkill = createServerFn({ method: "POST" })
@@ -29,11 +37,71 @@ export const upsertSkill = createServerFn({ method: "POST" })
       id: data.id,
       name: data.name.trim(),
       description: data.description.trim(),
+      whenToUse: data.whenToUse?.trim() || null,
       body: data.body,
       allowedTools: data.allowedTools?.trim() || null,
       tags: data.tags?.trim() || null,
+      disableModelInvocation: data.disableModelInvocation,
+      userInvocable: data.userInvocable,
+      files: data.files ?? [],
     });
-    return skillDto(entry);
+    return {
+      skill: skillDto(entry),
+      skillsCount: runtime.skills.count(),
+      skillsToolUniverse: runtime.skills.countDistinctTools(),
+    };
+  });
+
+const bundleFileInput = z.object({
+  path: z.string().min(1).max(500),
+  content: z.string().max(100_000),
+});
+
+const skillBundleUploadInput = z.object({
+  files: z.array(bundleFileInput).min(1).max(80),
+  confirmedOverwrite: z.boolean().optional(),
+});
+
+export const previewSkillBundleUpload = createServerFn({ method: "POST" })
+  .inputValidator(skillBundleUploadInput.pick({ files: true }))
+  .handler(async ({ data }) => {
+    assertLoopbackRequest(getRequest());
+    const runtime = await getAithyRuntime();
+    const bundle = parseSkillBundleFiles(data.files);
+    const existing = runtime.skills.get(bundle.id);
+    return {
+      bundle,
+      exists: Boolean(existing),
+      existing: existing ? skillDto(existing) : null,
+      diff: diffSkillBundle(existing, bundle),
+    };
+  });
+
+export const saveSkillBundleUpload = createServerFn({ method: "POST" })
+  .inputValidator(skillBundleUploadInput)
+  .handler(async ({ data }) => {
+    assertLoopbackRequest(getRequest());
+    const runtime = await getAithyRuntime();
+    const bundle = parseSkillBundleFiles(data.files);
+    const exists = Boolean(runtime.skills.get(bundle.id));
+    if (exists && !data.confirmedOverwrite) throw new Error("This skill already exists; review the update before saving");
+    const entry = runtime.skills.upsert({
+      id: bundle.id,
+      name: bundle.name,
+      description: bundle.description,
+      whenToUse: bundle.whenToUse,
+      body: bundle.body,
+      allowedTools: bundle.allowedTools,
+      tags: bundle.tags,
+      disableModelInvocation: bundle.disableModelInvocation,
+      userInvocable: bundle.userInvocable,
+      files: bundle.files,
+    });
+    return {
+      skill: skillDto(entry),
+      skillsCount: runtime.skills.count(),
+      skillsToolUniverse: runtime.skills.countDistinctTools(),
+    };
   });
 
 const skillDeleteInput = z.object({ id: z.string().min(1) });
@@ -112,7 +180,12 @@ export const upsertMemory = createServerFn({ method: "POST" })
       importance: data.importance,
       source: "ui",
     });
-    return memoryDto(entry);
+    const mostRecent = runtime.memory.mostRecent();
+    return {
+      memory: memoryDto(entry),
+      memoriesCount: runtime.memory.count(),
+      memoriesMostRecent: mostRecent ? { title: mostRecent.title } : null,
+    };
   });
 
 const memoryDeleteInput = z.object({ id: z.string().min(1) });

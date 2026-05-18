@@ -72,6 +72,12 @@ function notificationLabel(kind: string): string {
       return "Skill suggestion";
     case "task.failed":
       return "Task needs attention";
+    case "automation.completed":
+      return "Attention";
+    case "automation.needs_attention":
+      return "Attention needs you";
+    case "automation.failed":
+      return "Attention failed";
     case "mount.added":
       return "Files";
     default:

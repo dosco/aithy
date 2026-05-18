@@ -25,7 +25,7 @@ export function artifactContextText(input: ArtifactRunContext): string {
   return [
     `Current run id: ${input.runId}`,
     `Current run outbox: ${input.runOutboxPath}`,
-    "Write user-facing files there. Files created there during this turn are published as artifact cards.",
+    "Use the current run outbox for new user-facing files. Files created there during this turn are published as artifact cards.",
   ].join("\n");
 }
 

@@ -2,11 +2,13 @@ import path from "node:path";
 import { mkdir } from "node:fs/promises";
 import { SESSION_SWEEP_INTERVAL_MS } from "../config/limits";
 import { ActiveRunRegistry } from "../agent/active-runs";
+import { SqliteAutomationStore } from "../automations/store";
 import { UserChatCommandProducer, type UserChatQueueClient } from "../agent/dispatcher";
 import type { AppConfig } from "../config/env";
 import { assertStartupConfig } from "../config/validate";
 import { EventBus } from "../events/bus";
 import { SqliteMemoryStore } from "../memory/memory-store";
+import { SqliteEpisodeStore } from "../episodes/episode-store";
 import { SqliteMemoryRunsStore } from "../memory/memory-runs";
 import { MemoryConsolidateProducer, type MemoryConsolidateHandle } from "../memory/consolidate-queue";
 import { shutdownManager } from "bunqueue/client";
@@ -56,6 +58,7 @@ export interface AithyRuntime {
   skills: SqliteSkillsStore;
   artifacts: SqliteArtifactStore;
   memory: SqliteMemoryStore;
+  episodes: SqliteEpisodeStore;
   notifications: SqliteNotificationStore;
   notify(input: NotificationCreate): NotificationEntry;
   usage: SqliteUsageStore;
@@ -69,6 +72,7 @@ export interface AithyRuntime {
   sessionState: RemoteSessionStateStore;
   runtimeStore: RuntimeStore;
   tasks: SqliteTaskStore;
+  automations: SqliteAutomationStore;
   respondSystemPermission(
     requestId: string,
     decision: "allowed" | "denied",
@@ -151,6 +155,7 @@ class RuntimeImpl implements AithyRuntime {
     public skills: SqliteSkillsStore,
     public artifacts: SqliteArtifactStore,
     public memory: SqliteMemoryStore,
+    public episodes: SqliteEpisodeStore,
     public memoryRuns: SqliteMemoryRunsStore,
     public memoryConsolidate: MemoryConsolidateHandle,
     public skillCandidates: SqliteSkillCandidateStore,
@@ -163,6 +168,7 @@ class RuntimeImpl implements AithyRuntime {
     public sessionState: RemoteSessionStateStore,
     public readonly runtimeStore: RuntimeStore,
     public readonly tasks: SqliteTaskStore,
+    public readonly automations: SqliteAutomationStore,
   ) {}
 
   notify(input: NotificationCreate): NotificationEntry {
@@ -201,12 +207,14 @@ class RuntimeImpl implements AithyRuntime {
     const queue = queueHandle.client;
     queue.subscribe((event) => live.publish(event));
     const memory = new SqliteMemoryStore(config.stateDbPath);
+    const episodes = new SqliteEpisodeStore(config.stateDbPath);
     const artifacts = new SqliteArtifactStore(config.stateDbPath, config.workspaceRoot, config.outboxRoot);
     const memoryRuns = new SqliteMemoryRunsStore(config.stateDbPath);
     const notifications = new SqliteNotificationStore(config.stateDbPath);
     const usage = new SqliteUsageStore(config.stateDbPath);
     const runtimeStore = new RuntimeStore(config.stateDbPath);
     const tasks = new SqliteTaskStore(config.stateDbPath);
+    const automations = new SqliteAutomationStore(config.stateDbPath);
 
     const soulStore = new SqliteSoulStore(config.stateDbPath);
     const soul = loadOrSeedSoul(soulStore);
@@ -257,6 +265,7 @@ class RuntimeImpl implements AithyRuntime {
       skills,
       artifacts,
       memory,
+      episodes,
       memoryRuns,
       memoryConsolidate,
       skillCandidates,
@@ -269,6 +278,7 @@ class RuntimeImpl implements AithyRuntime {
       sessionState,
       runtimeStore,
       tasks,
+      automations,
     );
     runtimeRef = runtime;
     runtime.queueHandle = queueHandle;
@@ -462,11 +472,13 @@ class RuntimeImpl implements AithyRuntime {
     this.skillPromotions.close();
     this.skillCandidates.close();
     this.memory.close();
+    this.episodes.close();
     this.memoryRuns.close();
     this.notifications.close();
     this.usage.close();
     this.runtimeStore.close();
     this.tasks.close();
+    this.automations.close();
   }
 }
 async function doResetAithyRuntimeSystem(): Promise<AithyRuntime> {

@@ -171,6 +171,65 @@ describe("artifact chat messages", () => {
     ]));
     artifacts.close();
   });
+
+  test("carries previous artifact paths through conversation history", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "aithy-run-artifact-context-"));
+    const dbPath = path.join(root, "state.db");
+    const sessions = sessionsFor(root, dbPath);
+    const artifacts = new SqliteArtifactStore(dbPath, path.join(root, "workspace"), path.join(root, "outbox"));
+    const seenInputs: any[] = [];
+
+    await runMessage(textMessage("write compact.txt"), {
+      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      events: new EventBus(),
+      sandbox: new MockSandboxProvider(),
+      sessions,
+      artifacts,
+      agentFactory: () => ({
+        llm: {},
+        program: {
+          forward: async (_llm: unknown, input: { artifactContext: string }) => {
+            const runOutboxPath = outboxFromContext(input.artifactContext);
+            await artifacts.write({
+              sessionId: "conversation",
+              runId: runIdFromOutbox(runOutboxPath),
+              runOutboxPath,
+              path: "compact.txt",
+              content: "Sunlight warms the stone\nMorning spills through quiet leaves\nGold hums on the air",
+              title: "compact.txt",
+            });
+            return { agentResponse: "Done." };
+          },
+        },
+      }),
+    });
+
+    await runMessage(textMessage("do you still have the file"), {
+      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      events: new EventBus(),
+      sandbox: new MockSandboxProvider(),
+      sessions,
+      artifacts,
+      agentFactory: () => ({
+        llm: {},
+        program: {
+          forward: async (_llm: unknown, input: any) => {
+            seenInputs.push(input);
+            return { agentResponse: "Yes, compact.txt is still available." };
+          },
+        },
+      }),
+    });
+
+    expect(seenInputs[0].conversationHistory).toContain("Published artifact: compact.txt");
+    expect(seenInputs[0].conversationHistory).toContain("filename=compact.txt");
+    expect(seenInputs[0].conversationHistory).toContain("id=");
+    expect(seenInputs[0].conversationHistory).toContain("sandboxPath=/outbox/sessions/conversation/runs/");
+    expect(seenInputs[0].conversationHistory).toContain("openUrl=/api/artifacts/");
+    expect(seenInputs[0].artifactContext).not.toContain("Previously published artifacts");
+    expect(seenInputs[0].artifactContext).not.toContain("filename=compact.txt");
+    artifacts.close();
+  });
 });
 
 function artifactResult() {

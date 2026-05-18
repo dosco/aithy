@@ -6,6 +6,13 @@ import type { UsagePurpose } from "../../src/usage/types";
 import type { CapabilityPolicyRule } from "../../src/security/capability-policy";
 import type { TaskSummary } from "../../src/tasks/types";
 import type {
+  AutomationAttentionType,
+  AutomationCreatedSource,
+  AutomationNotificationPolicy,
+  AutomationRunStatus,
+  AutomationStatus,
+} from "../../src/automations/types";
+import type {
   JsonValue,
   SerializableBotMessage,
   SerializableSessionSummary,
@@ -20,8 +27,10 @@ export interface GlobalMountDto {
 
 export interface ConfigDto {
   aiProvider: string;
+  aiApiUrl: string;
   aiModel: string;
   fastAiProvider: string;
+  fastAiApiUrl: string;
   fastAiModel: string;
   sandboxProvider: string;
   sandboxImage: string;
@@ -95,11 +104,33 @@ export interface SkillDto {
   id: string;
   name: string;
   description: string;
+  whenToUse: string | null;
   body: string;
   allowedTools: string | null;
   tags: string | null;
+  disableModelInvocation: boolean;
+  userInvocable: boolean;
+  files: SkillFileDto[];
+  links: string[];
+  recentUsage: SkillUsageDto[];
   retrievedCount: number;
+  usedCount: number;
+  lastRetrievedAt: string | null;
+  lastUsedAt: string | null;
   updatedAt: string;
+}
+
+export interface SkillFileDto {
+  path: string;
+  content: string;
+  bytes: number;
+  updatedAt: string;
+}
+
+export interface SkillUsageDto {
+  reason: string | null;
+  stage: string | null;
+  createdAt: string;
 }
 
 export interface MemoryRunDto {
@@ -186,6 +217,41 @@ export interface NotificationDto {
 
 export type TaskDto = TaskSummary;
 
+export interface AutomationRunDto {
+  id: string;
+  automationId: string;
+  runSessionId: string | null;
+  taskId: string | null;
+  status: AutomationRunStatus;
+  triggeredAt: string;
+  scheduledFor: string;
+  resultSummary: string | null;
+  errorSummary: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
+export interface AutomationDto {
+  id: string;
+  status: AutomationStatus;
+  attentionType: AutomationAttentionType;
+  title: string;
+  prompt: string;
+  schedule: string;
+  scheduleKind: "cron" | "interval" | "once";
+  scheduleRunAt: string | null;
+  timezone: string;
+  notificationPolicy: AutomationNotificationPolicy;
+  originSessionId: string;
+  createdSource: AutomationCreatedSource;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  recentRuns: AutomationRunDto[];
+}
+
 export type SkillsCursor = { name: string; id: string; retrievedCount?: number };
 export type MemoriesCursor = { updatedAt: string; id: string; retrievedCount?: number };
 
@@ -254,6 +320,12 @@ export type UsagePageStateDto = Pick<WebStateDto, "settings">;
 export type NotificationsPageStateDto = Pick<WebStateDto, "notifications" | "unreadNotifications">;
 
 export type TasksPageStateDto = Pick<WebStateDto, "tasks" | "settings">;
+
+export interface AutomationsPageStateDto {
+  settings: StoredSettings;
+  automations: AutomationDto[];
+  sessions: SessionSummaryDto[];
+}
 
 export interface SessionsPageStateDto {
   sessions: SessionSummaryDto[];

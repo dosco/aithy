@@ -2,6 +2,7 @@ import { createServerFn } from "@tanstack/react-start";
 import { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import {
   memoryPageStateDto,
+  automationsPageStateDto,
   notificationsPageStateDto,
   sessionsPageStateDto,
   settingsPageStateDto,
@@ -71,4 +72,10 @@ export const getTasksPageState = createServerFn({ method: "GET" })
   .handler(async () => {
     const runtime = await getAithyRuntime();
     return tasksPageStateDto(runtime);
+  });
+
+export const getAutomationsPageState = createServerFn({ method: "GET" })
+  .handler(async () => {
+    const runtime = await getAithyRuntime();
+    return automationsPageStateDto(runtime);
   });

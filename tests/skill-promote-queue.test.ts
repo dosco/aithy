@@ -9,6 +9,7 @@ import type { AssistantToolCallMessage, UserMessage } from "../src/session/types
 import { SqliteSkillCandidateStore } from "../src/skills/candidate-store";
 import { SkillCandidateQueue, type SkillCandidateQueueDeps } from "../src/skills/candidate-queue";
 import type { SkillCandidateDetection } from "../src/skills/candidate-detector";
+import { SqliteTaskStore } from "../src/tasks/task-store";
 
 const queues: SkillCandidateQueue[] = [];
 
@@ -37,15 +38,17 @@ async function setup() {
     expiresAt: new Date(now + 60_000),
   });
   const candidates = new SqliteSkillCandidateStore(stateDbPath);
+  const tasks = new SqliteTaskStore(stateDbPath);
   const posts: Array<{ parentSessionId: string; parentMessageId?: number | null; text: string; name?: string }> = [];
   const notifications: Array<{ title: string; link?: string | null }> = [];
-  return { stateDbPath, state, candidates, posts, notifications, now };
+  return { stateDbPath, state, candidates, tasks, posts, notifications, now };
 }
 
 function makeQueue(input: Awaited<ReturnType<typeof setup>>, detector: SkillCandidateQueueDeps["detector"]) {
   const queue = new SkillCandidateQueue({
     config: { stateDbPath: input.stateDbPath } as AppConfig,
     candidates: input.candidates,
+    tasks: input.tasks,
     detector,
     postToSubSession: (post) => {
       input.posts.push(post);
@@ -57,11 +60,54 @@ function makeQueue(input: Awaited<ReturnType<typeof setup>>, detector: SkillCand
   });
   queues.push(queue);
   return queue as unknown as {
+    enqueueAuto(): Promise<void>;
+    runNow(): Promise<void>;
     process(data: { triggeredAt: string }): Promise<{ inspected: number; candidates: number; suggested: number }>;
   };
 }
 
+function stopWorker(queue: unknown): Promise<void> {
+  return (queue as { app: { worker: { close(): Promise<void> } } }).app.worker.close();
+}
+
 describe("SkillCandidateQueue", () => {
+  test("enqueueAuto reuses the planned task while the job is debounced", async () => {
+    const fixture = await setup();
+    const queue = makeQueue(fixture, detector([]));
+
+    await queue.enqueueAuto();
+    await queue.enqueueAuto();
+
+    const active = fixture.tasks.recent({ status: "active", limit: 10 })
+      .filter((task) => task.kind === "skill.candidate");
+    expect(active).toHaveLength(1);
+    expect(active[0]).toMatchObject({
+      status: "planned",
+      dedupeKey: "skill-candidates:auto",
+      conversationId: null,
+      metadata: {},
+    });
+  });
+
+  test("runNow reuses the planned adhoc task while the job is debounced", async () => {
+    const fixture = await setup();
+    const queue = makeQueue(fixture, detector([]));
+    await stopWorker(queue);
+
+    await queue.runNow();
+    await queue.runNow();
+
+    const active = fixture.tasks.recent({ status: "active", limit: 10 })
+      .filter((task) => task.kind === "skill.candidate");
+    expect(active).toHaveLength(1);
+    expect(active[0]).toMatchObject({
+      status: "planned",
+      dedupeKey: "skill-candidates:adhoc",
+      conversationId: null,
+      metadata: {},
+    });
+  });
+
   test("stores a high-confidence candidate and suggests it to the user", async () => {
     const fixture = await setup();
     fixture.state.appendMessages("parent", [

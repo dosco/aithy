@@ -2,6 +2,7 @@ import type { Job } from "bunqueue/client";
 import type { AppConfig } from "../config/env";
 import {
   createEmbeddedQueueWorker,
+  isDuplicateJobWriteError,
   type EmbeddedQueueWorker,
   type QueueErrorReporter,
 } from "../queue/embedded";
@@ -13,6 +14,7 @@ import type { TaskRecord } from "../tasks/types";
 const MAX_ATTEMPTS = 2;
 const JOB_TTL_MS = 5 * 60_000;
 const CRON_PATTERN = "30 2 * * *"; // every day at 02:30 local time
+const ADHOC_DEDUP_ID = "expiry:adhoc";
 
 interface JobData {
   triggeredAt: string;
@@ -62,23 +64,51 @@ export class MemoryExpiryQueue {
 
   async runNow(): Promise<void> {
     const id = crypto.randomUUID();
-    const task = this.deps.tasks?.create({
-      kind: "memory.expiry",
-      title: "Remove expired memories",
-      conversationId: null,
-      reason: "Queued for memory cleanup",
-    });
-    if (task) this.deps.onTaskStatus?.(task);
-    await this.app.queue.add(
-      "memory.expiry.now",
-      { triggeredAt: new Date().toISOString(), ...(task ? { taskId: task.id } : {}) },
-      {
-        attempts: MAX_ATTEMPTS,
-        backoff: { type: "exponential", delay: 30_000 },
-        deduplication: { id: "expiry:adhoc", ttl: 30_000 },
-        jobId: `memory:expiry:${id}`,
+    const planned = this.deps.tasks?.createOrReusePlanned({
+      dedupeKey: ADHOC_DEDUP_ID,
+      create: {
+        kind: "memory.expiry",
+        title: "Remove expired memories",
+        conversationId: null,
+        reason: "Queued for memory cleanup",
       },
-    );
+      update: {
+        reason: "Queued for memory cleanup",
+      },
+    });
+    if (planned) this.deps.onTaskStatus?.(planned.task);
+    const task = planned?.task;
+    try {
+      await this.app.queue.add(
+        "memory.expiry.now",
+        { triggeredAt: new Date().toISOString(), ...(task ? { taskId: task.id } : {}) },
+        {
+          attempts: MAX_ATTEMPTS,
+          backoff: { type: "exponential", delay: 30_000 },
+          deduplication: { id: ADHOC_DEDUP_ID, ttl: 30_000 },
+          jobId: `memory:expiry:${id}`,
+        },
+      );
+    } catch (error) {
+      if (isDuplicateJobWriteError(error)) {
+        if (task && !planned?.reused) {
+          this.updateTask(task.id, {
+            status: "cancelled",
+            reason: "Duplicate memory cleanup task was already queued",
+          });
+        }
+        this.deps.onQueueError?.("[aithy.memory.expiry] duplicate adhoc job ignored", error as Error);
+        return;
+      }
+      if (task && !planned?.reused) {
+        this.updateTask(task.id, {
+          status: "failed",
+          reason: "Could not queue memory cleanup",
+          errorSummary: error instanceof Error ? error.message : String(error),
+        });
+      }
+      throw error;
+    }
   }
 
   async close(): Promise<void> {

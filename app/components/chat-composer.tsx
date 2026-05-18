@@ -1,36 +1,39 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import { Search, SendHorizontal, Square, X } from "lucide-react";
+import { PendingChatQueue } from "@/components/pending-chat-queue";
+import type { PendingChatMessage } from "@/components/pending-chat-queue-state";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { listSkillsPaged } from "@/server/skills-memory.functions";
 import type { SkillDto } from "@/server/dto";
 import { visibleWebSlashCommands } from "../../src/commands/web-commands";
-import type { WebLiveEvent } from "../../src/web/live-events";
 
 export interface SelectedSkill {
   id: string;
   name: string;
 }
 
-type SetupStatusEvent = Extract<WebLiveEvent, { type: "setup-status" }>;
-
 export function ChatComposer({
   input,
   sending,
-  setupStatuses,
+  pendingMessages,
   selectedSkills,
   onInputChange,
   onSelectedSkillsChange,
+  onPendingDelete,
+  onPendingEdit,
   onSubmit,
   onStop,
 }: {
   input: string;
   sending: boolean;
-  setupStatuses: SetupStatusEvent[];
+  pendingMessages: PendingChatMessage[];
   selectedSkills: SelectedSkill[];
   onInputChange: (value: string) => void;
   onSelectedSkillsChange: (value: SelectedSkill[]) => void;
+  onPendingDelete: (message: PendingChatMessage) => void;
+  onPendingEdit: (message: PendingChatMessage) => void;
   onSubmit: () => void;
   onStop: () => void;
 }) {
@@ -38,9 +41,11 @@ export function ChatComposer({
   const [skillsOpen, setSkillsOpen] = useState(false);
   const [skillQuery, setSkillQuery] = useState("");
   const [skillResults, setSkillResults] = useState<SkillDto[]>([]);
-  const [skillResultsTitle, setSkillResultsTitle] = useState("Top retrieved skills");
+  const [skillResultsTitle, setSkillResultsTitle] = useState("Most used skills");
   const trimmed = input.trim();
   const canSubmit = trimmed.length > 0;
+  const mainButtonQueues = sending && canSubmit;
+  const mainButtonStops = sending && !canSubmit;
   const commandQuery = trimmed.startsWith("/") && !trimmed.includes(" ") ? trimmed : "";
   const commands = useMemo(() => visibleWebSlashCommands(commandQuery), [commandQuery]);
   const showCommands = commandQuery.length > 0 && commands.length > 0 && !skillsOpen;
@@ -67,11 +72,11 @@ export function ChatComposer({
         });
         if (!cancelled) {
           setSkillResults(fallback.items);
-          setSkillResultsTitle("No match. Top retrieved skills");
+          setSkillResultsTitle("No match. Most used skills");
         }
         return;
       }
-      setSkillResultsTitle(query ? "Matching skills" : "Top retrieved skills");
+      setSkillResultsTitle(query ? "Matching skills" : "Most used skills");
       setSkillResults(result.items);
     });
     return () => {
@@ -102,7 +107,7 @@ export function ChatComposer({
   }
 
   return (
-    <div className="app-chat-composer-wrap sticky bottom-0 z-10 -mx-4 mt-6 bg-gradient-to-t from-[rgb(var(--background))] from-50% to-transparent px-4 pb-6 pt-6 sm:-mx-8 sm:px-8">
+    <div className="app-chat-composer-wrap sticky bottom-0 z-10 -mx-4 mt-6 bg-gradient-to-t from-[rgb(var(--background))] from-60% to-transparent px-4 pb-6 pt-6 sm:-mx-8 sm:px-8">
       <div className="relative">
         <AnimatePresence>
           {showCommands ? (
@@ -110,7 +115,7 @@ export function ChatComposer({
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 8 }}
-              className="absolute bottom-full left-0 z-20 mb-2 w-full max-w-md overflow-hidden rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] shadow-lg"
+              className="absolute bottom-full left-0 z-20 mb-2 w-full max-w-md overflow-hidden rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--panel))] shadow-[0_8px_28px_rgb(0_0_0/0.08)]"
             >
               {commands.map((command) => (
                 <button
@@ -130,7 +135,7 @@ export function ChatComposer({
         </AnimatePresence>
 
         {skillsOpen ? (
-          <div className="mb-2 grid gap-2 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] p-3 shadow-lg">
+          <div className="mb-2 grid gap-2 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--panel))] p-3 shadow-[0_8px_28px_rgb(0_0_0/0.08)]">
             <div className="flex items-center gap-2 rounded-xl border border-[rgb(var(--border))] px-3">
               <Search className="h-4 w-4 text-[rgb(var(--muted-foreground))]" />
               <input
@@ -173,9 +178,9 @@ export function ChatComposer({
                       >
                         <span className="flex min-w-0 items-center justify-between gap-3">
                           <span className="truncate font-medium">{skill.name}</span>
-                          {skill.retrievedCount > 0 ? (
+                          {skill.usedCount > 0 ? (
                             <span className={cn("shrink-0 text-[11px]", !selected && "text-[rgb(var(--muted-foreground))]")}>
-                              retrieved {skill.retrievedCount}x
+                              used {skill.usedCount}x
                             </span>
                           ) : null}
                         </span>
@@ -193,9 +198,13 @@ export function ChatComposer({
           </div>
         ) : null}
 
-        <SetupStatusLog statuses={setupStatuses} />
+        <PendingChatQueue
+          messages={pendingMessages}
+          onEdit={onPendingEdit}
+          onDelete={onPendingDelete}
+        />
 
-        <div className="app-chat-composer group flex flex-col gap-2 rounded-[24px] border border-[rgb(var(--border))]/90 bg-[rgb(var(--panel))]/95 px-4 py-2.5 shadow-[0_14px_40px_rgb(0_0_0/0.07),0_1px_2px_rgb(0_0_0/0.08)] backdrop-blur transition focus-within:border-[rgb(var(--foreground))]/30 focus-within:shadow-[0_18px_48px_rgb(0_0_0/0.1),0_0_0_3px_rgb(var(--accent)/0.12)] sm:px-5">
+        <div className="app-chat-composer group flex flex-col gap-2 rounded-[18px] border border-[rgb(var(--border))]/95 bg-[rgb(var(--panel))]/92 px-4 py-2 shadow-[0_8px_28px_rgb(0_0_0/0.06),0_1px_1px_rgb(0_0_0/0.06)] backdrop-blur transition focus-within:border-[rgb(var(--foreground))]/28 focus-within:shadow-[0_10px_32px_rgb(0_0_0/0.08),0_0_0_3px_rgb(var(--accent)/0.1)] sm:px-5">
           {selectedSkills.length > 0 ? (
             <div className="flex flex-wrap gap-2 pt-2">
               {selectedSkills.map((skill) => (
@@ -203,7 +212,7 @@ export function ChatComposer({
                   key={skill.id}
                   type="button"
                   onClick={() => onSelectedSkillsChange(selectedSkills.filter((entry) => entry.id !== skill.id))}
-                  className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-[rgb(var(--border))] px-2.5 py-1 text-xs text-[rgb(var(--muted-foreground))] transition hover:text-[rgb(var(--foreground))]"
+                  className="inline-flex max-w-full items-center gap-1.5 rounded-md border border-[rgb(var(--border))] px-2.5 py-1 text-xs text-[rgb(var(--muted-foreground))] transition hover:text-[rgb(var(--foreground))]"
                 >
                   <span className="truncate">{skill.name}</span>
                   <X className="h-3 w-3" />
@@ -224,93 +233,36 @@ export function ChatComposer({
                 }
               }}
               placeholder="Hey Aithy"
-              className="max-h-60 min-h-11 overflow-y-auto rounded-none border-0 bg-transparent px-0 py-2.5 text-[1.0625rem] leading-6 shadow-none placeholder:text-[rgb(var(--muted-foreground))]/80 focus:border-0"
+              className="max-h-60 min-h-11 overflow-y-auto rounded-none border-0 bg-transparent px-0 py-2.5 text-base leading-6 shadow-none placeholder:text-[rgb(var(--muted-foreground))]/75 focus:border-0"
             />
             <button
               type="button"
-              onClick={sending ? onStop : submit}
+              onClick={mainButtonStops ? onStop : submit}
               disabled={!sending && !canSubmit}
-              aria-label={sending ? "Stop" : "Send"}
+              aria-label={mainButtonQueues ? "Queue message" : mainButtonStops ? "Stop" : "Send"}
               className={cn(
-                "mb-0.5 grid h-11 w-11 shrink-0 place-items-center rounded-full border transition duration-200 focus:outline-none focus:ring-2 focus:ring-[rgb(var(--accent))]/35 focus:ring-offset-2 focus:ring-offset-[rgb(var(--panel))]",
+                "mb-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-full border transition duration-200 focus:outline-none focus:ring-2 focus:ring-[rgb(var(--accent))]/35 focus:ring-offset-2 focus:ring-offset-[rgb(var(--panel))]",
                 sending || canSubmit
-                  ? "border-transparent bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-[0_8px_22px_rgb(var(--accent)/0.24)] hover:-translate-y-0.5 hover:shadow-[0_12px_28px_rgb(var(--accent)/0.28)]"
-                  : "border-[rgb(var(--border))]/80 bg-[rgb(var(--muted))]/55 text-[rgb(var(--muted-foreground))]/70 disabled:pointer-events-none",
+                  ? "border-transparent bg-[rgb(var(--foreground))] text-[rgb(var(--background))] shadow-[0_4px_14px_rgb(0_0_0/0.16)] hover:-translate-y-0.5 hover:shadow-[0_7px_18px_rgb(0_0_0/0.18)]"
+                : "border-[rgb(var(--border))]/80 bg-[rgb(var(--muted))]/55 text-[rgb(var(--muted-foreground))]/70 disabled:pointer-events-none",
               )}
             >
-              {sending ? <Square className="h-3.5 w-3.5 fill-current" /> : <SendHorizontal className="h-4.5 w-4.5" />}
+              {mainButtonStops ? <Square className="h-3.5 w-3.5 fill-current" /> : <SendHorizontal className="h-4.5 w-4.5" />}
             </button>
+            {mainButtonQueues ? (
+              <button
+                type="button"
+                onClick={onStop}
+                aria-label="Stop"
+                title="Stop"
+                className="mb-0.5 grid h-10 w-10 shrink-0 place-items-center rounded-full border border-[rgb(var(--border))]/80 bg-[rgb(var(--muted))]/55 text-[rgb(var(--muted-foreground))]/80 transition duration-200 hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--accent))]/35 focus:ring-offset-2 focus:ring-offset-[rgb(var(--panel))]"
+              >
+                <Square className="h-3.5 w-3.5 fill-current" />
+              </button>
+            ) : null}
           </div>
         </div>
       </div>
     </div>
   );
-}
-
-function SetupStatusLog({ statuses }: { statuses: SetupStatusEvent[] }) {
-  return (
-    <AnimatePresence initial={false}>
-      {statuses.length > 0 ? (
-        <motion.div
-          key="setup-status-log"
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 4 }}
-          className="mb-2 grid gap-1.5 px-1 font-mono text-[11px] leading-none"
-          role="status"
-          aria-live="polite"
-        >
-          {statuses.map((status) => (
-            <SetupStatusRow key={status.id} status={status} />
-          ))}
-        </motion.div>
-      ) : null}
-    </AnimatePresence>
-  );
-}
-
-function SetupStatusRow({ status }: { status: SetupStatusEvent }) {
-  const determinate = typeof status.progress === "number";
-  return (
-    <motion.div
-      initial={{ opacity: 0, y: 3 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: 3 }}
-      className={cn(
-        "flex min-w-0 items-center gap-2",
-        status.tone === "danger"
-          ? "text-[rgb(var(--danger))]"
-          : "text-[rgb(var(--muted-foreground))]",
-      )}
-    >
-      <span className="min-w-0 truncate">{status.label}</span>
-      {status.loadedBytes !== undefined && status.totalBytes !== undefined ? (
-        <span className="shrink-0 text-[10px] opacity-75">
-          {formatBytes(status.loadedBytes)} / {formatBytes(status.totalBytes)}
-        </span>
-      ) : null}
-      <span className="relative h-1 w-28 shrink-0 overflow-hidden rounded-full bg-[rgb(var(--border))]" aria-hidden>
-        {determinate ? (
-          <motion.span
-            className="absolute inset-y-0 left-0 rounded-full bg-[rgb(var(--accent))]"
-            initial={false}
-            animate={{ width: `${Math.round((status.progress ?? 0) * 100)}%` }}
-            transition={{ duration: 0.2 }}
-          />
-        ) : (
-          <motion.span
-            className="absolute inset-y-0 left-0 w-1/3 rounded-full bg-[rgb(var(--accent))]"
-            animate={{ x: ["-120%", "320%"] }}
-            transition={{ duration: 1.1, ease: "easeInOut", repeat: Infinity }}
-          />
-        )}
-      </span>
-    </motion.div>
-  );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${bytes} B`;
 }

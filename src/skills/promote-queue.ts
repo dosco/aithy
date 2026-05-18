@@ -7,6 +7,7 @@ import type { SqliteTaskStore } from "../tasks/task-store";
 import type { TaskRecord } from "../tasks/types";
 import {
   createEmbeddedQueueWorker,
+  isDuplicateJobWriteError,
   type EmbeddedQueueWorker,
   type QueueErrorReporter,
 } from "../queue/embedded";
@@ -16,6 +17,7 @@ import type { SqliteSkillPromotionStore } from "./promote-store";
 import type { SqliteSkillsStore } from "./skills-store";
 
 const CRON_PATTERN = "0 4 * * *"; // 04:00 daily, after the memory consolidator
+const ADHOC_DEDUP_ID = "skill.promote:adhoc";
 type MaybePromise<T> = T | Promise<T>;
 
 interface JobData {
@@ -80,22 +82,50 @@ export class SkillPromoteQueue {
   }
 
   async runNow(): Promise<void> {
-    const task = this.deps.tasks?.create({
-      kind: "skill.promote",
-      title: "Suggest reusable skills",
-      conversationId: null,
-      reason: "Queued for skill promotion",
-    });
-    if (task) this.deps.onTaskStatus?.(task);
-    await this.app.queue.add(
-      "skill.promote.now",
-      { triggeredAt: new Date().toISOString(), ...(task ? { taskId: task.id } : {}) },
-      {
-        attempts: 1,
-        deduplication: { id: "skill.promote:adhoc", ttl: 30_000 },
-        jobId: `skill:promote:${crypto.randomUUID()}`,
+    const planned = this.deps.tasks?.createOrReusePlanned({
+      dedupeKey: ADHOC_DEDUP_ID,
+      create: {
+        kind: "skill.promote",
+        title: "Suggest reusable skills",
+        conversationId: null,
+        reason: "Queued for skill promotion",
       },
-    );
+      update: {
+        reason: "Queued for skill promotion",
+      },
+    });
+    if (planned) this.deps.onTaskStatus?.(planned.task);
+    const task = planned?.task;
+    try {
+      await this.app.queue.add(
+        "skill.promote.now",
+        { triggeredAt: new Date().toISOString(), ...(task ? { taskId: task.id } : {}) },
+        {
+          attempts: 1,
+          deduplication: { id: ADHOC_DEDUP_ID, ttl: 30_000 },
+          jobId: `skill:promote:${crypto.randomUUID()}`,
+        },
+      );
+    } catch (error) {
+      if (isDuplicateJobWriteError(error)) {
+        if (task && !planned?.reused) {
+          this.updateTask(task.id, {
+            status: "cancelled",
+            reason: "Duplicate skill promotion task was already queued",
+          });
+        }
+        this.deps.onQueueError?.("[aithy.skill.promote] duplicate adhoc job ignored", error as Error);
+        return;
+      }
+      if (task && !planned?.reused) {
+        this.updateTask(task.id, {
+          status: "failed",
+          reason: "Could not queue skill promotion",
+          errorSummary: error instanceof Error ? error.message : String(error),
+        });
+      }
+      throw error;
+    }
   }
 
   async close(): Promise<void> {

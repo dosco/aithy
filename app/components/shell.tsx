@@ -1,35 +1,40 @@
-import { Link, useLocation } from "@tanstack/react-router";
+import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   BarChart3,
   BookOpen,
   Brain,
+  Bug,
   Eye,
-  EyeOff,
   History,
+  ListChecks,
   Menu,
   MessageSquareText,
   Palette,
   Settings,
   SquarePen,
-  ListChecks,
+  Trash2,
 } from "lucide-react";
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChatUiProvider, useChatUi } from "@/components/chat-ui-context";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { ConsoleButton } from "@/components/console/console-button";
-import { LiveEventsProvider } from "@/components/live-events";
+import { LiveEventsProvider, useLiveEvent } from "@/components/live-events";
 import { NotificationBell } from "@/components/notification-bell";
 import { SessionRail } from "@/components/session-rail";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { cn } from "@/lib/utils";
+import { deleteSession } from "@/server/actions.functions";
+import type { SessionsPageStateDto } from "@/server/dto";
 import { getSessionsPageState } from "@/server/state.functions";
 
 const navItems = [
   { to: "/sessions", label: "Sessions", icon: History },
-  { to: "/tasks", label: "Tasks", icon: ListChecks },
   { to: "/skills", label: "Skills", icon: BookOpen },
   { to: "/memory", label: "Memory", icon: Brain },
   { to: "/usage", label: "Usage", icon: BarChart3 },
+  { to: "/tasks", label: "Tasks", icon: ListChecks },
+  { to: "/attentions", label: "Attentions", icon: Eye },
   { to: "/settings", label: "Settings", icon: Settings },
   { to: "/themes", label: "Themes", icon: Palette },
 ] as const;
@@ -56,21 +61,37 @@ export function AppShell({ children }: { children: ReactNode }) {
 
 function TopChrome() {
   const location = useLocation();
+  const navigate = useNavigate();
   const reduce = useReducedMotion();
-  const showDetails =
-    location.pathname.startsWith("/chat") ||
-    location.pathname.startsWith("/sessions");
+  const { details, setDetails } = useChatUi();
   const [expanded, setExpanded] = useState(false);
   const [lastActiveSessionId, setLastActiveSessionId] = useState<string | null>(
     null,
   );
+  const [sessions, setSessions] = useState<SessionsPageStateDto["sessions"]>([]);
+  const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
   const collapseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const activeSessionId = useMemo(() => {
+    const match = /^\/chat\/([^/]+)/.exec(location.pathname);
+    return match ? decodeURIComponent(match[1]) : null;
+  }, [location.pathname]);
+  const activeSession = useMemo(
+    () => sessions.find((session) => session.conversationId === activeSessionId) ?? null,
+    [sessions, activeSessionId],
+  );
+  const pendingDeleteSession = useMemo(
+    () => sessions.find((session) => session.conversationId === pendingDeleteSessionId) ?? null,
+    [sessions, pendingDeleteSessionId],
+  );
 
   useEffect(() => {
     let cancelled = false;
     void getSessionsPageState().then((state) => {
-      if (!cancelled)
+      if (!cancelled) {
+        setSessions(state.sessions);
         setLastActiveSessionId(state.settings.ui.lastActiveSessionId);
+      }
     });
     return () => {
       cancelled = true;
@@ -78,9 +99,12 @@ function TopChrome() {
   }, []);
 
   useEffect(() => {
-    const match = /^\/chat\/([^/]+)/.exec(location.pathname);
-    if (match) setLastActiveSessionId(decodeURIComponent(match[1]));
-  }, [location.pathname]);
+    if (activeSessionId) setLastActiveSessionId(activeSessionId);
+  }, [activeSessionId]);
+
+  useLiveEvent((event) => {
+    if (event.type === "sessions") setSessions(event.sessions);
+  });
 
   useEffect(
     () => () => {
@@ -101,103 +125,195 @@ function TopChrome() {
     collapseTimer.current = setTimeout(() => setExpanded(false), 250);
   }
 
+  function openDeleteDialog() {
+    if (!activeSessionId) return;
+    setPendingDeleteSessionId(activeSessionId);
+    setExpanded(false);
+  }
+
+  async function removePendingSession() {
+    if (!pendingDeleteSessionId) return;
+    setDeleting(true);
+    try {
+      const result = await deleteSession({ data: { conversationId: pendingDeleteSessionId } });
+      const next = result.sessions[0] ?? null;
+      setSessions(result.sessions);
+      setLastActiveSessionId(next?.conversationId ?? null);
+      setPendingDeleteSessionId(null);
+      if (next) {
+        await navigate({ to: "/chat/$sessionId", params: { sessionId: next.conversationId } });
+      } else {
+        await navigate({ to: "/sessions" });
+      }
+    } finally {
+      setDeleting(false);
+    }
+  }
+
   const transition = reduce
     ? { duration: 0 }
     : { type: "spring" as const, stiffness: 320, damping: 30 };
 
   return (
-    <header className="pointer-events-none fixed left-0 right-0 top-4 z-30">
-      <div
-        className={cn(
-          "pointer-events-auto absolute right-4 top-0 flex items-center gap-1 overflow-visible rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--panel)/0.9)] p-1 shadow-lg shadow-black/5 backdrop-blur-xl sm:right-6 lg:right-8",
-          showDetails ? "w-64" : "w-[13.75rem]",
-        )}
-      >
-        <TopIconLink
-          to="/chat"
-          active={location.pathname === "/chat"}
-          label="New chat"
+    <>
+      <header className="pointer-events-none fixed left-0 right-0 top-4 z-30">
+        <BrandLink />
+        <div
+          className="pointer-events-auto absolute right-4 top-0 flex w-[13.75rem] items-center gap-1 overflow-visible rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel)/0.78)] p-1 shadow-[0_4px_18px_rgb(0_0_0/0.06)] backdrop-blur-xl sm:right-6 lg:right-8"
         >
-          <SquarePen className="h-4 w-4" />
-        </TopIconLink>
-        {lastActiveSessionId ? (
           <TopIconLink
-            to="/chat/$sessionId"
-            params={{ sessionId: lastActiveSessionId }}
-            active={location.pathname === `/chat/${lastActiveSessionId}`}
-            label="Active chat"
+            to="/chat"
+            active={location.pathname === "/chat"}
+            label="New chat"
           >
-            <MessageSquareText className="h-4 w-4" />
+            <SquarePen className="h-4 w-4" />
           </TopIconLink>
-        ) : (
-          <TopIconLink to="/chat" active={false} label="Active chat">
-            <MessageSquareText className="h-4 w-4" />
-          </TopIconLink>
-        )}
-        <NotificationBell />
-        <ConsoleButton />
-        <ThemeToggle />
-        {showDetails ? <DetailsToggle /> : null}
-        <nav
-          className="relative"
-          onMouseEnter={open}
-          onMouseLeave={scheduleClose}
-          onFocusCapture={open}
-          onBlurCapture={(event) => {
-            if (
-              !event.currentTarget.contains(event.relatedTarget as Node | null)
-            )
-              scheduleClose();
-          }}
-        >
-          <button
-            type="button"
-            aria-label="Open menu"
-            className={topIconClass(expanded)}
+          {lastActiveSessionId ? (
+            <TopIconLink
+              to="/chat/$sessionId"
+              params={{ sessionId: lastActiveSessionId }}
+              active={location.pathname === `/chat/${lastActiveSessionId}`}
+              label="Active chat"
+            >
+              <MessageSquareText className="h-4 w-4" />
+            </TopIconLink>
+          ) : (
+            <TopIconLink to="/chat" active={false} label="Active chat">
+              <MessageSquareText className="h-4 w-4" />
+            </TopIconLink>
+          )}
+          <NotificationBell />
+          <ConsoleButton />
+          <ThemeToggle />
+          <nav
+            className="relative"
+            onMouseEnter={open}
+            onMouseLeave={scheduleClose}
+            onFocusCapture={open}
+            onBlurCapture={(event) => {
+              if (
+                !event.currentTarget.contains(event.relatedTarget as Node | null)
+              )
+                scheduleClose();
+            }}
           >
-            <Menu className="h-4 w-4" strokeWidth={1.85} />
-          </button>
-          <AnimatePresence initial={false}>
-            {expanded ? (
-              <motion.div
-                key="expanded"
-                initial={reduce ? false : { opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={reduce ? undefined : { opacity: 0 }}
-                transition={transition}
-                className="absolute right-0 top-11 flex w-64 origin-top-right flex-col gap-1 rounded-3xl border border-[rgb(var(--border))] bg-[rgb(var(--panel)/0.96)] p-2 shadow-xl shadow-black/10 backdrop-blur-xl"
-              >
-                {navItems.map((item) => {
-                  const Icon = item.icon;
-                  const active = location.pathname.startsWith(item.to);
-                  return (
-                    <Link
-                      key={item.to}
-                      to={item.to}
-                      className={cn(
-                        "flex items-center gap-3 rounded-2xl px-3 py-2.5 text-sm transition-colors",
-                        active
-                          ? "bg-[rgb(var(--muted))] text-[rgb(var(--foreground))]"
-                          : "hover:bg-[rgb(var(--muted))]",
-                      )}
-                    >
-                      <Icon className="h-4 w-4" />
-                      <span className="whitespace-nowrap">{item.label}</span>
-                    </Link>
-                  );
-                })}
-              </motion.div>
-            ) : null}
-          </AnimatePresence>
-        </nav>
-      </div>
-    </header>
+            <button
+              type="button"
+              aria-label="Open menu"
+              onClick={() => setExpanded((current) => !current)}
+              className={topIconClass(expanded)}
+            >
+              <Menu className="h-4 w-4" strokeWidth={1.85} />
+            </button>
+            <AnimatePresence initial={false}>
+              {expanded ? (
+                <motion.div
+                  key="expanded"
+                  initial={reduce ? false : { opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={reduce ? undefined : { opacity: 0 }}
+                  transition={transition}
+                  className="absolute right-0 top-11 flex w-64 origin-top-right flex-col gap-1 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel)/0.96)] p-2 shadow-[0_12px_34px_rgb(0_0_0/0.12)] backdrop-blur-xl"
+                >
+                  {activeSessionId ? (
+                    <SessionMenuActions
+                      details={details}
+                      onDelete={openDeleteDialog}
+                      onToggleDetails={() => {
+                        setDetails(!details);
+                        setExpanded(false);
+                      }}
+                    />
+                  ) : null}
+                  <div className={activeSessionId ? "mt-1 border-t border-[rgb(var(--border)/0.45)] pt-1" : "grid gap-1"}>
+                    {navItems.map((item) => {
+                      const Icon = item.icon;
+                      const active = location.pathname.startsWith(item.to);
+                      return (
+                        <Link
+                          key={item.to}
+                          to={item.to}
+                          className={cn(
+                            "flex items-center gap-3 rounded-md px-3 py-2.5 text-sm transition-colors",
+                            active
+                              ? "bg-[rgb(var(--muted))] text-[rgb(var(--foreground))]"
+                              : "hover:bg-[rgb(var(--muted))]",
+                          )}
+                        >
+                          <Icon className="h-4 w-4" />
+                          <span className="whitespace-nowrap">{item.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </motion.div>
+              ) : null}
+            </AnimatePresence>
+          </nav>
+        </div>
+      </header>
+      <ConfirmDialog
+        open={Boolean(pendingDeleteSessionId)}
+        title="Delete session?"
+        body={`Delete "${pendingDeleteSession?.name ?? activeSession?.name ?? "this session"}" and any related task sessions. Active work in this session will be stopped.`}
+        confirmLabel="Delete session"
+        busy={deleting}
+        onCancel={() => setPendingDeleteSessionId(null)}
+        onConfirm={() => void removePendingSession()}
+      />
+    </>
+  );
+}
+
+function SessionMenuActions({
+  details,
+  onDelete,
+  onToggleDetails,
+}: {
+  details: boolean;
+  onDelete: () => void;
+  onToggleDetails: () => void;
+}) {
+  return (
+    <div className="grid gap-1">
+      <button
+        type="button"
+        onClick={onToggleDetails}
+        className="flex items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm text-[rgb(var(--foreground))] transition-colors hover:bg-[rgb(var(--muted))]"
+      >
+        <Bug className="h-4 w-4" />
+        <span className="flex-1 whitespace-nowrap">Debug mode</span>
+        <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-[rgb(var(--muted-foreground))]">
+          {details ? "On" : "Off"}
+        </span>
+      </button>
+      <button
+        type="button"
+        onClick={onDelete}
+        className="flex items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm text-[rgb(var(--muted-foreground))] transition-colors hover:bg-[rgb(var(--danger)/0.09)] hover:text-[rgb(var(--danger))]"
+      >
+        <Trash2 className="h-4 w-4" />
+        <span className="whitespace-nowrap">Delete session</span>
+      </button>
+    </div>
+  );
+}
+
+function BrandLink() {
+  return (
+    <Link
+      to="/sessions"
+      aria-label="Aithy home"
+      className="pointer-events-auto absolute left-4 top-1.5 font-mono text-[11px] uppercase tracking-[0.24em] text-[rgb(var(--muted-foreground))] transition hover:text-[rgb(var(--foreground))] sm:left-6 lg:left-8"
+    >
+      Aithy
+    </Link>
   );
 }
 
 function topIconClass(active = false): string {
   return cn(
-    "flex h-8 w-8 items-center justify-center rounded-full transition",
+    "flex h-8 w-8 items-center justify-center rounded-md transition",
     active
       ? "bg-[rgb(var(--muted))] text-[rgb(var(--foreground))]"
       : "text-[rgb(var(--foreground))] hover:bg-[rgb(var(--muted))]",
@@ -227,18 +343,5 @@ function TopIconLink({
     >
       {children}
     </Link>
-  );
-}
-
-function DetailsToggle() {
-  const { details, setDetails } = useChatUi();
-  return (
-    <button
-      onClick={() => setDetails(!details)}
-      aria-label="Toggle activity details"
-      className="flex h-8 w-8 items-center justify-center rounded-full transition hover:bg-[rgb(var(--muted))]"
-    >
-      {details ? <Eye className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-    </button>
   );
 }

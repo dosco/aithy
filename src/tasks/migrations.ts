@@ -47,5 +47,18 @@ export const taskMigrations: readonly SqliteMigration[] = [
       CREATE INDEX task_events_task_idx ON task_events(task_id, id);
     `,
   },
-];
+  {
+    version: 2,
+    precondition: (db) => {
+      const rows = db.query("PRAGMA table_info(tasks)").all() as Array<{ name: string }>;
+      return !rows.some((row) => row.name === "dedupe_key");
+    },
+    sql: `
+      ALTER TABLE tasks ADD COLUMN dedupe_key TEXT;
 
+      CREATE UNIQUE INDEX tasks_planned_dedupe_key_idx
+        ON tasks(dedupe_key)
+        WHERE dedupe_key IS NOT NULL AND status = 'planned';
+    `,
+  },
+];

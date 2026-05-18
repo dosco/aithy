@@ -17,7 +17,7 @@ export function PageFrame({
         <p className="font-mono text-xs uppercase tracking-[0.22em] text-[rgb(var(--muted-foreground))]">
           {eyebrow}
         </p>
-        <h1 className="mt-3 max-w-3xl break-words text-4xl font-normal leading-tight text-balance sm:text-6xl">
+        <h1 className="mt-3 max-w-2xl break-words text-2xl font-semibold leading-[1.08] text-balance sm:text-4xl">
           {title}
         </h1>
         {subtitle ? (

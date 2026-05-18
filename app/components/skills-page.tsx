@@ -1,9 +1,9 @@
 import { useCallback, useState } from "react";
-import { FileText } from "lucide-react";
+import { FileText, Plus, Search, Upload } from "lucide-react";
 import { PageFrame } from "@/components/page-frame";
 import { ThemeSync } from "@/components/theme-sync";
 import { Button } from "@/components/ui/button";
-import { FormTextarea, fieldClass, slugify } from "./lib/form-bits";
+import { fieldClass, slugify } from "./lib/form-bits";
 import {
   useDebouncedValue,
   useInfinitePage,
@@ -12,25 +12,36 @@ import { cn } from "@/lib/utils";
 import {
   deleteSkill,
   listSkillsPaged,
+  previewSkillBundleUpload,
+  saveSkillBundleUpload,
   upsertSkill,
 } from "@/server/skills-memory.functions";
 import type { SkillDto, SkillsCursor, SkillsPageStateDto } from "@/server/dto";
-import { AnimatedCount } from "./mind/animated-count";
-import { SkillDeck, NEW_SKILL_ID } from "./mind/skill-deck";
+import { frontmatterBoolean, frontmatterString, parseSkillMarkdown } from "../../src/skills/frontmatter";
+import { SkillDeck } from "./mind/skill-deck";
+import { SkillDrawer, type SkillDrawerMode } from "./mind/skill-drawer";
 import { emptySkillForm, type SkillForm } from "./mind/skill-card";
+import { SkillUploadReview, type SkillUploadPreview } from "./mind/skill-upload-review";
+
+type UploadFilePayload = { path: string; content: string };
+type PendingUpload = { files: UploadFilePayload[]; preview: SkillUploadPreview };
 
 export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto }) {
+  const [drawerMode, setDrawerMode] = useState<SkillDrawerMode | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
   const [form, setForm] = useState<SkillForm>(emptySkillForm);
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
-  const [showImport, setShowImport] = useState(false);
   const [pasteText, setPasteText] = useState("");
+  const [pendingUpload, setPendingUpload] = useState<PendingUpload | null>(null);
   const [skillsCount, setSkillsCount] = useState(initialState.skillsCount);
+  const [filteredCount, setFilteredCount] = useState(initialState.skillsCount);
   const [toolUniverse, setToolUniverse] = useState(initialState.skillsToolUniverse);
+  const [refreshToken, setRefreshToken] = useState(0);
 
   const debouncedFilter = useDebouncedValue(filter, 200);
   const queryArg = debouncedFilter.trim();
+  const resetKey = `${queryArg}|${refreshToken}`;
 
   const fetchPage = useCallback(
     async (cursor: SkillsCursor | null) => {
@@ -42,7 +53,7 @@ export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto 
         },
       });
       if (cursor === null && res.total !== null) {
-        setSkillsCount(res.total);
+        setFilteredCount(res.total);
       }
       return { items: res.items, nextCursor: res.nextCursor };
     },
@@ -56,34 +67,41 @@ export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto 
     replaceItem,
     removeItem,
     done,
+    loading,
   } = useInfinitePage<SkillDto, SkillsCursor>({
     initial: { items: initialState.skills, nextCursor: initialState.skillsNextCursor },
     fetchPage,
-    resetKey: queryArg,
+    resetKey,
   });
 
   function openSkill(skill: SkillDto) {
+    setDrawerMode("edit");
     setOpenId(skill.id);
-    setForm({
-      id: skill.id,
-      name: skill.name,
-      description: skill.description,
-      body: skill.body,
-      allowedTools: skill.allowedTools ?? "",
-      tags: skill.tags ?? "",
-    });
+    setForm(skillToForm(skill));
+    setPasteText("");
     setError(null);
   }
 
   function startNew() {
-    setOpenId(NEW_SKILL_ID);
+    setDrawerMode("new");
+    setOpenId(null);
     setForm(emptySkillForm);
+    setPasteText("");
     setError(null);
   }
 
-  function close() {
+  function startImport() {
+    setDrawerMode("import");
+    setOpenId(null);
+    setPasteText("");
+    setError(null);
+  }
+
+  function closeDrawer() {
+    setDrawerMode(null);
     setOpenId(null);
     setForm(emptySkillForm);
+    setPasteText("");
     setError(null);
   }
 
@@ -99,24 +117,28 @@ export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto 
       return;
     }
     try {
-      const entry = await upsertSkill({
+      const result = await upsertSkill({
         data: {
           id,
           name: form.name.trim(),
           description: form.description.trim(),
           body: form.body,
+          whenToUse: form.whenToUse.trim() || null,
           allowedTools: form.allowedTools.trim() || null,
           tags: form.tags.trim() || null,
+          disableModelInvocation: form.disableModelInvocation,
+          userInvocable: form.userInvocable,
+          files: form.files,
         },
       });
-      const editing = openId !== null && openId !== NEW_SKILL_ID;
-      if (editing) {
-        replaceItem(entry.id, entry);
-      } else {
-        prependItem(entry);
-        setSkillsCount((c) => c + 1);
-      }
-      close();
+      const editing = drawerMode === "edit" && openId !== null;
+      if (editing) replaceItem(openId, result.skill);
+      else prependItem(result.skill);
+      setSkillsCount(result.skillsCount);
+      setFilteredCount((count) => (queryArg ? count : result.skillsCount));
+      setToolUniverse(result.skillsToolUniverse);
+      setRefreshToken((value) => value + 1);
+      closeDrawer();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save skill");
     }
@@ -127,113 +149,189 @@ export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto 
     if (result.removed) {
       removeItem(id);
       setSkillsCount(result.skillsCount);
+      setFilteredCount((count) => Math.max(0, count - 1));
       setToolUniverse(result.skillsToolUniverse);
+      setRefreshToken((value) => value + 1);
     }
-    if (openId === id) close();
+    if (openId === id) closeDrawer();
   }
 
   function applyPaste() {
-    const parsed = parseFrontmatter(pasteText);
-    setOpenId(NEW_SKILL_ID);
+    const parsed = parseSkillMarkdown(pasteText);
+    setDrawerMode("new");
+    setOpenId(null);
     setForm({
-      id: parsed.frontmatter.name ? slugify(parsed.frontmatter.name) : "",
-      name: parsed.frontmatter.name ?? "",
-      description: parsed.frontmatter.description ?? "",
-      allowedTools: parsed.frontmatter["allowed-tools"] ?? "",
-      tags: parsed.frontmatter.tags ?? "",
+      id: frontmatterString(parsed.frontmatter, ["id", "slug"]) ?? slugify(frontmatterString(parsed.frontmatter, ["name"]) ?? ""),
+      name: frontmatterString(parsed.frontmatter, ["name"]) ?? frontmatterString(parsed.frontmatter, ["id"]) ?? "",
+      description: frontmatterString(parsed.frontmatter, ["description"]) ?? "",
+      whenToUse: frontmatterString(parsed.frontmatter, ["when_to_use", "when-to-use"]) ?? "",
+      allowedTools: frontmatterString(parsed.frontmatter, ["allowed-tools", "allowed_tools", "tools"]) ?? "",
+      tags: frontmatterString(parsed.frontmatter, ["tags"]) ?? "",
+      disableModelInvocation: frontmatterBoolean(parsed.frontmatter, ["disable-model-invocation", "disable_model_invocation"], false),
+      userInvocable: frontmatterBoolean(parsed.frontmatter, ["user-invocable", "user_invocable"], true),
       body: parsed.body,
+      files: [],
     });
     setPasteText("");
-    setShowImport(false);
+    setError(null);
   }
 
-  const title =
-    skillsCount === 0 ? (
-      <span>i haven't been taught anything yet.</span>
-    ) : (
-      <span>
-        i know how to do <AnimatedCount value={skillsCount} />{" "}
-        {skillsCount === 1 ? "thing" : "things"}.
-      </span>
-    );
-  const subtitle = toolUniverse > 0 ? <>across {toolUniverse} distinct tools</> : undefined;
+  async function uploadFiles(files: FileList | File[]) {
+    setError(null);
+    const payload = await Promise.all(Array.from(files).map(async (file) => ({
+      path: (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name,
+      content: await file.text(),
+    })));
+    try {
+      const preview = await previewSkillBundleUpload({ data: { files: payload } });
+      setPendingUpload({ files: payload, preview });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to preview skill bundle");
+    }
+  }
 
-  const editorProps = {
-    form,
-    onChange: setForm,
-    error,
-    onSave: save,
-    onCancel: close,
-    onDelete: openId && openId !== NEW_SKILL_ID ? () => void remove(openId) : undefined,
-    editing: openId !== null && openId !== NEW_SKILL_ID,
-  };
+  async function saveUpload() {
+    if (!pendingUpload) return;
+    try {
+      const result = await saveSkillBundleUpload({
+        data: {
+          files: pendingUpload.files,
+          confirmedOverwrite: pendingUpload.preview.exists,
+        },
+      });
+      if (pendingUpload.preview.exists) replaceItem(result.skill.id, result.skill);
+      else prependItem(result.skill);
+      setSkillsCount(result.skillsCount);
+      setFilteredCount((count) => (queryArg ? count : result.skillsCount));
+      setToolUniverse(result.skillsToolUniverse);
+      setRefreshToken((value) => value + 1);
+      setPendingUpload(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to save skill bundle");
+    }
+  }
+
+  const subtitle = toolUniverse > 0
+    ? `${plural(skillsCount, "skill")} · ${plural(toolUniverse, "tool")}`
+    : plural(skillsCount, "skill");
+  const showing =
+    queryArg || filteredCount !== skillsCount
+      ? `Showing ${filteredCount.toLocaleString()} of ${skillsCount.toLocaleString()}`
+      : `${skillsCount.toLocaleString()} total`;
 
   return (
-    <PageFrame eyebrow="Skills" title={title} subtitle={subtitle}>
+    <PageFrame eyebrow="Skills" title="Skills library" subtitle={subtitle}>
       <ThemeSync ui={initialState.settings.ui} />
 
-      <div className="mb-5 flex flex-wrap items-center gap-2">
-        <input
-          className={cn(fieldClass, "max-w-xs rounded-full")}
-          placeholder="filter skills…"
-          value={filter}
-          onChange={(e) => setFilter(e.target.value)}
-        />
-        <div className="ml-auto">
-          <Button variant="ghost" size="sm" onClick={() => setShowImport((v) => !v)}>
-            <FileText className="h-4 w-4" /> Import markdown
+      <div
+        className="mb-4 grid gap-3 md:grid-cols-[minmax(18rem,1fr)_auto] md:items-center"
+        onDragOver={(event) => event.preventDefault()}
+        onDrop={(event) => {
+          event.preventDefault();
+          void uploadFiles(event.dataTransfer.files);
+        }}
+      >
+        <label className="relative min-w-0">
+          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[rgb(var(--muted-foreground))]" />
+          <input
+            className={cn(fieldClass, "rounded-lg pl-9")}
+            placeholder="Search skills"
+            value={filter}
+            onChange={(event) => setFilter(event.target.value)}
+          />
+        </label>
+        <div className="grid grid-cols-3 gap-2 md:flex md:justify-end">
+          <Button type="button" onClick={startNew} className="w-full rounded-lg md:w-auto">
+            <Plus className="h-4 w-4" /> New skill
+          </Button>
+          <Button type="button" variant="soft" onClick={startImport} className="w-full rounded-lg md:w-auto">
+            <FileText className="h-4 w-4" />
+            <span className="sm:hidden">Import</span>
+            <span className="hidden sm:inline">Import markdown</span>
+          </Button>
+          <Button type="button" variant="soft" asChild className="w-full rounded-lg md:w-auto">
+            <label>
+              <Upload className="h-4 w-4" />
+              <span className="sm:hidden">Upload</span>
+              <span className="hidden sm:inline">Upload bundle</span>
+              <input
+                type="file"
+                multiple
+                className="hidden"
+                {...{ webkitdirectory: "", directory: "" }}
+                onChange={(event) => {
+                  if (event.target.files) void uploadFiles(event.target.files);
+                  event.currentTarget.value = "";
+                }}
+              />
+            </label>
           </Button>
         </div>
       </div>
 
-      {showImport ? (
-        <div className="mb-5 rounded-3xl border border-dashed border-[rgb(var(--border))] bg-[rgb(var(--panel))]/40 p-5">
-          <p className="mb-2 font-mono text-[10px] uppercase tracking-[0.2em] text-[rgb(var(--muted-foreground))]">
-            paste a skill — frontmatter + markdown body
-          </p>
-          <FormTextarea
-            rows={6}
-            value={pasteText}
-            placeholder={"---\nname: my-skill\ndescription: …\n---\n\n# Body"}
-            onChange={(e) => setPasteText(e.target.value)}
-          />
-          <div className="mt-3 flex justify-end gap-2">
-            <Button variant="soft" size="sm" onClick={() => setShowImport(false)}>
-              Cancel
-            </Button>
-            <Button size="sm" onClick={applyPaste} disabled={!pasteText.trim()}>
-              Parse
-            </Button>
-          </div>
+      {!drawerMode && error ? (
+        <div className="mb-3 rounded-lg border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/40 dark:text-red-200">
+          {error}
         </div>
       ) : null}
 
+      <div className="mb-3 flex items-center justify-between gap-2 text-xs text-[rgb(var(--muted-foreground))]">
+        <span>{showing}</span>
+        {loading ? <span>Loading...</span> : null}
+      </div>
+
       <SkillDeck
         skills={skills}
-        openId={openId}
-        editorProps={editorProps}
         onOpen={openSkill}
         onStartNew={startNew}
+        onImport={startImport}
         emptyAll={skillsCount === 0 && skills.length === 0}
+        emptyFiltered={skillsCount > 0 && skills.length === 0 && !!queryArg}
+        filter={queryArg}
+        loading={loading}
         sentinelRef={done ? null : sentinelRef}
       />
+
+      <SkillDrawer
+        mode={drawerMode}
+        form={form}
+        pasteText={pasteText}
+        error={error}
+        links={openId ? skills.find((skill) => skill.id === openId)?.links : []}
+        recentUsage={openId ? skills.find((skill) => skill.id === openId)?.recentUsage : []}
+        onChange={setForm}
+        onPasteTextChange={setPasteText}
+        onParse={applyPaste}
+        onSave={save}
+        onClose={closeDrawer}
+        onDelete={drawerMode === "edit" && openId ? () => void remove(openId) : undefined}
+      />
+      {pendingUpload ? (
+        <SkillUploadReview
+          preview={pendingUpload.preview}
+          onCancel={() => setPendingUpload(null)}
+          onSave={saveUpload}
+        />
+      ) : null}
     </PageFrame>
   );
 }
 
-interface ParsedMarkdown {
-  frontmatter: Record<string, string>;
-  body: string;
+function skillToForm(skill: SkillDto): SkillForm {
+  return {
+    id: skill.id,
+    name: skill.name,
+    description: skill.description,
+    whenToUse: skill.whenToUse ?? "",
+    body: skill.body,
+    allowedTools: skill.allowedTools ?? "",
+    tags: skill.tags ?? "",
+    disableModelInvocation: skill.disableModelInvocation,
+    userInvocable: skill.userInvocable,
+    files: skill.files.map((file) => ({ path: file.path, content: file.content })),
+  };
 }
 
-function parseFrontmatter(text: string): ParsedMarkdown {
-  const normalized = text.replace(/\r\n/g, "\n");
-  const match = normalized.match(/^---\n([\s\S]*?)\n---\n?/);
-  if (!match) return { frontmatter: {}, body: normalized.trim() };
-  const frontmatter: Record<string, string> = {};
-  for (const line of match[1].split("\n")) {
-    const kv = line.match(/^([\w-]+):\s*(.*)$/);
-    if (kv) frontmatter[kv[1]] = kv[2].trim();
-  }
-  return { frontmatter, body: normalized.slice(match[0].length).trim() };
+function plural(value: number, noun: string): string {
+  return `${value.toLocaleString()} ${value === 1 ? noun : `${noun}s`}`;
 }

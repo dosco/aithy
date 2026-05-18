@@ -56,9 +56,11 @@ export const confirmationInput = z.object({
 export const settingsInput = z.object({
   runtime: z.object({
     aiProvider: z.string().optional(),
+    aiApiUrl: z.string().max(500).optional().nullable(),
     aiApiKey: z.string().optional().nullable(),
     aiModel: z.string().optional().nullable(),
     fastAiProvider: z.string().optional(),
+    fastAiApiUrl: z.string().max(500).optional().nullable(),
     fastAiModel: z.string().optional(),
     sandboxProvider: z.enum(["microsandbox", "disabled"]).optional(),
     sandboxImage: z.string().optional(),
