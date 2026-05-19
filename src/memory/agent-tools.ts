@@ -2,15 +2,13 @@ import { f, fn, type AxAgentFunction } from "@ax-llm/ax";
 import type { AppConfig } from "../config/env";
 import { createAiService, createFastAiService } from "../agent/ai-service";
 import { createAxDedupeDecider, dedupeExtractedItems } from "../conversation-analysis";
-import { normalizeMemoryLabels } from "./labels";
 import { assertIsoDate, isExpired, normalizeMemoryTiming } from "./time-bound";
 import type { SqliteMemoryStore } from "./memory-store";
-import { MEMORY_KINDS, MEMORY_LABELS, type MemoryEntry, type MemoryKind, type MemoryLabel, type MemoryUpsert } from "./types";
+import { MEMORY_KINDS, type MemoryEntry, type MemoryKind, type MemoryUpsert } from "./types";
 
 const KIND_DESC = `Memory kind, one of: ${MEMORY_KINDS.join(", ")}.`;
-const LABEL_DESC = `Controlled memory labels, zero or more of: ${MEMORY_LABELS.join(", ")}.`;
 const MEMORY_DEDUPE_LIMIT = 3;
-const MEMORY_DEDUPE_CRITERIA = `The candidate is a duplicate only if an existing memory already captures the same stable user/project fact, preference, instruction, or event. Return false when the candidate adds new detail, updates the fact, narrows scope, or differs in a way that should be remembered separately.`;
+const MEMORY_DEDUPE_CRITERIA = `The candidate is a duplicate only if an existing memory already captures the same stable user/project fact, preference, instruction, relationship, project context, decision, task, goal, event, resource, constraint, vocabulary, or note. Return false when the candidate adds new detail, updates the fact, narrows scope, or differs in a way that should be remembered separately.`;
 
 export interface MemoryAgentToolDeps {
   config: AppConfig;
@@ -30,7 +28,6 @@ export function buildMemoryAgentTools(deps: MemoryAgentToolDeps): AxAgentFunctio
       .arg("kind", f.string(KIND_DESC))
       .arg("title", f.string("Short descriptive label"))
       .arg("body", f.string("The memory content"))
-      .arg("labels", f.string(LABEL_DESC).array("Controlled labels").optional())
       .arg("validFrom", f.string("Optional ISO date (YYYY-MM-DD) when this memory starts being true.").optional())
       .arg("validUntil", f.string("Optional ISO date (YYYY-MM-DD) when this memory remains true through.").optional())
       .arg("durationDays", f.number("Optional duration in days; recomputed when validFrom and validUntil are present.").optional())
@@ -40,12 +37,11 @@ export function buildMemoryAgentTools(deps: MemoryAgentToolDeps): AxAgentFunctio
       .returnsField("id", f.string("New memory id, or existing memory id when deduped"))
       .returnsField("deduped", f.boolean("True when an equivalent memory already existed and no new row was written"))
       .returnsField("expired", f.boolean("True when validUntil is before today and no row was written"))
-      .handler(async ({ kind, title, body, labels, validFrom, validUntil, durationDays, evidence, frequency, importance }) => {
+      .handler(async ({ kind, title, body, validFrom, validUntil, durationDays, evidence, frequency, importance }) => {
         const candidate: MemoryUpsert = {
           kind: assertKind(kind),
           title,
           body,
-          labels: assertLabels(labels),
           validFrom: assertIsoDate(validFrom, "validFrom"),
           validUntil: assertIsoDate(validUntil, "validUntil"),
           durationDays,
@@ -71,7 +67,6 @@ export function buildMemoryAgentTools(deps: MemoryAgentToolDeps): AxAgentFunctio
       .arg("kind", f.string(KIND_DESC))
       .arg("title", f.string("Short label"))
       .arg("body", f.string("Corrected body"))
-      .arg("labels", f.string(LABEL_DESC).array("Controlled labels").optional())
       .arg("validFrom", f.string("Optional ISO date (YYYY-MM-DD) when this memory starts being true.").optional())
       .arg("validUntil", f.string("Optional ISO date (YYYY-MM-DD) when this memory remains true through.").optional())
       .arg("durationDays", f.number("Optional duration in days; recomputed when validFrom and validUntil are present.").optional())
@@ -79,12 +74,11 @@ export function buildMemoryAgentTools(deps: MemoryAgentToolDeps): AxAgentFunctio
       .arg("frequency", f.string("Optional natural-language recurrence, e.g. 'every weekday morning'.").optional())
       .arg("importance", f.number("0..1, default 0.5").optional())
       .returnsField("id", f.string("Id of the replacement"))
-      .handler(({ oldId, kind, title, body, labels, validFrom, validUntil, durationDays, evidence, frequency, importance }) => {
+      .handler(({ oldId, kind, title, body, validFrom, validUntil, durationDays, evidence, frequency, importance }) => {
         const entry = memory.supersede(oldId, {
           kind: assertKind(kind),
           title,
           body,
-          labels: assertLabels(labels),
           validFrom: assertIsoDate(validFrom, "validFrom"),
           validUntil: assertIsoDate(validUntil, "validUntil"),
           durationDays,
@@ -112,12 +106,6 @@ function assertKind(value: string): MemoryKind {
   throw new Error(`Invalid memory kind: ${value}. Expected one of ${MEMORY_KINDS.join(", ")}.`);
 }
 
-function assertLabels(value: unknown): MemoryLabel[] {
-  if (value === undefined || value === null) return [];
-  if (!Array.isArray(value)) throw new Error("Memory labels must be an array.");
-  return normalizeMemoryLabels(value.map(String));
-}
-
 async function writeDedupedMemory(
   memory: SqliteMemoryStore,
   dedupeDecider: MemoryDedupeDecider,
@@ -142,7 +130,7 @@ async function writeDedupedMemory(
 }
 
 function memorySearchQueries(item: MemoryUpsert): string[] {
-  return [item.title, item.body, item.labels?.join(" ") ?? ""]
+  return [item.title, item.body]
     .map((part) => part.trim())
     .filter(Boolean);
 }
@@ -173,7 +161,6 @@ function formatCandidateMemory(item: MemoryUpsert): string {
     `kind: ${item.kind}`,
     `title: ${item.title}`,
     `body: ${item.body}`,
-    item.labels?.length ? `labels: ${item.labels.join(", ")}` : null,
     item.frequency ? `frequency: ${item.frequency}` : null,
     item.validFrom || item.validUntil ? `valid: ${item.validFrom ?? "unknown"} to ${item.validUntil ?? "unknown"}` : null,
     item.durationDays !== undefined && item.durationDays !== null ? `duration_days: ${item.durationDays}` : null,
@@ -187,7 +174,6 @@ function formatExistingMemory(item: MemoryEntry): string {
     `kind: ${item.kind}`,
     `title: ${item.title}`,
     `body: ${item.body}`,
-    item.labels.length ? `labels: ${item.labels.join(", ")}` : null,
     item.frequency ? `frequency: ${item.frequency}` : null,
     item.validFrom || item.validUntil ? `valid: ${item.validFrom ?? "unknown"} to ${item.validUntil ?? "unknown"}` : null,
     item.durationDays !== null ? `duration_days: ${item.durationDays}` : null,

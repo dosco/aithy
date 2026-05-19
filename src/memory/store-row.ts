@@ -1,13 +1,11 @@
 import type { SQLQueryBindings } from "bun:sqlite";
-import { labelsFromJson } from "./labels";
-import type { MemoryEntry, MemoryKind, MemoryLabel } from "./types";
+import type { MemoryEntry, MemoryKind } from "./types";
 
 export interface MemoryRow {
   id: string;
   kind: MemoryKind;
   title: string;
   body: string;
-  labels: string;
   valid_from: string | null;
   valid_until: string | null;
   duration_days: number | null;
@@ -29,7 +27,6 @@ export function rowToEntry(row: MemoryRow): MemoryEntry {
     kind: row.kind,
     title: row.title,
     body: row.body,
-    labels: labelsFromJson(row.labels),
     validFrom: row.valid_from,
     validUntil: row.valid_until,
     durationDays: row.duration_days,
@@ -49,7 +46,6 @@ export function rowToEntry(row: MemoryRow): MemoryEntry {
 export function buildPageWhere(opts: {
   query?: string;
   kind?: MemoryKind;
-  labels?: readonly MemoryLabel[];
   cursor: { updatedAt: string; id: string; retrievedCount?: number } | null;
   sort?: "recent" | "retrieved";
 }): { sql: string; params: Record<string, SQLQueryBindings> } {
@@ -59,13 +55,9 @@ export function buildPageWhere(opts: {
     clauses.push("kind = $__kind");
     params.$__kind = opts.kind;
   }
-  opts.labels?.forEach((label, i) => {
-    clauses.push(`labels LIKE $__label${i}`);
-    params[`$__label${i}`] = `%"${label}"%`;
-  });
   const trimmed = opts.query?.trim();
   if (trimmed) {
-    clauses.push("(LOWER(title) LIKE $__q OR LOWER(body) LIKE $__q OR LOWER(labels) LIKE $__q)");
+    clauses.push("(LOWER(title) LIKE $__q OR LOWER(body) LIKE $__q)");
     params.$__q = `%${trimmed.toLowerCase()}%`;
   }
   if (opts.cursor) addCursorClause({ cursor: opts.cursor, sort: opts.sort }, clauses, params);

@@ -1,4 +1,4 @@
-import type { BotMessage, BotSessionSummary } from "./types";
+import type { AssistantTextStatus, BotMessage, BotSessionSummary } from "./types";
 import type { MessageRow, SessionRow } from "./sqlite-session-schema";
 
 export function summaryFromRow(row: SessionRow): BotSessionSummary {
@@ -102,6 +102,7 @@ function rowToMessage(row: MessageRow): BotMessage {
     role: "assistant",
     kind: "text",
     content: row.content ?? "",
+    ...textStatus(parseMetadata(row.metadata_json)),
     thought: row.thought ?? undefined,
     usage,
     createdAt: row.created_at,
@@ -152,6 +153,12 @@ function permissionStatusField(value: Record<string, unknown>) {
   const status = value.status;
   if (status === "allowed" || status === "denied" || status === "timed_out") return status;
   return "denied";
+}
+
+function textStatus(value: Record<string, unknown>): { status?: AssistantTextStatus } {
+  const status = value.status;
+  if (status === "completed" || status === "failed" || status === "cancelled") return { status };
+  return {};
 }
 
 function hasKeys(value: unknown, keys: string[]): boolean {
@@ -252,7 +259,7 @@ export function messageToBindings(message: BotMessage) {
   return {
     ...base,
     $content: message.content,
-    $metadataJson: null,
+    $metadataJson: message.status ? JSON.stringify({ status: message.status }) : null,
     $toolName: null,
     $toolArgs: null,
     $toolResult: null,

@@ -25,6 +25,7 @@ export type SerializableBotMessage =
       role: "assistant";
       kind: "text";
       content: string;
+      status?: "completed" | "failed" | "cancelled";
       thought?: string;
       usage?: { input: number; output: number; thought: number; total: number };
       createdAt: string;

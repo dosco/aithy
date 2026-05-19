@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Field, FormError, FormTextarea, fieldClass } from "@/components/lib/form-bits";
 import { cn } from "@/lib/utils";
 import type { MemoryDto } from "@/server/dto";
-import { MEMORY_KINDS, MEMORY_LABELS, type MemoryKind, type MemoryLabel } from "../../../src/memory/types";
+import { MEMORY_KINDS, type MemoryKind } from "../../../src/memory/types";
 import { buildMemoryHelp } from "./memory-help";
 import type { MemoryForm } from "./memory-tile";
 
@@ -113,7 +113,6 @@ function MemoryEditor({
   const duration = durationPreview(form.validFrom, form.validUntil);
   const help = buildMemoryHelp({
     kind: form.kind,
-    labels: form.labels,
     validFrom: form.validFrom || null,
     validUntil: form.validUntil || null,
     evidence: form.evidence || null,
@@ -138,14 +137,14 @@ function MemoryEditor({
                 onChange={(event) => onChange({ ...form, title: event.target.value })}
               />
             </Field>
-            <Field label="Kind">
+            <Field label="Type">
               <select
                 className={cn(fieldClass, "pr-8")}
                 value={form.kind}
                 onChange={(event) => onChange({ ...form, kind: event.target.value as MemoryKind })}
               >
                 {MEMORY_KINDS.map((kind) => (
-                  <option key={kind} value={kind}>{kind}</option>
+                  <option key={kind} value={kind}>{kind.replace("_", " ")}</option>
                 ))}
               </select>
             </Field>
@@ -162,29 +161,6 @@ function MemoryEditor({
             </Field>
           </div>
         </section>
-
-        <Field label="Labels" className="mt-5">
-          <div className="grid max-h-36 grid-cols-2 gap-1.5 overflow-auto rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--background))]/55 p-2 sm:grid-cols-3">
-            {MEMORY_LABELS.map((label) => {
-              const active = form.labels.includes(label);
-              return (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => onChange({ ...form, labels: toggleLabel(form.labels, label) })}
-                  className={cn(
-                    "h-8 truncate rounded-md border px-2 text-left text-xs capitalize transition",
-                    active
-                      ? "border-[rgb(var(--foreground))]/35 bg-[rgb(var(--muted))] text-[rgb(var(--foreground))]"
-                      : "border-[rgb(var(--border))] text-[rgb(var(--muted-foreground))] hover:bg-[rgb(var(--muted))]/60",
-                  )}
-                >
-                  {label.replace("_", " ")}
-                </button>
-              );
-            })}
-          </div>
-        </Field>
 
         <section className="mt-5 border-t border-[rgb(var(--border))] pt-4">
           <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-[rgb(var(--muted-foreground))]">
@@ -270,12 +246,6 @@ function MemoryEditor({
       </footer>
     </>
   );
-}
-
-function toggleLabel(labels: MemoryLabel[], label: MemoryLabel): MemoryLabel[] {
-  return labels.includes(label)
-    ? labels.filter((item) => item !== label)
-    : [...labels, label];
 }
 
 function durationPreview(validFrom: string, validUntil: string): string | null {

@@ -4,6 +4,7 @@ import path from "node:path";
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { SqliteSessionStateStore } from "../src/session/sqlite-state-store";
+import { HOME_SESSION_ID } from "../src/session/home-session";
 import type { BotMessage } from "../src/session/types";
 
 describe("SqliteSessionStateStore", () => {
@@ -39,7 +40,8 @@ describe("SqliteSessionStateStore", () => {
     const textMsg: BotMessage = {
       role: "assistant",
       kind: "text",
-      content: "found it",
+      content: "could not connect",
+      status: "failed",
       usage: { input: 8, output: 4, thought: 0, total: 12 },
       createdAt: now,
     };
@@ -66,7 +68,8 @@ describe("SqliteSessionStateStore", () => {
       {
         role: "assistant",
         kind: "text",
-        content: "found it",
+        content: "could not connect",
+        status: "failed",
         usage: { input: 8, output: 4, thought: 0, total: 12 },
       },
     ]);
@@ -91,6 +94,36 @@ describe("SqliteSessionStateStore", () => {
     expect(new Database(dbPath).query(`
       SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'session_items'
     `).get()).toBeFalsy();
+  });
+
+  test("session list query excludes Home", async () => {
+    const dbPath = await tempDbPath();
+    const store = new SqliteSessionStateStore(dbPath);
+    const now = "2026-05-02T12:00:00.000Z";
+    const expiresAt = new Date("2026-05-02T13:00:00.000Z");
+
+    store.ensureSession({
+      conversationId: HOME_SESSION_ID,
+      name: "Home",
+      nameSource: "manual",
+      source: "web",
+      now,
+      expiresAt,
+    });
+    store.ensureSession({
+      conversationId: "specific",
+      name: "Specific",
+      nameSource: "manual",
+      source: "web",
+      now,
+      expiresAt,
+    });
+
+    expect(store.getSummary(HOME_SESSION_ID)?.name).toBe("Home");
+    expect(store.listSessions().map((session) => session.conversationId)).not.toContain(HOME_SESSION_ID);
+    expect(store.listSessions()).toMatchObject([
+      { conversationId: "specific" },
+    ]);
   });
 
   test("persists permission messages without token usage", async () => {

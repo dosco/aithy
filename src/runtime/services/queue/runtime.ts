@@ -173,6 +173,8 @@ export class QueueServiceRuntime {
         return this.sessions.appendMessages(request.params.conversationId, request.params.messages as BotMessage[]);
       case "session.messagesPage":
         return this.sessions.messagesPage(request.params.conversationId, request.params.input);
+      case "session.messagesByIdRange":
+        return this.sessions.messagesByIdRange(request.params.conversationId, request.params.input);
       case "session.childSessions":
         return this.sessions.childSessions(request.params.parentId);
       case "session.lastMessageId":

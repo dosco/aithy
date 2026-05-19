@@ -4,6 +4,7 @@ import path from "node:path";
 import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import { SqliteMemoryStore } from "../src/memory/memory-store";
+import { MEMORY_KINDS } from "../src/memory/types";
 
 async function tempDbPath(): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), "aithy-memory-"));
@@ -17,7 +18,6 @@ describe("SqliteMemoryStore", () => {
       kind: "fact",
       title: "user uses bun",
       body: "The user runs everything with bun, not node.",
-      labels: ["tooling"],
       frequency: "daily",
       evidence: "User said they run everything with bun.",
       importance: 0.7,
@@ -29,7 +29,6 @@ describe("SqliteMemoryStore", () => {
 
     const fetched = store.get(entry.id);
     expect(fetched?.title).toBe("user uses bun");
-    expect(fetched?.labels).toEqual(["tooling"]);
     expect(fetched?.frequency).toBe("daily");
     expect(fetched?.evidence).toBe("User said they run everything with bun.");
     expect(fetched?.recallCount).toBe(0);
@@ -38,8 +37,8 @@ describe("SqliteMemoryStore", () => {
 
   test("search returns FTS matches and bumps retrieval counts", async () => {
     const store = new SqliteMemoryStore(await tempDbPath());
-    store.upsert({ kind: "fact", title: "uses bun runtime", body: "User runs bun.", labels: ["tooling"] });
-    store.upsert({ kind: "preference", title: "prefers tabs", body: "User prefers tabs over spaces.", labels: ["workflow"] });
+    store.upsert({ kind: "fact", title: "uses bun runtime", body: "User runs bun." });
+    store.upsert({ kind: "preference", title: "prefers tabs", body: "User prefers tabs over spaces." });
 
     const hits = await store.search(["bun"]);
     expect(hits.map((h) => h.title)).toEqual(["uses bun runtime"]);
@@ -66,15 +65,25 @@ describe("SqliteMemoryStore", () => {
     expect(both).toEqual([]);
   });
 
-  test("search filters by kind and labels", async () => {
+  test("search filters by kind", async () => {
     const store = new SqliteMemoryStore(await tempDbPath());
-    store.upsert({ kind: "fact", title: "bun fact", body: "fact about bun", labels: ["tooling"] });
-    store.upsert({ kind: "preference", title: "bun preference", body: "prefers bun", labels: ["workflow"] });
+    store.upsert({ kind: "fact", title: "bun fact", body: "fact about bun" });
+    store.upsert({ kind: "preference", title: "bun preference", body: "prefers bun" });
 
     const facts = await store.search(["bun"], { kinds: ["fact"] });
     expect(facts.map((h) => h.kind)).toEqual(["fact"]);
-    const tooling = await store.search(["bun"], { labels: ["tooling"] });
-    expect(tooling.map((h) => h.labels)).toEqual([["tooling"]]);
+  });
+
+  test("stores and filters every memory kind", async () => {
+    const store = new SqliteMemoryStore(await tempDbPath());
+    for (const kind of MEMORY_KINDS) {
+      store.upsert({ kind, title: `${kind} marker`, body: `body for ${kind}` });
+    }
+
+    for (const kind of MEMORY_KINDS) {
+      const page = store.page({ cursor: null, limit: 20, kind });
+      expect(page.items.map((m) => m.kind)).toEqual([kind]);
+    }
   });
 
   test("upsert stores time-bounded metadata and computes inclusive duration", async () => {
@@ -83,7 +92,6 @@ describe("SqliteMemoryStore", () => {
       kind: "event",
       title: "Tokyo trip",
       body: "The user plans to visit Tokyo.",
-      labels: ["travel", "time_bound"],
       validFrom: "2026-05-10",
       validUntil: "2026-05-12",
       durationDays: 99,
@@ -122,13 +130,11 @@ describe("SqliteMemoryStore", () => {
       kind: "fact",
       title: "main repo",
       body: "Main repo is ~/src/old.",
-      labels: ["project"],
     });
     const replacement = store.supersede(original.id, {
       kind: "fact",
       title: "main repo",
       body: "Main repo is ~/src/new.",
-      labels: ["project"],
     });
 
     expect(store.get(original.id)?.supersededBy).toBe(replacement.id);
@@ -251,21 +257,18 @@ describe("SqliteMemoryStore", () => {
       kind: "event",
       title: "old deadline",
       body: "The user's old deadline passed.",
-      labels: ["deadline", "time_bound"],
       validUntil: "2026-05-09",
     });
     const today = store.upsert({
       kind: "event",
       title: "today deadline",
       body: "The user's deadline is today.",
-      labels: ["deadline", "time_bound"],
       validUntil: "2026-05-10",
     });
     const future = store.upsert({
       kind: "event",
       title: "future deadline",
       body: "The user's deadline is tomorrow.",
-      labels: ["deadline", "time_bound"],
       validUntil: "2026-05-11",
     });
 
@@ -276,7 +279,7 @@ describe("SqliteMemoryStore", () => {
     expect(await store.search(["old deadline"])).toEqual([]);
   });
 
-  test("migration maps episode and legacy tags to event and controlled labels", async () => {
+  test("migration maps episode to event and drops legacy tags", async () => {
     const dbPath = await tempDbPath();
     const db = new Database(dbPath, { create: true });
     db.exec(`
@@ -315,9 +318,63 @@ describe("SqliteMemoryStore", () => {
     const migrated = store.get("m1");
 
     expect(migrated?.kind).toBe("event");
-    expect(migrated?.labels).toEqual(["project", "travel"]);
     expect(migrated?.validUntil).toBeNull();
-    expect((await store.search(["travel"]))[0]?.id).toBe("m1");
+    expect(await store.search(["travel"])).toEqual([]);
+    store.close();
+
+    const migratedDb = new Database(dbPath);
+    const columns = migratedDb.query("PRAGMA table_info(memories)").all() as Array<{ name: string }>;
+    expect(columns.map((column) => column.name)).not.toContain("labels");
+    expect(columns.map((column) => column.name)).not.toContain("tags");
+    migratedDb.close();
+  });
+
+  test("migration drops controlled labels from current memory schema", async () => {
+    const dbPath = await tempDbPath();
+    const db = new Database(dbPath, { create: true });
+    db.exec(`
+      CREATE TABLE schema_migrations (
+        scope TEXT NOT NULL,
+        version INTEGER NOT NULL,
+        applied_at TEXT NOT NULL,
+        PRIMARY KEY (scope, version)
+      );
+      INSERT INTO schema_migrations(scope, version, applied_at)
+      VALUES ('memory', 1, 'now'), ('memory', 2, 'now'), ('memory', 3, 'now'), ('memory', 4, 'now'), ('memory', 5, 'now'), ('memory', 6, 'now');
+      CREATE TABLE memories (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN ('fact', 'preference', 'instruction', 'event')),
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        labels TEXT NOT NULL DEFAULT '[]',
+        valid_from TEXT,
+        valid_until TEXT,
+        duration_days INTEGER,
+        evidence TEXT,
+        frequency TEXT,
+        source TEXT,
+        importance REAL NOT NULL DEFAULT 0.5,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_recalled_at TEXT,
+        recall_count INTEGER NOT NULL DEFAULT 0,
+        retrieved_count INTEGER NOT NULL DEFAULT 0,
+        superseded_by TEXT
+      );
+      INSERT INTO memories (
+        id, kind, title, body, labels, source, importance, created_at, updated_at
+      ) VALUES (
+        'm1', 'fact', 'Main repo', 'The repo lives in ~/src/axbot.', '["project"]', 'test', 0.6, '2026-01-01', '2026-01-01'
+      );
+    `);
+    db.close();
+
+    const store = new SqliteMemoryStore(dbPath);
+    const migrated = store.get("m1");
+
+    expect(migrated?.kind).toBe("fact");
+    expect(migrated?.body).toContain("~/src/axbot");
+    expect(await store.search(["project"])).toEqual([]);
     store.close();
   });
 });

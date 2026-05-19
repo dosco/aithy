@@ -1,5 +1,6 @@
 import { MAX_CONVERSATION_HISTORY_MESSAGES } from "../config/limits";
-import type { MessagePage, SessionStateStore } from "./state-store";
+import { HOME_SESSION_ID } from "./home-session";
+import type { MessagePage, MessageRange, SessionStateStore } from "./state-store";
 import { defaultSessionName, generateSessionName } from "./session-names";
 import { summaryFromSession } from "./session-summary";
 import type {
@@ -128,9 +129,17 @@ export function listSessionRecords(
   ctx: Pick<SessionRecordContext, "sessions" | "logicalSessions" | "state">,
 ): BotSessionSummary[] {
   const byId = new Map<string, BotSessionSummary>();
-  for (const summary of ctx.state?.listSessions() ?? []) byId.set(summary.conversationId, summary);
-  for (const summary of ctx.logicalSessions.values()) byId.set(summary.conversationId, summary);
-  for (const session of ctx.sessions.values()) byId.set(session.conversationId, summaryFromSession(session));
+  for (const summary of ctx.state?.listSessions() ?? []) {
+    if (summary.conversationId !== HOME_SESSION_ID) byId.set(summary.conversationId, summary);
+  }
+  for (const summary of ctx.logicalSessions.values()) {
+    if (summary.conversationId !== HOME_SESSION_ID) byId.set(summary.conversationId, summary);
+  }
+  for (const session of ctx.sessions.values()) {
+    if (session.conversationId !== HOME_SESSION_ID) {
+      byId.set(session.conversationId, summaryFromSession(session));
+    }
+  }
   return [...byId.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
@@ -147,6 +156,21 @@ export function messagesPageRecord(
 ): MessagePage {
   return ctx.state?.messagesPage(conversationId, input)
     ?? { items: [], oldestId: null, newestId: null, hasMoreBefore: false };
+}
+
+export async function messagesByIdRangeRecord(
+  ctx: SessionRecordContext,
+  conversationId: string,
+  startId: number,
+  endId: number,
+  input: { limit: number; maxChars: number },
+): Promise<MessageRange> {
+  const range = await ctx.state?.messagesByIdRange?.(conversationId, {
+    startId,
+    endId,
+    limit: input.limit,
+  });
+  return capRangeByChars(range ?? [], input.maxChars);
 }
 
 export function renameSessionRecord(
@@ -208,6 +232,35 @@ export function appendSessionMessages(
   session.updatedAt = nowDate.toISOString();
   session.lastActivityAt = nowDate;
   ctx.state?.appendMessages(conversationId, messages);
+}
+
+function capRangeByChars(range: MessageRange, maxChars: number): MessageRange {
+  const capped: MessageRange = [];
+  let total = 0;
+  for (const item of range) {
+    const size = roughMessageSize(item.message);
+    if (capped.length > 0 && total + size > maxChars) break;
+    capped.push(item);
+    total += size;
+    if (total >= maxChars) break;
+  }
+  return capped;
+}
+
+function roughMessageSize(message: BotMessage): number {
+  if (message.role === "user") return message.content.length;
+  if (message.kind === "text") return message.content.length;
+  if (message.kind === "tool_call") return message.toolName.length + safeJson(message.toolArgs).length;
+  if (message.kind === "artifact") return message.title.length + message.sandboxPath.length;
+  return message.toolName.length + message.status.length;
+}
+
+function safeJson(value: unknown): string {
+  try {
+    return JSON.stringify(value ?? null);
+  } catch {
+    return "[unserializable]";
+  }
 }
 
 function assistantUsage(message: BotMessage) {

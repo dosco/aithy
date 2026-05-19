@@ -2,14 +2,13 @@ import { motion } from "framer-motion";
 import { CalendarDays, Quote, Repeat2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MemoryDto } from "@/server/dto";
-import type { MemoryKind, MemoryLabel } from "../../../src/memory/types";
+import type { MemoryKind } from "../../../src/memory/types";
 import { KIND_TINT_BORDER, KindGlyph } from "./kind-glyph";
 
 export interface MemoryForm {
   kind: MemoryKind;
   title: string;
   body: string;
-  labels: MemoryLabel[];
   validFrom: string;
   validUntil: string;
   evidence: string;
@@ -21,7 +20,6 @@ export const emptyMemoryForm: MemoryForm = {
   kind: "fact",
   title: "",
   body: "",
-  labels: [],
   validFrom: "",
   validUntil: "",
   evidence: "",
@@ -78,11 +76,6 @@ export function MemoryTile({
         <div className="min-w-0 pr-5">
           <KindGlyph kind={entry.kind} className="rounded-full bg-[rgb(var(--muted))]/60 px-2 py-0.5" />
           <h3 className="mt-3 truncate text-base font-medium leading-snug sm:text-lg">{entry.title}</h3>
-          {entry.labels.length > 0 ? (
-            <p className="mt-1 truncate text-[11px] capitalize text-[rgb(var(--muted-foreground))]">
-              {entry.labels.map((label) => label.replace("_", " ")).join(" · ")}
-            </p>
-          ) : null}
         </div>
 
         {metadata.length > 0 ? (

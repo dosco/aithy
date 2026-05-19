@@ -11,6 +11,7 @@ import type { ErrorComponentProps } from "@tanstack/react-router";
 import { TriangleAlert } from "lucide-react";
 import { AppShell } from "@/components/shell";
 import { Button } from "@/components/ui/button";
+import { HOME_SESSION_ID } from "../../src/session/home-session";
 import {
   isSetupGuardExemptPath,
   sanitizeSetupRedirect,
@@ -71,7 +72,7 @@ function RootErrorComponent({ error, reset }: ErrorComponentProps) {
           <div className="flex items-center justify-center gap-2">
             <Button onClick={() => reset()}>Let’s try again</Button>
             <Button variant="ghost" asChild>
-              <Link to="/chat">Back to chat</Link>
+              <Link to="/chat/$sessionId" params={{ sessionId: HOME_SESSION_ID }}>Back to chat</Link>
             </Button>
           </div>
           <details className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] text-left">

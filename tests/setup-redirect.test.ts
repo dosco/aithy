@@ -14,13 +14,13 @@ describe("setup redirect helpers", () => {
   });
 
   test("normalizes unsafe or unusable redirect targets", () => {
-    expect(sanitizeSetupRedirect("https://example.com/settings")).toBe("/chat");
-    expect(sanitizeSetupRedirect("//example.com/settings")).toBe("/chat");
-    expect(sanitizeSetupRedirect("/setup")).toBe("/chat");
-    expect(sanitizeSetupRedirect("/setup?redirect=/settings")).toBe("/chat");
-    expect(sanitizeSetupRedirect("/api/events")).toBe("/chat");
-    expect(sanitizeSetupRedirect("")).toBe("/chat");
-    expect(sanitizeSetupRedirect("/")).toBe("/chat");
+    expect(sanitizeSetupRedirect("https://example.com/settings")).toBe("/chat/home");
+    expect(sanitizeSetupRedirect("//example.com/settings")).toBe("/chat/home");
+    expect(sanitizeSetupRedirect("/setup")).toBe("/chat/home");
+    expect(sanitizeSetupRedirect("/setup?redirect=/settings")).toBe("/chat/home");
+    expect(sanitizeSetupRedirect("/api/events")).toBe("/chat/home");
+    expect(sanitizeSetupRedirect("")).toBe("/chat/home");
+    expect(sanitizeSetupRedirect("/")).toBe("/chat/home");
   });
 
   test("exempts setup and event stream routes from the root guard", () => {

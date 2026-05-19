@@ -45,7 +45,6 @@ describe("MemoryExpiryQueue", () => {
       kind: "event",
       title: "expired",
       body: "An expired event.",
-      labels: ["time_bound"],
       validUntil: "2000-01-01",
     });
     memory.upsert({

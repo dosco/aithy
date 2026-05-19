@@ -8,6 +8,7 @@ import { MemoryConsolidateQueue } from "../src/memory/consolidate-queue";
 import { MemoryExpiryQueue } from "../src/memory/expiry-queue";
 import { SqliteMemoryRunsStore } from "../src/memory/memory-runs";
 import { SqliteMemoryStore } from "../src/memory/memory-store";
+import { scheduleAgentBackgroundQueues } from "../src/runtime/services/agent/schedules";
 import { SkillPromoteQueue } from "../src/skills/promote-queue";
 import { SqliteSkillPromotionStore } from "../src/skills/promote-store";
 import { SqliteSkillsStore } from "../src/skills/skills-store";
@@ -29,6 +30,16 @@ afterEach(async () => {
 });
 
 describe("debounced runNow queues", () => {
+  test("agent startup schedules expiry and dreams but not consolidation", async () => {
+    const calls: string[] = [];
+    await scheduleAgentBackgroundQueues({
+      memoryExpiry: { schedule: async () => { calls.push("expiry"); } },
+      dreamQueue: { schedule: async () => { calls.push("dream"); } },
+    });
+
+    expect(calls.sort()).toEqual(["dream", "expiry"]);
+  });
+
   test("memory consolidation reuses the planned adhoc task", async () => {
     const fx = await fixture();
     const runs = new SqliteMemoryRunsStore(fx.stateDbPath);

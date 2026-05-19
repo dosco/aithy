@@ -1,6 +1,6 @@
 import type { ChannelCommand, ChannelMessage } from "../../src/channel/types";
 import type { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
-import type { UserMessage } from "../../src/session/types";
+import type { AssistantTextStatus, UserMessage } from "../../src/session/types";
 import { sessionDto } from "./dto";
 
 export type WebRuntime = Awaited<ReturnType<typeof getAithyRuntime>>;
@@ -32,11 +32,15 @@ export function commandMessage(conversationId: string, text: string): ChannelCom
   };
 }
 
-export function assistantMessage(text: string) {
+export function assistantMessage(
+  text: string,
+  options: { status?: AssistantTextStatus } = {},
+) {
   return {
     role: "assistant" as const,
     kind: "text" as const,
     content: text,
+    ...(options.status ? { status: options.status } : {}),
     createdAt: new Date().toISOString(),
   };
 }

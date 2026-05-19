@@ -6,6 +6,7 @@ import type {
 import { MAX_CONVERSATION_HISTORY_TEXT_CHARS } from "../config/limits";
 import type { ChannelMessage } from "../channel/types";
 import type {
+  AssistantTextStatus,
   AssistantTextMessage,
   AssistantToolCallMessage,
   BotMessage,
@@ -101,11 +102,15 @@ export function wrapSkillsSearch(
   };
 }
 
-export function assistantTextMessage(text: string): AssistantTextMessage {
+export function assistantTextMessage(
+  text: string,
+  options: { status?: AssistantTextStatus } = {},
+): AssistantTextMessage {
   return {
     role: "assistant",
     kind: "text",
     content: trimHistoryText(text),
+    ...(options.status ? { status: options.status } : {}),
     createdAt: new Date().toISOString(),
   };
 }

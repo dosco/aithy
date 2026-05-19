@@ -15,6 +15,7 @@ export interface ChatTurnMessage {
   conversationId: string | null;
   createdAt: string;
   content: string;
+  status?: Extract<ChatMessageItem["message"], { role: "assistant"; kind: "text" }>["status"];
 }
 
 export type ChatTask = WebStateDto["tasks"][number];
@@ -67,6 +68,7 @@ export function latestTerminalAssistant(
       conversationId: null,
       createdAt: message.createdAt,
       content: message.content,
+      status: message.status,
     };
   }
   return latest;
@@ -111,7 +113,7 @@ export function deriveChatTurn({
   if (assistantCompletesLatestUser && terminalAssistant && !localSubmitWithoutUser) {
     return {
       ...base,
-      status: terminalStatusForAssistantText(terminalAssistant.content),
+      status: terminalStatusForAssistant(terminalAssistant),
       busy: false,
     };
   }
@@ -205,8 +207,10 @@ function isBannerTaskStatus(status: ChatTask["status"]): boolean {
   return isBusyTaskStatus(status) || status === "failed";
 }
 
-function terminalStatusForAssistantText(text: string): ChatTurnStatus {
-  if (text === "[stopped]") return "cancelled";
-  if (text.startsWith("Error:")) return "failed";
+function terminalStatusForAssistant(message: ChatTurnMessage): ChatTurnStatus {
+  if (message.status === "cancelled") return "cancelled";
+  if (message.status === "failed") return "failed";
+  if (message.content === "[stopped]") return "cancelled";
+  if (message.content.startsWith("Error:")) return "failed";
   return "success";
 }

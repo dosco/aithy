@@ -46,6 +46,7 @@ import { SandboxCommandClient } from "../sandbox/client";
 import { QueueServiceClient } from "../queue/client";
 import { RemoteSessionStateStore } from "../queue/session-state-client";
 import { payloadString, userChatPayload } from "./command-payloads";
+import { scheduleAgentBackgroundQueues } from "./schedules";
 
 export class AgentWorkerRuntime {
   private heartbeatTimer?: Timer;
@@ -207,7 +208,7 @@ export class AgentWorkerRuntime {
       notify,
       onQueueError,
     });
-    await Promise.all([memoryConsolidate.schedule(), memoryExpiry.schedule(), dreamQueue.schedule()]);
+    await scheduleAgentBackgroundQueues({ memoryExpiry, dreamQueue });
 
     const dispatcher = new AgentDispatcher({
       stateDbPath: config.stateDbPath,
@@ -229,7 +230,7 @@ export class AgentWorkerRuntime {
         if (runtimeRef) {
           const rt = runtimeRef;
           if (_data.taskId) {
-            const status = result.text === "[stopped]" ? "cancelled" : result.text.startsWith("Error:") ? "failed" : "completed";
+            const status = result.status;
             const task = rt.tasks.update(_data.taskId, {
               status,
               reason: status === "completed" ? "Done" : status === "cancelled" ? "Stopped by user" : "Agent returned an error",
@@ -244,6 +245,7 @@ export class AgentWorkerRuntime {
               automationId: _data.automationId,
               automationRunId: _data.automationRunId,
               text: result.text,
+              status: result.status,
               conversationId: result.conversationId,
               notify: (input) => rt.notify(input),
             });

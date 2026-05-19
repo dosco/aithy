@@ -1,41 +1,32 @@
-export type MemoryKind = "fact" | "preference" | "instruction" | "event";
+export type MemoryKind =
+  | "fact"
+  | "preference"
+  | "instruction"
+  | "relationship"
+  | "project_context"
+  | "decision"
+  | "task"
+  | "goal"
+  | "event"
+  | "resource"
+  | "constraint"
+  | "vocabulary"
+  | "note";
 
 export const MEMORY_KINDS: readonly MemoryKind[] = [
   "fact",
   "preference",
   "instruction",
+  "relationship",
+  "project_context",
+  "decision",
+  "task",
+  "goal",
   "event",
-];
-
-export type MemoryLabel =
-  | "personal"
-  | "project"
-  | "tooling"
-  | "workflow"
-  | "health"
-  | "travel"
-  | "household"
-  | "media"
-  | "art"
-  | "deadline"
-  | "recurring"
-  | "time_bound"
-  | "verbatim_detail";
-
-export const MEMORY_LABELS: readonly MemoryLabel[] = [
-  "personal",
-  "project",
-  "tooling",
-  "workflow",
-  "health",
-  "travel",
-  "household",
-  "media",
-  "art",
-  "deadline",
-  "recurring",
-  "time_bound",
-  "verbatim_detail",
+  "resource",
+  "constraint",
+  "vocabulary",
+  "note",
 ];
 
 export interface MemoryEntry {
@@ -43,7 +34,6 @@ export interface MemoryEntry {
   kind: MemoryKind;
   title: string;
   body: string;
-  labels: MemoryLabel[];
   validFrom: string | null;
   validUntil: string | null;
   durationDays: number | null;
@@ -64,7 +54,6 @@ export interface MemoryUpsert {
   kind: MemoryKind;
   title: string;
   body: string;
-  labels?: readonly MemoryLabel[];
   validFrom?: string | null;
   validUntil?: string | null;
   durationDays?: number | null;
@@ -87,9 +76,8 @@ export interface MemorySearchOptions {
    * been fed certain memories earlier in the same run — passing them here
    * drops them at the SQL/vec layer (not post-slice) so the returned set
    * always honors the requested limit.
-   */
+  */
   excludeIds?: readonly string[];
-  labels?: readonly MemoryLabel[];
   /** Skip recall/retrieval counter updates for internal lookups such as dedupe. */
   markRecalled?: boolean;
 }

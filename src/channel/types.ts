@@ -1,3 +1,5 @@
+import type { AssistantTextStatus } from "../session/types";
+
 export interface ChannelMessage {
   id: string;
   channelId: string;
@@ -19,10 +21,13 @@ export interface ChannelCommand {
 
 export type ChannelInput = ChannelMessage | ChannelCommand;
 
+export type ChannelReplyStatus = AssistantTextStatus;
+
 export interface ChannelReply {
   channelId: string;
   conversationId: string;
   text: string;
+  status?: ChannelReplyStatus;
 }
 
 export interface ChannelAdapter {

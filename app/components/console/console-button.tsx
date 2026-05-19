@@ -1,22 +1,24 @@
 import * as Popover from "@radix-ui/react-popover";
 import { Link } from "@tanstack/react-router";
 import { ChevronRight, SquareTerminal } from "lucide-react";
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { useRuntimeConsole } from "./use-runtime-console";
 
 export function ConsoleButton() {
   const state = useRuntimeConsole();
+  const [open, setOpen] = useState(false);
   const queue = state.queues.find((item) => item.id === "agent.chat");
   const hasIssue = state.services.some((service) => service.state === "failed" || service.state === "degraded")
     || queue?.state === "blocked";
 
   return (
-    <Popover.Root>
+    <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
         <button
           type="button"
           aria-label="Runtime console"
-          className="relative flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-[rgb(var(--muted))]"
+          className={cn("app-top-icon relative", open && "app-top-icon-active")}
         >
           <SquareTerminal className="h-4 w-4" />
           {hasIssue ? (

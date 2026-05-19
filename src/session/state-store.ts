@@ -16,6 +16,14 @@ export interface MessagePage {
   hasMoreBefore: boolean;
 }
 
+export interface MessageRangeInput {
+  startId: number;
+  endId: number;
+  limit: number;
+}
+
+export type MessageRange = Array<{ id: number; message: BotMessage }>;
+
 export interface LogicalSessionInput {
   conversationId: string;
   name: string;
@@ -41,6 +49,7 @@ export interface SessionStateStore {
   deleteAllSessions(): void;
   appendMessages(conversationId: string, messages: BotMessage[]): void;
   messagesPage(conversationId: string, input: MessagePageInput): MessagePage;
+  messagesByIdRange?(conversationId: string, input: MessageRangeInput): MessageRange | Promise<MessageRange>;
   childSessions(parentId: string): BotSessionSummary[];
   lastMessageId(conversationId: string): number | null;
   close?(): void;

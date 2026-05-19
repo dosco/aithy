@@ -2,6 +2,14 @@
 @source "../";
 @custom-variant dark (&:where(.dark, .dark *));
 
+@utility app-top-icon {
+  @apply flex h-8 w-8 items-center justify-center rounded-md text-[rgb(var(--muted-foreground))] transition-colors hover:bg-[rgb(var(--foreground)/0.05)] hover:text-[rgb(var(--foreground))];
+}
+
+@utility app-top-icon-active {
+  @apply bg-[rgb(var(--foreground)/0.08)] text-[rgb(var(--foreground))];
+}
+
 :root {
   color-scheme: light;
   --background: 250 249 245;
@@ -425,6 +433,13 @@ code {
 
 .app-chat-bubble-assistant {
   color: rgb(var(--foreground));
+}
+
+.app-chat-bubble-error,
+html[data-layout="work"] .app-chat-bubble-error {
+  background: rgb(var(--danger) / 0.12);
+  border: 1px solid rgb(var(--danger) / 0.38);
+  color: rgb(var(--danger));
 }
 
 details > summary {

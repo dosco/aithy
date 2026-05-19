@@ -7,9 +7,9 @@ import {
   Bug,
   Eye,
   History,
+  House,
   ListChecks,
   Menu,
-  MessageSquareText,
   Palette,
   Settings,
   SquarePen,
@@ -27,9 +27,9 @@ import { cn } from "@/lib/utils";
 import { deleteSession } from "@/server/actions.functions";
 import type { SessionsPageStateDto } from "@/server/dto";
 import { getSessionsPageState } from "@/server/state.functions";
+import { HOME_SESSION_ID } from "../../src/session/home-session";
 
 const navItems = [
-  { to: "/sessions", label: "Sessions", icon: History },
   { to: "/skills", label: "Skills", icon: BookOpen },
   { to: "/memory", label: "Memory", icon: Brain },
   { to: "/usage", label: "Usage", icon: BarChart3 },
@@ -65,9 +65,6 @@ function TopChrome() {
   const reduce = useReducedMotion();
   const { details, setDetails } = useChatUi();
   const [expanded, setExpanded] = useState(false);
-  const [lastActiveSessionId, setLastActiveSessionId] = useState<string | null>(
-    null,
-  );
   const [sessions, setSessions] = useState<SessionsPageStateDto["sessions"]>([]);
   const [pendingDeleteSessionId, setPendingDeleteSessionId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -88,19 +85,12 @@ function TopChrome() {
   useEffect(() => {
     let cancelled = false;
     void getSessionsPageState().then((state) => {
-      if (!cancelled) {
-        setSessions(state.sessions);
-        setLastActiveSessionId(state.settings.ui.lastActiveSessionId);
-      }
+      if (!cancelled) setSessions(state.sessions);
     });
     return () => {
       cancelled = true;
     };
   }, []);
-
-  useEffect(() => {
-    if (activeSessionId) setLastActiveSessionId(activeSessionId);
-  }, [activeSessionId]);
 
   useLiveEvent((event) => {
     if (event.type === "sessions") setSessions(event.sessions);
@@ -135,12 +125,16 @@ function TopChrome() {
     if (!pendingDeleteSessionId) return;
     setDeleting(true);
     try {
+      const deletedHome = pendingDeleteSessionId === HOME_SESSION_ID;
       const result = await deleteSession({ data: { conversationId: pendingDeleteSessionId } });
       const next = result.sessions[0] ?? null;
       setSessions(result.sessions);
-      setLastActiveSessionId(next?.conversationId ?? null);
       setPendingDeleteSessionId(null);
-      if (next) {
+      if (deletedHome) {
+        await navigate({ to: "/chat/$sessionId", params: { sessionId: HOME_SESSION_ID } });
+      } else if (next?.conversationId === HOME_SESSION_ID) {
+        await navigate({ to: "/chat/$sessionId", params: { sessionId: HOME_SESSION_ID } });
+      } else if (next) {
         await navigate({ to: "/chat/$sessionId", params: { sessionId: next.conversationId } });
       } else {
         await navigate({ to: "/sessions" });
@@ -159,29 +153,30 @@ function TopChrome() {
       <header className="pointer-events-none fixed left-0 right-0 top-4 z-30">
         <BrandLink />
         <div
-          className="pointer-events-auto absolute right-4 top-0 flex w-[13.75rem] items-center gap-1 overflow-visible rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel)/0.78)] p-1 shadow-[0_4px_18px_rgb(0_0_0/0.06)] backdrop-blur-xl sm:right-6 lg:right-8"
+          className="pointer-events-auto absolute right-4 top-0 flex w-[16.25rem] items-center gap-1 overflow-visible rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel)/0.78)] p-1 shadow-[0_4px_18px_rgb(0_0_0/0.06)] backdrop-blur-xl sm:right-6 lg:right-8"
         >
           <TopIconLink
-            to="/chat"
+            to="/chat/$sessionId"
+            params={{ sessionId: HOME_SESSION_ID }}
+            active={activeSessionId === HOME_SESSION_ID}
+            label="Home"
+          >
+            <House className="h-4 w-4" />
+          </TopIconLink>
+          <TopIconLink
+            to="/sessions"
+            active={location.pathname.startsWith("/sessions")}
+            label="Sessions"
+          >
+            <History className="h-4 w-4" />
+          </TopIconLink>
+          <TopIconButton
             active={location.pathname === "/chat"}
             label="New chat"
+            onClick={() => void navigate({ to: "/chat" })}
           >
             <SquarePen className="h-4 w-4" />
-          </TopIconLink>
-          {lastActiveSessionId ? (
-            <TopIconLink
-              to="/chat/$sessionId"
-              params={{ sessionId: lastActiveSessionId }}
-              active={location.pathname === `/chat/${lastActiveSessionId}`}
-              label="Active chat"
-            >
-              <MessageSquareText className="h-4 w-4" />
-            </TopIconLink>
-          ) : (
-            <TopIconLink to="/chat" active={false} label="Active chat">
-              <MessageSquareText className="h-4 w-4" />
-            </TopIconLink>
-          )}
+          </TopIconButton>
           <NotificationBell />
           <ConsoleButton />
           <ThemeToggle />
@@ -302,7 +297,8 @@ function SessionMenuActions({
 function BrandLink() {
   return (
     <Link
-      to="/sessions"
+      to="/chat/$sessionId"
+      params={{ sessionId: HOME_SESSION_ID }}
       aria-label="Aithy home"
       className="pointer-events-auto absolute left-4 top-1.5 font-mono text-[11px] uppercase tracking-[0.24em] text-[rgb(var(--muted-foreground))] transition hover:text-[rgb(var(--foreground))] sm:left-6 lg:left-8"
     >
@@ -312,12 +308,7 @@ function BrandLink() {
 }
 
 function topIconClass(active = false): string {
-  return cn(
-    "flex h-8 w-8 items-center justify-center rounded-md transition",
-    active
-      ? "bg-[rgb(var(--muted))] text-[rgb(var(--foreground))]"
-      : "text-[rgb(var(--foreground))] hover:bg-[rgb(var(--muted))]",
-  );
+  return cn("app-top-icon", active && "app-top-icon-active");
 }
 
 function TopIconLink({
@@ -331,7 +322,7 @@ function TopIconLink({
   children: ReactNode;
   label: string;
   params?: Record<string, string>;
-  to: "/chat" | "/chat/$sessionId";
+  to: "/chat" | "/chat/$sessionId" | "/sessions";
 }) {
   return (
     <Link
@@ -343,5 +334,29 @@ function TopIconLink({
     >
       {children}
     </Link>
+  );
+}
+
+function TopIconButton({
+  active,
+  children,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  children: ReactNode;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      title={label}
+      onClick={onClick}
+      className={topIconClass(active)}
+    >
+      {children}
+    </button>
   );
 }

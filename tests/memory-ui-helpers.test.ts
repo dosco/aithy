@@ -5,12 +5,12 @@ import {
   memoryRunSummaryForDisplay,
 } from "../app/components/mind/memory-run-display";
 import type { MemoryRunDto } from "../app/server/dto";
+import { MEMORY_KINDS } from "../src/memory/types";
 
 describe("memory UI helpers", () => {
-  test("buildMemoryHelp explains recall, labels, validity, and evidence", () => {
+  test("buildMemoryHelp explains recall, type, validity, and evidence", () => {
     const help = buildMemoryHelp({
       kind: "preference",
-      labels: ["personal", "media"],
       validFrom: "2026-05-01",
       validUntil: "2026-05-31",
       evidence: "The user said they prefer documentaries.",
@@ -20,7 +20,7 @@ describe("memory UI helpers", () => {
     });
 
     expect(help.summary).toBe(
-      "Can be recalled as preference context for personal context and media tastes.",
+      "Can be recalled as preference context when a related request matches it.",
     );
     expect(help.details).toContain("Recalled 3 times; last recalled 2026-05-17");
     expect(help.details).toContain("Applies 2026-05-01 through 2026-05-31");
@@ -30,7 +30,6 @@ describe("memory UI helpers", () => {
   test("buildMemoryHelp is honest when a memory has not been recalled", () => {
     const help = buildMemoryHelp({
       kind: "fact",
-      labels: [],
       validFrom: null,
       validUntil: null,
       evidence: null,
@@ -43,6 +42,21 @@ describe("memory UI helpers", () => {
       "Can be recalled as factual context when a related request matches it.",
     );
     expect(help.details).toEqual(["Not recalled yet"]);
+  });
+
+  test("buildMemoryHelp handles every memory kind", () => {
+    for (const kind of MEMORY_KINDS) {
+      const help = buildMemoryHelp({
+        kind,
+        validFrom: null,
+        validUntil: null,
+        evidence: null,
+        frequency: null,
+        retrievedCount: 0,
+        lastRecalledAt: null,
+      });
+      expect(help.summary).toContain("when a related request matches it");
+    }
   });
 
   test("quiet memory run summaries are hidden from the prominent ribbon line", () => {

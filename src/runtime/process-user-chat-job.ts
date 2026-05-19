@@ -104,6 +104,7 @@ export async function processUserChatJob(
   return {
     conversationId: reply.conversationId,
     text: reply.text,
+    status: reply.status ?? "completed",
     createdAt: assistant?.createdAt ?? new Date().toISOString(),
   };
 }

@@ -1,7 +1,6 @@
 import { Database } from "bun:sqlite";
 import type { Embedder } from "./embed";
 import { bodyHash, embedText, vecToBlob } from "./embed-text";
-import { labelsFromJson } from "./labels";
 import type { MemoryEntry } from "./types";
 
 interface MemoryRow {
@@ -9,7 +8,6 @@ interface MemoryRow {
   rowid: number;
   title: string;
   body: string;
-  labels: string;
   validFrom?: string | null;
   validUntil?: string | null;
   durationDays?: number | null;
@@ -67,7 +65,7 @@ export async function backfillEmbeddings(
 ): Promise<BackfillResult> {
   const rows = db
     .query(
-      `SELECT m.rowid AS rowid, m.id AS id, m.title AS title, m.body AS body, m.labels AS labels
+      `SELECT m.rowid AS rowid, m.id AS id, m.title AS title, m.body AS body
               , m.valid_from AS validFrom, m.valid_until AS validUntil, m.duration_days AS durationDays
               , m.evidence AS evidence, m.frequency AS frequency
          FROM memories m
@@ -78,7 +76,7 @@ export async function backfillEmbeddings(
   const stale: Array<MemoryRow & { computedHash: string }> = [];
   let skipped = 0;
   for (const row of rows) {
-    const computedHash = bodyHash(embedText({ ...row, labels: labelsFromJson(row.labels) }));
+    const computedHash = bodyHash(embedText(row));
     const meta = db
       .query(
         `SELECT body_hash AS bh, model_id AS mid, dim FROM memory_embed_meta WHERE memory_id = $id`,
@@ -100,7 +98,7 @@ export async function backfillEmbeddings(
   const indexed: BackfillResult["indexed"] = [];
   for (let i = 0; i < stale.length; i += BACKFILL_BATCH_SIZE) {
     const batch = stale.slice(i, i + BACKFILL_BATCH_SIZE);
-    const vectors = await embedder.embedMany(batch.map((row) => embedText({ ...row, labels: labelsFromJson(row.labels) })));
+    const vectors = await embedder.embedMany(batch.map((row) => embedText(row)));
     const now = new Date().toISOString();
     db.transaction(() => {
       for (let j = 0; j < batch.length; j++) {

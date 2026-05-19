@@ -57,7 +57,7 @@ export function NotificationBell() {
         <button
           type="button"
           aria-label={`Notifications${unread > 0 ? ` (${unread} unread)` : ""}`}
-          className="relative flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-[rgb(var(--muted))]"
+          className={cn("app-top-icon relative", open && "app-top-icon-active")}
         >
           <Bell className="h-4 w-4" />
           {unread > 0 ? (

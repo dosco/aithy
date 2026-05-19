@@ -1,7 +1,16 @@
 import type { WebLiveEvent } from "../../../web/live-events";
 import { messageEvent, serializableSession } from "../../../web/live-events";
+import { HOME_SESSION_ID } from "../../../session/home-session";
 import { defaultSessionName } from "../../../session/session-names";
-import type { SessionStateStore, LogicalSessionInput, MessagePage, MessagePageInput, StoredSession } from "../../../session/state-store";
+import type {
+  LogicalSessionInput,
+  MessagePage,
+  MessagePageInput,
+  MessageRange,
+  MessageRangeInput,
+  SessionStateStore,
+  StoredSession,
+} from "../../../session/state-store";
 import type { BotMessage, BotSessionSummary } from "../../../session/types";
 
 const DEFAULT_PAGE_LIMIT = 50;
@@ -51,7 +60,9 @@ export class QueueSessionCache {
 
   list(): BotSessionSummary[] {
     this.ensureSummariesLoaded();
-    return [...this.summaries.values()].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    return [...this.summaries.values()]
+      .filter((session) => session.conversationId !== HOME_SESSION_ID)
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   }
 
   findByName(name: string): BotSessionSummary[] {
@@ -127,6 +138,10 @@ export class QueueSessionCache {
     const page = this.store.messagesPage(conversationId, input);
     this.pageCache.set(key, page);
     return page;
+  }
+
+  messagesByIdRange(conversationId: string, input: MessageRangeInput): MessageRange | Promise<MessageRange> {
+    return this.store.messagesByIdRange?.(conversationId, input) ?? [];
   }
 
   childSessions(parentId: string): BotSessionSummary[] {

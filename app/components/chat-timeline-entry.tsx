@@ -1,5 +1,5 @@
 import { useReducedMotion, motion, type HTMLMotionProps } from "framer-motion";
-import { GitBranch } from "lucide-react";
+import { GitBranch, LoaderCircle, RotateCcw } from "lucide-react";
 import { ArtifactCard } from "@/components/artifact-card";
 import { Markdown } from "@/components/markdown";
 import { PermissionCard } from "@/components/permission-card";
@@ -10,10 +10,21 @@ import type {
 } from "../../src/web/live-events";
 
 type Usage = { input: number; output: number; thought: number; total: number };
+type AssistantTextStatus = Extract<SerializableBotMessage, { kind: "text" }>["status"];
 
 export type TimelineEntry =
+  | { kind: "day-divider"; key: string; label: string }
   | { kind: "user"; key: string; content: string }
-  | { kind: "assistant"; key: string; content: string; usage?: Usage }
+  | {
+      kind: "assistant";
+      key: string;
+      content: string;
+      status?: AssistantTextStatus;
+      retryTaskId?: string;
+      retrying?: boolean;
+      retryDisabled?: boolean;
+      usage?: Usage;
+    }
   | { kind: "artifact"; key: string; message: Extract<SerializableBotMessage, { kind: "artifact" }> }
   | { kind: "permission"; key: string; message: Extract<SerializableBotMessage, { kind: "permission" }> }
   | { kind: "permission-request"; key: string; request: SerializableSystemPermissionRequest }
@@ -28,11 +39,13 @@ export function TimelineItem({
   onOpenSession,
   onPermissionDecision,
   onPermissionRetry,
+  onRetryTask,
 }: {
   item: Exclude<TimelineEntry, { kind: "typing" }>;
   onOpenSession: (session: SessionSummaryDto) => void;
   onPermissionDecision: (requestId: string, decision: "allow" | "deny", persist?: string) => void;
   onPermissionRetry: (message: Extract<SerializableBotMessage, { kind: "permission" }>) => void;
+  onRetryTask: (taskId: string) => void;
 }) {
   const reduce = useReducedMotion();
   const motionProps: HTMLMotionProps<"div"> = reduce
@@ -45,6 +58,20 @@ export function TimelineItem({
         transition: { type: "spring" as const, stiffness: 360, damping: 32 },
       };
 
+  if (item.kind === "day-divider") {
+    return (
+      <motion.div
+        {...motionProps}
+        className="flex w-full items-center gap-3 py-1.5 text-[rgb(var(--muted-foreground)/0.7)]"
+      >
+        <span className="h-px flex-1 bg-[rgb(var(--border)/0.55)]" />
+        <span className="shrink-0 font-mono text-[10px] uppercase tracking-[0.18em]">
+          {item.label}
+        </span>
+        <span className="h-px flex-1 bg-[rgb(var(--border)/0.55)]" />
+      </motion.div>
+    );
+  }
   if (item.kind === "user") {
     return (
       <motion.div
@@ -56,10 +83,36 @@ export function TimelineItem({
     );
   }
   if (item.kind === "assistant") {
+    const error = isAssistantError(item);
+    const content = error ? assistantErrorText(item.content) : item.content;
+    const bubbleClass = [
+      "app-chat-bubble app-chat-bubble-assistant rounded-[12px] px-4 py-2 text-[0.98rem] leading-7 shadow-[0_1px_2px_rgb(0_0_0/0.05)]",
+      error ? "app-chat-bubble-error" : "bg-[rgb(var(--bubble-bot))]",
+    ].join(" ");
     return (
       <motion.div {...motionProps} className="app-chat-bubble-frame w-fit max-w-[min(62%,36rem)]">
-        <div className="app-chat-bubble app-chat-bubble-assistant rounded-[12px] bg-[rgb(var(--bubble-bot))] px-4 py-2 text-[0.98rem] leading-7 shadow-[0_1px_2px_rgb(0_0_0/0.05)]">
-          <Markdown text={item.content} />
+        <div className={bubbleClass}>
+          {item.retryTaskId ? (
+            <div className="flex items-start gap-2">
+              <div className="min-w-0 flex-1">
+                <Markdown text={content} />
+              </div>
+              <button
+                type="button"
+                onClick={() => item.retryTaskId && onRetryTask(item.retryTaskId)}
+                disabled={item.retrying || item.retryDisabled}
+                aria-label="Retry failed message"
+                title={item.retryDisabled ? "Retry after the current reply finishes" : "Retry failed message"}
+                className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md text-[rgb(var(--danger))] transition hover:bg-[rgb(var(--danger)/0.12)] focus:outline-none focus:ring-2 focus:ring-[rgb(var(--danger))]/35 disabled:cursor-not-allowed disabled:opacity-45"
+              >
+                {item.retrying
+                  ? <LoaderCircle className="h-3.5 w-3.5 animate-spin" />
+                  : <RotateCcw className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+          ) : (
+            <Markdown text={content} />
+          )}
         </div>
         {item.usage ? <UsageLine usage={item.usage} /> : null}
       </motion.div>
@@ -203,6 +256,21 @@ function UsageLine({ usage }: { usage: Usage }) {
       <span>· {usage.total} total</span>
     </div>
   );
+}
+
+function isAssistantError(item: Extract<TimelineEntry, { kind: "assistant" }>): boolean {
+  if (item.status === "failed") return true;
+  const text = item.content.trim();
+  return text.startsWith("Error:") || text === "Unknown error";
+}
+
+function assistantErrorText(content: string): string {
+  let text = content.trim();
+  while (/^(?:Error|[A-Za-z][A-Za-z -]* Error):\s*/.test(text)) {
+    text = text.replace(/^(?:Error|[A-Za-z][A-Za-z -]* Error):\s*/, "").trim();
+  }
+  if (text.toLowerCase() === "unknown error") return "Something went wrong.";
+  return text || "Something went wrong.";
 }
 
 function hasKeys(value: unknown, keys: string[]): boolean {

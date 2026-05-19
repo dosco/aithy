@@ -23,6 +23,7 @@ import {
   getTranscriptRecord,
   listSessionRecords,
   messagesPageRecord,
+  messagesByIdRangeRecord,
   renameSessionRecord,
   touchLiveSession,
   ZERO_TOKENS,
@@ -149,6 +150,15 @@ export class SessionManager {
 
   messagesPage(conversationId: string, input: { beforeId?: number | null; limit: number }): MessagePage {
     return messagesPageRecord(this.recordContext(), conversationId, input);
+  }
+
+  messagesByIdRange(
+    conversationId: string,
+    startId: number,
+    endId: number,
+    input: { limit: number; maxChars: number },
+  ): Promise<Array<{ id: number; message: BotMessage }>> {
+    return messagesByIdRangeRecord(this.recordContext(), conversationId, startId, endId, input);
   }
 
   findSessionsByName(name: string): BotSessionSummary[] {

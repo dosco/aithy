@@ -1,4 +1,5 @@
 import type { UserChatJobData, UserChatJobResult } from "../agent/dispatcher";
+import { userFacingErrorText } from "../agent/error-copy";
 import type { SessionManager } from "../session/session-manager";
 import type { AssistantTextMessage } from "../session/types";
 
@@ -17,15 +18,20 @@ export function publishUserChatFailure(
   data: UserChatJobData,
   error: Error,
 ): void {
-  const assistant = assistantMessage(`Error: ${error.message}`);
+  const assistant = assistantMessage(userFacingErrorText(error), "failed");
   runtime.sessions.appendMessages(data.conversationId, [assistant]);
 }
 
-function assistantMessage(text: string, createdAt = new Date().toISOString()): AssistantTextMessage {
+function assistantMessage(
+  text: string,
+  status?: AssistantTextMessage["status"],
+  createdAt = new Date().toISOString(),
+): AssistantTextMessage {
   return {
     role: "assistant",
     kind: "text",
     content: text,
+    ...(status ? { status } : {}),
     createdAt,
   };
 }

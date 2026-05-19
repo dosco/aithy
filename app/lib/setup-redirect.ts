@@ -1,4 +1,4 @@
-const DEFAULT_SETUP_REDIRECT = "/chat";
+const DEFAULT_SETUP_REDIRECT = "/chat/home";
 const URL_BASE = "http://aithy.local";
 
 export function sanitizeSetupRedirect(value: unknown): string {

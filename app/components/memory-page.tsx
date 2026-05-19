@@ -16,13 +16,13 @@ import {
   upsertMemory,
 } from "@/server/skills-memory.functions";
 import type { MemoriesCursor, MemoryDto, MemoryPageStateDto } from "@/server/dto";
-import type { MemoryKind, MemoryLabel } from "../../src/memory/types";
+import type { MemoryKind } from "../../src/memory/types";
 import { LivenessRibbon } from "./mind/liveness-ribbon";
 import { MemoryLattice } from "./mind/memory-lattice";
 import { MemoryDrawer, type MemoryDrawerMode } from "./mind/memory-drawer";
 import { emptyMemoryForm, type MemoryForm } from "./mind/memory-tile";
 import { KIND_GLYPH, KIND_TINT_TEXT } from "./mind/kind-glyph";
-import { MEMORY_KINDS, MEMORY_LABELS } from "../../src/memory/types";
+import { MEMORY_KINDS } from "../../src/memory/types";
 
 export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto }) {
   const [drawerMode, setDrawerMode] = useState<MemoryDrawerMode | null>(null);
@@ -31,7 +31,6 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [kindFilter, setKindFilter] = useState<MemoryKind | "all">("all");
-  const [labelFilter, setLabelFilter] = useState<MemoryLabel | "all">("all");
   const [sort, setSort] = useState<"recent" | "retrieved">("recent");
   const [memoriesCount, setMemoriesCount] = useState(initialState.memoriesCount);
   const [filteredCount, setFilteredCount] = useState(initialState.memoriesCount);
@@ -43,8 +42,8 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
   const debouncedFilter = useDebouncedValue(filter, 200);
   const queryArg = debouncedFilter.trim();
   const kindArg = kindFilter === "all" ? undefined : kindFilter;
-  const filtering = !!queryArg || kindFilter !== "all" || labelFilter !== "all";
-  const resetKey = `${queryArg}|${kindFilter}|${labelFilter}|${sort}|${refreshToken}`;
+  const filtering = !!queryArg || kindFilter !== "all";
+  const resetKey = `${queryArg}|${kindFilter}|${sort}|${refreshToken}`;
 
   const fetchPage = useCallback(
     async (cursor: MemoriesCursor | null) => {
@@ -53,7 +52,6 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
           cursor,
           query: queryArg || undefined,
           kind: kindArg,
-          labels: labelFilter === "all" ? undefined : [labelFilter],
           sort,
         },
       });
@@ -62,7 +60,7 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
       }
       return { items: res.items, nextCursor: res.nextCursor };
     },
-    [queryArg, kindArg, labelFilter, sort],
+    [queryArg, kindArg, sort],
   );
 
   const {
@@ -122,7 +120,6 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
           kind: form.kind,
           title: form.title.trim(),
           body: form.body,
-          labels: form.labels,
           validFrom: form.validFrom || null,
           validUntil: form.validUntil || null,
           evidence: form.evidence || null,
@@ -190,10 +187,8 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
           </Button>
           <MemoryViewMenu
             kind={kindFilter}
-            label={labelFilter}
             sort={sort}
             onKindChange={setKindFilter}
-            onLabelChange={setLabelFilter}
             onSortChange={setSort}
           />
         </div>
@@ -234,7 +229,6 @@ function memoryToForm(entry: MemoryDto): MemoryForm {
     kind: entry.kind,
     title: entry.title,
     body: entry.body,
-    labels: entry.labels,
     validFrom: entry.validFrom ?? "",
     validUntil: entry.validUntil ?? "",
     evidence: entry.evidence ?? "",
@@ -267,17 +261,13 @@ function todayLocalDate(): string {
 
 function MemoryViewMenu({
   kind,
-  label,
   sort,
   onKindChange,
-  onLabelChange,
   onSortChange,
 }: {
   kind: MemoryKind | "all";
-  label: MemoryLabel | "all";
   sort: "recent" | "retrieved";
   onKindChange: (value: MemoryKind | "all") => void;
-  onLabelChange: (value: MemoryLabel | "all") => void;
   onSortChange: (value: "recent" | "retrieved") => void;
 }) {
   const sortItems = [
@@ -285,9 +275,7 @@ function MemoryViewMenu({
     { value: "retrieved" as const, label: "Most recalled", icon: ArrowDownWideNarrow },
   ];
   const kindItems: Array<MemoryKind | "all"> = ["all", ...MEMORY_KINDS];
-  const labelItems: Array<MemoryLabel | "all"> = ["all", ...MEMORY_LABELS];
-  const kindLabel = kind === "all" ? "All kinds" : kind;
-  const labelLabel = label === "all" ? "All labels" : label.replace("_", " ");
+  const kindLabel = kind === "all" ? "All types" : kind.replace("_", " ");
   const sortLabel = sort === "recent" ? "Recent" : "Most recalled";
 
   return (
@@ -300,7 +288,7 @@ function MemoryViewMenu({
           <SlidersHorizontal className="h-4 w-4 text-[rgb(var(--muted-foreground))]" />
           <span>Filters</span>
           <span className="hidden text-[rgb(var(--muted-foreground))] lg:inline">
-            {kindLabel} · {labelLabel} · {sortLabel}
+            {kindLabel} · {sortLabel}
           </span>
           <ChevronDown className="h-3.5 w-3.5 text-[rgb(var(--muted-foreground))]" />
         </button>
@@ -337,7 +325,7 @@ function MemoryViewMenu({
             })}
           </div>
           <div className="mt-2 border-t border-[rgb(var(--border))] px-2 pb-1 pt-3 text-[11px] font-medium text-[rgb(var(--muted-foreground))]">
-            Kind
+            Type
           </div>
           <div className="grid gap-1">
             {kindItems.map((item) => {
@@ -355,29 +343,7 @@ function MemoryViewMenu({
                   )}
                 >
                   <span className={cn("w-4 text-center text-base leading-none", tint)}>{glyph}</span>
-                  <span className="flex-1">{item === "all" ? "All kinds" : item}</span>
-                  {active ? <Check className="h-4 w-4" /> : null}
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-2 border-t border-[rgb(var(--border))] px-2 pb-1 pt-3 text-[11px] font-medium text-[rgb(var(--muted-foreground))]">
-            Label
-          </div>
-          <div className="grid max-h-64 gap-1 overflow-auto">
-            {labelItems.map((item) => {
-              const active = label === item;
-              return (
-                <button
-                  key={item}
-                  type="button"
-                  onClick={() => onLabelChange(item)}
-                  className={cn(
-                    "flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm capitalize transition",
-                    active ? "bg-[rgb(var(--muted))]" : "hover:bg-[rgb(var(--muted))]/60",
-                  )}
-                >
-                  <span className="flex-1">{item === "all" ? "All labels" : item.replace("_", " ")}</span>
+                  <span className="flex-1">{item === "all" ? "All types" : item.replace("_", " ")}</span>
                   {active ? <Check className="h-4 w-4" /> : null}
                 </button>
               );

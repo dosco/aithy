@@ -21,10 +21,15 @@ describe("memory agents", () => {
     expect(generatorDescription(program)).toContain("dense, consolidated, self-contained");
     expect(generatorDescription(program)).toContain("include an explicit frequency");
     expect(generatorDescription(program)).toContain("validFrom, validUntil, durationDays, and evidence");
+    expect(generatorDescription(program)).toContain("Those belong to dream episodes, not semantic memory");
     expect(generatorDescription(program)).toContain("I like coffee, really like it");
     expect(generatorDescription(program)).toContain("I might try cold brew someday");
     expect(generatorDescription(program)).toContain("I like this answer");
+    expect(generatorDescription(program)).not.toContain("episode-like information");
     expect(generatorDescription(program)).toContain("0.3-0.45 for tentative interests");
+    expect(generatorDescription(program)).toContain("'project_context'");
+    expect(generatorDescription(program)).toContain("'vocabulary'");
+    expect(generatorDescription(program)).not.toContain("LABELS:");
     memory.close();
   });
 
@@ -35,6 +40,10 @@ describe("memory agents", () => {
 
     expect(program.executor).toBeUndefined();
     expect(generatorDescription(program)).toContain("You are the memory consolidator");
+    expect(generatorDescription(program)).toContain("Exact duplicates");
+    expect(generatorDescription(program)).toContain("Direct contradictions");
+    expect(generatorDescription(program)).not.toContain("Event roll-ups");
+    expect(generatorDescription(program)).not.toContain("Stale low-value rows");
     memory.close();
   });
 
@@ -114,7 +123,6 @@ describe("memory agents", () => {
       kind: "event",
       title: "future trip",
       body: "The user will travel to Tokyo.",
-      labels: ["travel", "time_bound"],
       validFrom: "2099-01-01",
       validUntil: "2099-01-03",
       durationDays: 200,
@@ -125,7 +133,6 @@ describe("memory agents", () => {
       kind: "event",
       title: "past deadline",
       body: "The user's deadline already passed.",
-      labels: ["deadline", "time_bound"],
       validUntil: "2000-01-01",
     });
 
@@ -134,6 +141,23 @@ describe("memory agents", () => {
     expect(memory.get(saved.id)?.evidence).toContain("Tokyo");
     expect(expired).toEqual({ id: "", deduped: false, expired: true });
     expect(memory.count()).toBe(1);
+    memory.close();
+  });
+
+  test("write tool rejects invalid memory kinds", async () => {
+    const { config, memory } = await fixture();
+    const write = buildMemoryAgentTools({
+      config,
+      memory,
+      dedupeWrites: false,
+    }).find((tool) => tool.name === "write") as any;
+
+    await expect(write.func({
+      kind: "topic",
+      title: "bad kind",
+      body: "This should not persist.",
+    })).rejects.toThrow("Invalid memory kind");
+    expect(memory.count()).toBe(0);
     memory.close();
   });
 });

@@ -7,6 +7,7 @@ import { MockSandboxProvider } from "../src/sandbox/mock-provider";
 import { EventBus } from "../src/events/bus";
 import { ActiveRunRegistry, type StoppableProgram } from "../src/agent/active-runs";
 import { SqliteSessionStateStore } from "../src/session/sqlite-state-store";
+import { HOME_SESSION_ID } from "../src/session/home-session";
 
 async function makeManager(opts: {
   ttlMs?: number;
@@ -186,6 +187,14 @@ describe("SessionManager lifecycle", () => {
     expect(sessions.listSessions()).toEqual([]);
     // Bot VM is shared — destroying a conversation does NOT tear it down.
     expect(sandbox.state.get(active.sandboxSessionId)).toBe("live");
+  });
+
+  test("listSessions excludes Home even while Home is live", async () => {
+    const { sessions } = await makePersistentManager();
+    await sessions.get(HOME_SESSION_ID);
+    sessions.ensureLogicalSession("specific", { name: "Specific" });
+
+    expect(sessions.listSessions().map((session) => session.conversationId)).toEqual(["specific"]);
   });
 });
 

@@ -17,6 +17,12 @@ describe("runMessage episode recall", () => {
     const emitted: unknown[] = [];
     events.subscribe((event) => emitted.push(event));
     const sessions = sessionsFor(root, path.join(root, "state.db"));
+    sessions.ensureLogicalSession("old-session");
+    sessions.appendMessages("old-session", [
+      { role: "user", content: "please debug the postgres tests", createdAt: "2026-04-29T00:00:00.000Z" },
+      { role: "assistant", kind: "tool_call", toolName: "sandbox.bash", toolArgs: { command: "bun test" }, toolResult: { exitCode: 0 }, createdAt: "2026-04-29T00:00:01.000Z" },
+      { role: "assistant", kind: "text", content: "The targeted postgres test passed.", createdAt: "2026-04-29T00:00:02.000Z" },
+    ]);
     const seenMemoryExcludes: unknown[] = [];
     const seenEpisodeExcludes: unknown[] = [];
 
@@ -33,7 +39,6 @@ describe("runMessage episode recall", () => {
             kind: "fact",
             title: "Postgres project",
             body: "The project has postgres tests.",
-            labels: ["project"],
             validFrom: null,
             validUntil: null,
             durationDays: null,
@@ -103,6 +108,85 @@ describe("runMessage episode recall", () => {
               expect.objectContaining({
                 id: "episode:ep-1",
                 contentPreview: expect.stringContaining("Past similar task: Debug postgres tests"),
+              }),
+            ],
+          },
+        }),
+      }),
+    );
+    expect(emitted).toContainEqual(
+      expect.objectContaining({
+        type: "agent.tool_call",
+        message: expect.objectContaining({
+          toolResult: {
+            matches: expect.arrayContaining([
+              expect.objectContaining({
+                id: "episode:ep-1",
+                contentPreview: expect.stringContaining("Raw transcript excerpt: #1 user: please debug the postgres tests"),
+              }),
+            ]),
+          },
+        }),
+      }),
+    );
+  });
+
+  test("missing episode evidence falls back to summary-only recall", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "aithy-run-episodes-missing-"));
+    const events = new EventBus();
+    const emitted: unknown[] = [];
+    events.subscribe((event) => emitted.push(event));
+    const sessions = sessionsFor(root, path.join(root, "state.db"));
+
+    await runMessage(textMessage("m1", "test the postgres fix"), {
+      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      events,
+      sandbox: new MockSandboxProvider(),
+      sessions,
+      episodes: {
+        search: async () => [{
+          id: "ep-1",
+          dedupeKey: "k",
+          task: "Debug postgres tests",
+          approach: "Ran targeted postgres tests before the broad suite.",
+          outcome: "success",
+          notes: "",
+          toolNames: [],
+          sourceSessionId: "deleted-session",
+          evidenceStartMessageId: 1,
+          evidenceEndMessageId: 3,
+          error: null,
+          artifactIds: [],
+          importance: 0.7,
+          seenCount: 1,
+          createdAt: "2026-04-30T00:00:00.000Z",
+          updatedAt: "2026-04-30T00:00:00.000Z",
+          lastRecalledAt: null,
+          recallCount: 0,
+          retrievedCount: 0,
+        }],
+      } as any,
+      agentFactory: (options: any) => ({
+        llm: {},
+        program: {
+          forward: async () => {
+            await options.onMemoriesSearch(["postgres tests"], []);
+            return { agentResponse: "done" };
+          },
+        },
+      }),
+    });
+
+    expect(emitted).toContainEqual(
+      expect.objectContaining({
+        type: "agent.tool_call",
+        message: expect.objectContaining({
+          toolName: "memory.recall",
+          toolResult: {
+            matches: [
+              expect.objectContaining({
+                id: "episode:ep-1",
+                contentPreview: expect.not.stringContaining("Raw transcript excerpt"),
               }),
             ],
           },

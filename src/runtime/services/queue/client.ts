@@ -1,5 +1,12 @@
 import type { BotMessage, BotSessionSummary } from "../../../session/types";
-import type { LogicalSessionInput, MessagePage, MessagePageInput, StoredSession } from "../../../session/state-store";
+import type {
+  LogicalSessionInput,
+  MessagePage,
+  MessagePageInput,
+  MessageRange,
+  MessageRangeInput,
+  StoredSession,
+} from "../../../session/state-store";
 import type { WebLiveEvent } from "../../../web/live-events";
 import type {
   CommandCompletion,
@@ -213,6 +220,10 @@ export class QueueServiceClient {
 
   async messagesPage(conversationId: string, input: MessagePageInput): Promise<MessagePage> {
     return reviveMessagePage(await this.request("session.messagesPage", { conversationId, input }) as MessagePage);
+  }
+
+  async messagesByIdRange(conversationId: string, input: MessageRangeInput): Promise<MessageRange> {
+    return this.request("session.messagesByIdRange", { conversationId, input }) as Promise<MessageRange>;
   }
 
   async childSessions(parentId: string): Promise<BotSessionSummary[]> {

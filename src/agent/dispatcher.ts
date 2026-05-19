@@ -12,6 +12,7 @@ import {
 import type { RuntimeStore } from "../runtime/runtime-store";
 import type { RuntimeQueueStatus, RuntimeServiceRole } from "../runtime/protocol/types";
 import type { SetupStatusInput } from "../setup/status";
+import type { ChannelReplyStatus } from "../channel/types";
 
 interface RuntimeCommandSubmitter {
   submitCommand(targetRole: RuntimeServiceRole, kind: string, payload?: unknown): Promise<string>;
@@ -32,6 +33,7 @@ export interface UserChatJobData {
 export interface UserChatJobResult {
   conversationId: string;
   text: string;
+  status: ChannelReplyStatus;
   createdAt: string;
 }
 
@@ -283,6 +285,7 @@ export class AgentDispatcher implements UserChatQueueClient {
       return {
         conversationId: job.data.conversationId,
         text: "",
+        status: "completed",
         createdAt: new Date().toISOString(),
       };
     }

@@ -1,5 +1,11 @@
 import type { BotMessage, BotSessionSummary } from "../../session/types";
-import type { LogicalSessionInput, MessagePage, MessagePageInput, StoredSession } from "../../session/state-store";
+import type {
+  LogicalSessionInput,
+  MessagePage,
+  MessagePageInput,
+  MessageRangeInput,
+  StoredSession,
+} from "../../session/state-store";
 import type { WebLiveEvent } from "../../web/live-events";
 import type {
   CommandCompletion,
@@ -33,6 +39,7 @@ export type RuntimeBusMethod =
   | "session.deleteAll"
   | "session.appendMessages"
   | "session.messagesPage"
+  | "session.messagesByIdRange"
   | "session.childSessions"
   | "session.lastMessageId";
 
@@ -58,6 +65,7 @@ export type RuntimeBusRequest =
   | { id: string; type: "request"; method: "session.deleteAll"; params: Record<string, never> }
   | { id: string; type: "request"; method: "session.appendMessages"; params: { conversationId: string; messages: BotMessage[] } }
   | { id: string; type: "request"; method: "session.messagesPage"; params: { conversationId: string; input: MessagePageInput } }
+  | { id: string; type: "request"; method: "session.messagesByIdRange"; params: { conversationId: string; input: MessageRangeInput } }
   | { id: string; type: "request"; method: "session.childSessions"; params: { parentId: string } }
   | { id: string; type: "request"; method: "session.lastMessageId"; params: { conversationId: string } };
 

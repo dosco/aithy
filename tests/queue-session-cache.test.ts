@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 import { QueueSessionCache } from "../src/runtime/services/queue/session-cache";
+import { HOME_SESSION_ID } from "../src/session/home-session";
 import { SqliteSessionStateStore } from "../src/session/sqlite-state-store";
 import type {
   LogicalSessionInput,
@@ -56,6 +57,18 @@ describe("QueueSessionCache", () => {
     expect(second.list().map((session) => session.conversationId)).toEqual(["persisted"]);
     expect(second.load("persisted")?.messages).toHaveLength(1);
     second.close();
+  });
+
+  test("does not list or publish Home", async () => {
+    const { cache, events } = await testCache();
+    cache.ensure(logicalSession(HOME_SESSION_ID, "Home"));
+    cache.ensure(logicalSession("specific", "Specific"));
+
+    expect(cache.summary(HOME_SESSION_ID)?.name).toBe("Home");
+    expect(cache.list().map((session) => session.conversationId)).toEqual(["specific"]);
+    expect(events.filter((event) => event.type === "sessions").at(-1)?.sessions).toMatchObject([
+      { conversationId: "specific" },
+    ]);
   });
 
   test("does not publish a child session until its first message is readable", async () => {

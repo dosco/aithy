@@ -1,5 +1,5 @@
 import type { StoredSettings } from "../../src/settings/types";
-import type { MemoryKind, MemoryLabel } from "../../src/memory/types";
+import type { MemoryKind } from "../../src/memory/types";
 import type { MemoryRunStatus, MemoryRunTrigger } from "../../src/memory/memory-runs";
 import type { NotificationKind } from "../../src/notifications/types";
 import type { UsagePurpose } from "../../src/usage/types";
@@ -151,7 +151,6 @@ export interface MemoryDto {
   kind: MemoryKind;
   title: string;
   body: string;
-  labels: MemoryLabel[];
   validFrom: string | null;
   validUntil: string | null;
   durationDays: number | null;

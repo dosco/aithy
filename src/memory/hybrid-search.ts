@@ -4,14 +4,12 @@ import { embedText, vecToBlob } from "./embed-text";
 import { score } from "./ranking";
 import type { Reranker } from "./rerank";
 import type { MemoryEntry, MemoryKind, MemorySearchOptions } from "./types";
-import { labelsFromJson } from "./labels";
 
 interface MemoryRow {
   id: string;
   kind: MemoryKind;
   title: string;
   body: string;
-  labels: string;
   valid_from: string | null;
   valid_until: string | null;
   duration_days: number | null;
@@ -61,7 +59,6 @@ export async function hybridSearch(
 ): Promise<{ entries: MemoryEntry[]; recallIds: string[] }> {
   const { db, embedder, reranker, rawQueries, ftsExpressions, opts, perQueryLimit } = deps;
   const kindFilter = buildKindFilter(opts.kinds);
-  const labelFilter = buildLabelFilter(opts.labels);
   const excludeFilter = buildExcludeFilter(opts.excludeIds);
 
   // Stage 1: candidate retrieval — FTS5 + vec KNN per query, in parallel.
@@ -69,10 +66,10 @@ export async function hybridSearch(
     rawQueries.map(async (raw, i) => {
       const ftsExpr = ftsExpressions[i];
       const [ftsHits, vecHits] = await Promise.all([
-        runFts(db, ftsExpr, kindFilter, labelFilter, excludeFilter),
+        runFts(db, ftsExpr, kindFilter, excludeFilter),
         embedder
           .embed(raw)
-          .then((vec) => runVec(db, vec, kindFilter, labelFilter, excludeFilter))
+          .then((vec) => runVec(db, vec, kindFilter, excludeFilter))
           .catch(() => [] as RankedHit[]),
       ]);
       return { ftsHits, vecHits };
@@ -134,7 +131,6 @@ async function tryRerank(
   const top = candidates.slice(0, RERANK_CANDIDATE_LIMIT);
   const docs = top.map((c) => embedText({
     ...c.row,
-    labels: labelsFromJson(c.row.labels),
     validFrom: c.row.valid_from,
     validUntil: c.row.valid_until,
     durationDays: c.row.duration_days,
@@ -179,21 +175,6 @@ function buildKindFilter(kinds: readonly MemoryKind[] | undefined): {
   return { sql: ` AND m.kind IN (${placeholders})`, params };
 }
 
-function buildLabelFilter(labels: readonly string[] | undefined): {
-  sql: string;
-  params: Record<string, string>;
-} {
-  if (!labels?.length) return { sql: "", params: {} };
-  const params: Record<string, string> = {};
-  labels.forEach((label, i) => {
-    params[`$label${i}`] = `%"${label}"%`;
-  });
-  return {
-    sql: labels.map((_, i) => ` AND m.labels LIKE $label${i}`).join(""),
-    params,
-  };
-}
-
 function buildExcludeFilter(excludeIds: readonly string[] | undefined): {
   sql: string;
   params: Record<string, string>;
@@ -216,7 +197,6 @@ function runFts(
   db: Database,
   ftsExpr: string,
   kindFilter: ReturnType<typeof buildKindFilter>,
-  labelFilter: ReturnType<typeof buildLabelFilter>,
   excludeFilter: ReturnType<typeof buildExcludeFilter>,
 ): RankedHit[] {
   const rows = db
@@ -227,7 +207,6 @@ function runFts(
         WHERE memories_fts MATCH $match
           AND m.superseded_by IS NULL
           ${kindFilter.sql}
-          ${labelFilter.sql}
           ${excludeFilter.sql}
         ORDER BY rank
         LIMIT $limit`,
@@ -236,7 +215,6 @@ function runFts(
       $match: ftsExpr,
       $limit: PER_RANKER_LIMIT,
       ...kindFilter.params,
-      ...labelFilter.params,
       ...excludeFilter.params,
     } as never) as FtsRow[];
   return rows.map((row, rank) => ({ row, rank }));
@@ -246,7 +224,6 @@ function runVec(
   db: Database,
   embedding: Float32Array,
   kindFilter: ReturnType<typeof buildKindFilter>,
-  labelFilter: ReturnType<typeof buildLabelFilter>,
   excludeFilter: ReturnType<typeof buildExcludeFilter>,
 ): RankedHit[] {
   // sqlite-vec applies KNN BEFORE the SQL WHERE filters, so we ask for extra
@@ -263,7 +240,6 @@ function runVec(
           AND k = $k
           AND m.superseded_by IS NULL
           ${kindFilter.sql}
-          ${labelFilter.sql}
           ${excludeFilter.sql}
         ORDER BY v.distance`,
     )
@@ -271,7 +247,6 @@ function runVec(
       $vec: vecToBlob(embedding),
       $k: k,
       ...kindFilter.params,
-      ...labelFilter.params,
       ...excludeFilter.params,
     } as never) as VecRow[];
   return rows.slice(0, PER_RANKER_LIMIT).map((row, rank) => ({ row, rank }));
@@ -298,7 +273,6 @@ function rowToEntry(row: MemoryRow): MemoryEntry {
     kind: row.kind,
     title: row.title,
     body: row.body,
-    labels: labelsFromJson(row.labels),
     validFrom: row.valid_from,
     validUntil: row.valid_until,
     durationDays: row.duration_days,

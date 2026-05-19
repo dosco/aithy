@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 import { Queue } from "bunqueue/client";
-import { AgentDispatcher, UserChatCommandProducer, UserChatQueueProducer } from "../src/agent/dispatcher";
+import { AgentDispatcher, UserChatCommandProducer, UserChatQueueProducer, type UserChatJobResult } from "../src/agent/dispatcher";
 import { bunqueueDataPath } from "../src/queue/embedded";
 import { RuntimeStore } from "../src/runtime/runtime-store";
 import type { SetupStatusInput } from "../src/setup/status";
@@ -11,9 +11,9 @@ import type { SetupStatusInput } from "../src/setup/status";
 async function makeDispatcher(opts: {
   parallelAgents: number;
   ensureBotSandbox: () => Promise<void>;
-  process: (data: any) => Promise<{ conversationId: string; text: string; createdAt: string }>;
+  process: (data: any) => Promise<UserChatJobResult>;
   onStatus?: (status: SetupStatusInput) => void;
-  onCompleted?: (data: any, result: { conversationId: string; text: string; createdAt: string }) => void;
+  onCompleted?: (data: any, result: UserChatJobResult) => void;
   onFailed?: (data: any, error: Error) => void;
 }) {
   const root = await mkdtemp(path.join(tmpdir(), "aithy-disp-"));
@@ -91,6 +91,7 @@ describe("AgentDispatcher", () => {
       process: async (data) => ({
         conversationId: data.conversationId,
         text: `processed:${data.text}`,
+        status: "completed",
         createdAt: new Date().toISOString(),
       }),
       onCompleted: (_data, result) => completed.push(result.conversationId),
@@ -119,7 +120,7 @@ describe("AgentDispatcher", () => {
         resolve();
       };
     });
-    const completed: Array<{ conversationId: string; text: string; createdAt: string }> = [];
+    const completed: UserChatJobResult[] = [];
 
     const { dispatcher } = await makeDispatcher({
       parallelAgents: 1,
@@ -131,6 +132,7 @@ describe("AgentDispatcher", () => {
         return {
           conversationId: data.conversationId,
           text: `processed:${data.text}`,
+          status: "completed",
           createdAt: new Date().toISOString(),
         };
       },
@@ -164,7 +166,7 @@ describe("AgentDispatcher", () => {
       ensureBotSandbox: async () => undefined,
       process: async (data) => {
         processed = true;
-        return { conversationId: data.conversationId, text: "ok", createdAt: new Date().toISOString() };
+        return { conversationId: data.conversationId, text: "ok", status: "completed", createdAt: new Date().toISOString() };
       },
       onCompleted: (_data, result) => completed.push(result.conversationId),
     });
@@ -211,7 +213,7 @@ describe("AgentDispatcher", () => {
       ensureBotSandbox: async () => undefined,
       process: async (data) => {
         processed = true;
-        return { conversationId: data.conversationId, text: "unexpected", createdAt: new Date().toISOString() };
+        return { conversationId: data.conversationId, text: "unexpected", status: "completed", createdAt: new Date().toISOString() };
       },
       onCompleted: (_data, result) => completed.push(result.conversationId),
       onFailed: (_data, error) => failed.push(error.message),
@@ -234,6 +236,7 @@ describe("AgentDispatcher", () => {
       process: async (data) => ({
         conversationId: data.conversationId,
         text: `processed:${data.text}`,
+        status: "completed",
         createdAt: new Date().toISOString(),
       }),
       onCompleted: (_data, result) => completed.push(result.conversationId),
@@ -259,8 +262,8 @@ describe("AgentDispatcher", () => {
   });
 
   test("cancelByConversation cancels tracked jobs for that conversation only", async () => {
-    let resolveProcess: (value: { conversationId: string; text: string; createdAt: string }) => void = () => {};
-    const blocked = new Promise<{ conversationId: string; text: string; createdAt: string }>((resolve) => {
+    let resolveProcess: (value: UserChatJobResult) => void = () => {};
+    const blocked = new Promise<UserChatJobResult>((resolve) => {
       resolveProcess = resolve;
     });
     const completed: string[] = [];
@@ -273,6 +276,7 @@ describe("AgentDispatcher", () => {
         return {
           conversationId: data.conversationId,
           text: `ok:${data.text}`,
+          status: "completed",
           createdAt: new Date().toISOString(),
         };
       },
@@ -302,6 +306,7 @@ describe("AgentDispatcher", () => {
     resolveProcess({
       conversationId: "stop-me",
       text: "late",
+      status: "completed",
       createdAt: new Date().toISOString(),
     });
     await dispatcher.close();

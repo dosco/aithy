@@ -2,6 +2,8 @@ import type {
   LogicalSessionInput,
   MessagePage,
   MessagePageInput,
+  MessageRange,
+  MessageRangeInput,
   SessionStateStore,
   StoredSession,
 } from "../../../session/state-store";
@@ -148,6 +150,10 @@ export class RemoteSessionStateStore implements SessionStateStore {
       newestId: null,
       hasMoreBefore: false,
     };
+  }
+
+  async messagesByIdRange(conversationId: string, input: MessageRangeInput): Promise<MessageRange> {
+    return this.client.messagesByIdRange(conversationId, input);
   }
 
   childSessions(parentId: string): BotSessionSummary[] {

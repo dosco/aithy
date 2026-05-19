@@ -3,7 +3,6 @@ import { createHash } from "node:crypto";
 export interface EmbedTextInput {
   title: string;
   body: string;
-  labels: readonly string[];
   validFrom?: string | null;
   validUntil?: string | null;
   durationDays?: number | null;
@@ -18,7 +17,6 @@ export interface EmbedTextInput {
  */
 export function embedText(entry: EmbedTextInput): string {
   const parts = [entry.title.trim(), entry.body.trim()];
-  if (entry.labels.length > 0) parts.push(entry.labels.join(" "));
   if (entry.frequency) parts.push(`frequency: ${entry.frequency}`);
   if (entry.validFrom || entry.validUntil) {
     parts.push(`valid: ${entry.validFrom ?? "unknown"} to ${entry.validUntil ?? "unknown"}`);

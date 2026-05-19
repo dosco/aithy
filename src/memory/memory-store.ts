@@ -9,12 +9,10 @@ import { backfillEmbeddings as runBackfill, embedAndStore, type BackfillResult }
 import { hybridSearch } from "./hybrid-search";
 import type { Reranker } from "./rerank";
 import { tryLoadVecExtension } from "./vec-extension";
-import { labelsToJson } from "./labels";
 import { normalizeMemoryTiming } from "./time-bound";
 import { buildPageWhere, rowToEntry, type MemoryRow } from "./store-row";
 import type {
   MemoryEntry,
-  MemoryLabel,
   MemoryKind,
   MemorySearchOptions,
   MemoryUpsert,
@@ -86,18 +84,17 @@ export class SqliteMemoryStore {
       .query(
         `
           INSERT INTO memories (
-            id, kind, title, body, labels, valid_from, valid_until, duration_days, evidence, frequency,
+            id, kind, title, body, valid_from, valid_until, duration_days, evidence, frequency,
             source, importance, created_at, updated_at
           )
           VALUES (
-            $id, $kind, $title, $body, $labels, $validFrom, $validUntil, $durationDays, $evidence,
+            $id, $kind, $title, $body, $validFrom, $validUntil, $durationDays, $evidence,
             $frequency, $source, $importance, $now, $now
           )
           ON CONFLICT(id) DO UPDATE SET
             kind = excluded.kind,
             title = excluded.title,
             body = excluded.body,
-            labels = excluded.labels,
             valid_from = excluded.valid_from,
             valid_until = excluded.valid_until,
             duration_days = excluded.duration_days,
@@ -113,7 +110,6 @@ export class SqliteMemoryStore {
         $kind: input.kind,
         $title: input.title,
         $body: body,
-        $labels: labelsToJson(input.labels),
         $validFrom: timing.validFrom,
         $validUntil: timing.validUntil,
         $durationDays: timing.durationDays,
@@ -180,8 +176,8 @@ export class SqliteMemoryStore {
     return row ? rowToEntry(row) : null;
   }
 
-  count(opts: { query?: string; kind?: MemoryKind; labels?: readonly MemoryLabel[] } = {}): number {
-    const where = buildPageWhere({ query: opts.query, kind: opts.kind, labels: opts.labels, cursor: null });
+  count(opts: { query?: string; kind?: MemoryKind } = {}): number {
+    const where = buildPageWhere({ query: opts.query, kind: opts.kind, cursor: null });
     const row = this.db
       .query(`SELECT COUNT(*) AS c FROM memories ${where.sql}`)
       .get(where.params as never) as { c: number } | undefined;
@@ -205,7 +201,6 @@ export class SqliteMemoryStore {
     limit: number;
     query?: string;
     kind?: MemoryKind;
-    labels?: readonly MemoryLabel[];
     sort?: "recent" | "retrieved";
   }): { items: MemoryEntry[]; nextCursor: { updatedAt: string; id: string; retrievedCount?: number } | null } {
     const limit = Math.max(1, opts.limit);
@@ -213,7 +208,6 @@ export class SqliteMemoryStore {
     const where = buildPageWhere({
       query: opts.query,
       kind: opts.kind,
-      labels: opts.labels,
       cursor: opts.cursor,
       sort,
     });
@@ -298,9 +292,6 @@ export class SqliteMemoryStore {
     const kindFilter = opts.kinds?.length
       ? ` AND m.kind IN (${opts.kinds.map((_, i) => `$kind${i}`).join(", ")})`
       : "";
-    const labelFilter = opts.labels?.length
-      ? ` AND ${opts.labels.map((_, i) => `m.labels LIKE $label${i}`).join(" AND ")}`
-      : "";
     const excludeFilter = opts.excludeIds?.length
       ? ` AND m.id NOT IN (${opts.excludeIds.map((_, i) => `$excl${i}`).join(", ")})`
       : "";
@@ -311,9 +302,6 @@ export class SqliteMemoryStore {
     };
     opts.kinds?.forEach((kind, i) => {
       params[`$kind${i}`] = kind;
-    });
-    opts.labels?.forEach((label, i) => {
-      params[`$label${i}`] = `%"${label}"%`;
     });
     opts.excludeIds?.forEach((id, i) => {
       params[`$excl${i}`] = id;
@@ -327,7 +315,6 @@ export class SqliteMemoryStore {
          WHERE memories_fts MATCH $match
            AND m.superseded_by IS NULL
            ${kindFilter}
-           ${labelFilter}
            ${excludeFilter}
          ORDER BY rank
          LIMIT $limit`,

@@ -8,7 +8,7 @@ import {
   TypingIndicator,
   type TimelineEntry,
 } from "@/components/chat-timeline-entry";
-import type { SessionSummaryDto } from "@/server/dto";
+import type { SessionSummaryDto, TaskDto } from "@/server/dto";
 import type { SerializableBotMessage, SerializableSystemPermissionRequest, WebLiveEvent } from "../../src/web/live-events";
 
 type ActivityEvent = Extract<WebLiveEvent, { type: "activity" }>;
@@ -29,8 +29,11 @@ export function ChatTimeline({
   subSessions,
   activities,
   permissionRequests,
+  retryableTasks,
+  retryingTaskIds,
   details,
   sending,
+  retryDisabled,
   resetKey,
   hasMoreBefore,
   loadingMore,
@@ -38,13 +41,17 @@ export function ChatTimeline({
   onOpenSession,
   onPermissionDecision,
   onPermissionRetry,
+  onRetryTask,
 }: {
   messages: ChatMessageItem[];
   subSessions: SessionSummaryDto[];
   activities: ActivityEvent[];
   permissionRequests: SerializableSystemPermissionRequest[];
+  retryableTasks: TaskDto[];
+  retryingTaskIds: Set<string>;
   details: boolean;
   sending: boolean;
+  retryDisabled: boolean;
   resetKey: string | null;
   hasMoreBefore: boolean;
   loadingMore: boolean;
@@ -52,6 +59,7 @@ export function ChatTimeline({
   onOpenSession: (session: SessionSummaryDto) => void;
   onPermissionDecision: (requestId: string, decision: "allow" | "deny", persist?: string) => void;
   onPermissionRetry: (message: Extract<SerializableBotMessage, { kind: "permission" }>) => void;
+  onRetryTask: (taskId: string) => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   const wasNearBottomRef = useRef(true);
@@ -59,8 +67,28 @@ export function ChatTimeline({
   const [viewport, setViewport] = useState(() => currentViewport());
   const [heightVersion, setHeightVersion] = useState(0);
   const timeline = useMemo(
-    () => buildTimeline(messages, subSessions, activities, permissionRequests, details, sending),
-    [messages, subSessions, activities, permissionRequests, details, sending],
+    () => buildTimeline({
+      messages,
+      subSessions,
+      activities,
+      permissionRequests,
+      retryableTasks,
+      retryingTaskIds,
+      retryDisabled,
+      details,
+      sending,
+    }),
+    [
+      messages,
+      subSessions,
+      activities,
+      permissionRequests,
+      retryableTasks,
+      retryingTaskIds,
+      retryDisabled,
+      details,
+      sending,
+    ],
   );
 
   useEffect(() => {
@@ -146,6 +174,7 @@ export function ChatTimeline({
                     onOpenSession={onOpenSession}
                     onPermissionDecision={onPermissionDecision}
                     onPermissionRetry={onPermissionRetry}
+                    onRetryTask={onRetryTask}
                   />
                 )}
           </MeasuredRow>
@@ -170,67 +199,71 @@ export function countDebugItems(
   return count;
 }
 
-function buildTimeline(
-  messages: ChatMessageItem[],
-  subSessions: SessionSummaryDto[],
-  activities: ActivityEvent[],
-  permissionRequests: SerializableSystemPermissionRequest[],
-  details: boolean,
-  sending: boolean,
-): TimelineEntry[] {
+export function buildTimeline(input: {
+  messages: ChatMessageItem[];
+  subSessions: SessionSummaryDto[];
+  activities: ActivityEvent[];
+  permissionRequests: SerializableSystemPermissionRequest[];
+  retryableTasks: TaskDto[];
+  retryingTaskIds: Set<string>;
+  retryDisabled: boolean;
+  details: boolean;
+  sending: boolean;
+}): TimelineEntry[] {
   const entries: Array<{ at: string; entry: TimelineEntry }> = [];
-  messages.forEach(({ id, message }) => {
+  const messageDayKeys = new Set<string>();
+  const addMessageEntry = (at: string, entry: TimelineEntry) => {
+    entries.push({ at, entry });
+    messageDayKeys.add(localDayKey(at));
+  };
+  const retryTaskIds = retryTaskIdsByAssistantKey(input.messages, input.retryableTasks);
+  input.messages.forEach(({ id, message }) => {
     const at = message.createdAt;
     const baseKey = String(id);
     if (message.role === "user") {
       if (message.content.trim().length > 0) {
-        entries.push({ at, entry: { kind: "user", key: baseKey, content: message.content } });
+        addMessageEntry(at, { kind: "user", key: baseKey, content: message.content });
       }
       return;
     }
-    if (details && (message.kind === "text" || message.kind === "tool_call") && message.thought && message.thought.trim().length > 0) {
-      entries.push({ at, entry: { kind: "thought", key: `${baseKey}-thought`, content: message.thought } });
+    if (input.details && (message.kind === "text" || message.kind === "tool_call") && message.thought && message.thought.trim().length > 0) {
+      addMessageEntry(at, { kind: "thought", key: `${baseKey}-thought`, content: message.thought });
     }
     if (message.kind === "text") {
-      if (message.content.trim().length > 0 || (details && message.usage)) {
-        entries.push({
-          at,
-          entry: {
-            kind: "assistant",
-            key: baseKey,
-            content: message.content,
-            usage: details ? message.usage : undefined,
-          },
+      if (message.content.trim().length > 0 || (input.details && message.usage)) {
+        addMessageEntry(at, {
+          kind: "assistant",
+          key: baseKey,
+          content: message.content,
+          status: message.status,
+          retryTaskId: retryTaskIds.get(baseKey),
+          retrying: input.retryingTaskIds.has(retryTaskIds.get(baseKey) ?? ""),
+          retryDisabled: input.retryDisabled,
+          usage: input.details ? message.usage : undefined,
         });
       }
     } else if (message.kind === "permission") {
-      entries.push({
-        at,
-        entry: { kind: "permission", key: baseKey, message },
-      });
+      addMessageEntry(at, { kind: "permission", key: baseKey, message });
     } else if (message.kind === "artifact") {
-      entries.push({ at, entry: { kind: "artifact", key: baseKey, message } });
-    } else if (details) {
-      entries.push({
-        at,
-        entry: {
-          kind: "tool",
-          key: baseKey,
-          toolName: displayToolName(message.toolName, message.toolArgs),
-          toolArgs: message.toolArgs,
-          toolResult: message.toolResult,
-          usage: message.usage,
-        },
+      addMessageEntry(at, { kind: "artifact", key: baseKey, message });
+    } else if (input.details) {
+      addMessageEntry(at, {
+        kind: "tool",
+        key: baseKey,
+        toolName: displayToolName(message.toolName, message.toolArgs),
+        toolArgs: message.toolArgs,
+        toolResult: message.toolResult,
+        usage: message.usage,
       });
     }
   });
-  permissionRequests.forEach((request) => {
+  input.permissionRequests.forEach((request) => {
     entries.push({
       at: request.createdAt,
       entry: { kind: "permission-request", key: `permission-${request.id}`, request },
     });
   });
-  subSessions.forEach((session) => {
+  input.subSessions.forEach((session) => {
     entries.push({
       at: session.createdAt,
       entry: {
@@ -240,8 +273,8 @@ function buildTimeline(
       },
     });
   });
-  if (details) {
-    activities.forEach((event) => {
+  if (input.details) {
+    input.activities.forEach((event) => {
       entries.push({
         at: event.createdAt,
         entry: { kind: "activity", key: event.id, label: event.label },
@@ -249,9 +282,81 @@ function buildTimeline(
     });
   }
   entries.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
-  const out = entries.map((item) => item.entry);
-  if (sending) out.push({ kind: "typing", key: "__typing__" });
+  const out = withDayDividers(entries, messageDayKeys);
+  if (input.sending) out.push({ kind: "typing", key: "__typing__" });
   return out;
+}
+
+function withDayDividers(
+  entries: Array<{ at: string; entry: TimelineEntry }>,
+  messageDayKeys: Set<string>,
+): TimelineEntry[] {
+  const seenDays = new Set<string>();
+  const out: TimelineEntry[] = [];
+  for (const item of entries) {
+    const dayKey = localDayKey(item.at);
+    if (!seenDays.has(dayKey)) {
+      seenDays.add(dayKey);
+      if (messageDayKeys.has(dayKey)) {
+        out.push({
+          kind: "day-divider",
+          key: `day-${dayKey}`,
+          label: formatDayDivider(item.at),
+        });
+      }
+    }
+    out.push(item.entry);
+  }
+  return out;
+}
+
+function localDayKey(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso.slice(0, 10) || "unknown";
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${date.getFullYear()}-${month}-${day}`;
+}
+
+function formatDayDivider(iso: string): string {
+  const date = new Date(iso);
+  if (Number.isNaN(date.getTime())) return iso.slice(0, 10) || "Unknown date";
+  const now = new Date();
+  return date.toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
+  });
+}
+
+function retryTaskIdsByAssistantKey(
+  messages: ChatMessageItem[],
+  tasks: TaskDto[],
+): Map<string, string> {
+  const failedAssistants = messages
+    .filter(({ message }) => message.role === "assistant" && message.kind === "text" && isFailedAssistant(message))
+    .sort((a, b) => compareIso(a.message.createdAt, b.message.createdAt));
+  const retryableTasks = tasks
+    .filter((task) => task.canRetry && task.status === "failed" && task.kind === "chat.turn")
+    .sort((a, b) => compareIso(a.createdAt, b.createdAt));
+  const out = new Map<string, string>();
+  let taskIndex = retryableTasks.length - 1;
+  for (let messageIndex = failedAssistants.length - 1; messageIndex >= 0 && taskIndex >= 0; messageIndex -= 1) {
+    out.set(String(failedAssistants[messageIndex].id), retryableTasks[taskIndex].id);
+    taskIndex -= 1;
+  }
+  return out;
+}
+
+function isFailedAssistant(message: Extract<SerializableBotMessage, { role: "assistant"; kind: "text" }>): boolean {
+  return message.status === "failed"
+    || message.content.trim().startsWith("Error:")
+    || message.content.trim() === "Unknown error";
+}
+
+function compareIso(left: string, right: string): number {
+  return left < right ? -1 : left > right ? 1 : 0;
 }
 
 function virtualWindow(

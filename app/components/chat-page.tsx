@@ -57,15 +57,16 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
         </header>
       ) : null}
 
-      {chat.activeTask ? <TaskBanner task={chat.activeTask} /> : null}
-
       <div className={`${chat.activeSession?.parentSessionId ? "mt-5 " : ""}app-chat-timeline flex flex-1 flex-col gap-5`}>
         <ChatTimeline
           messages={chat.messages}
           activities={chat.activities}
           permissionRequests={chat.permissionRequests}
+          retryableTasks={chat.retryableChatTasks}
+          retryingTaskIds={chat.retryingTaskIds}
           details={details}
           sending={chat.sessionBusy}
+          retryDisabled={chat.sessionBusy}
           resetKey={chat.activeSessionId}
           hasMoreBefore={chat.hasMoreBefore}
           loadingMore={chat.loadingMore}
@@ -74,6 +75,7 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
           onOpenSession={(session) => chat.setPreviewSessionId(session.conversationId)}
           onPermissionDecision={chat.handlePermissionDecision}
           onPermissionRetry={(message) => void chat.retryPermission(message)}
+          onRetryTask={(taskId) => void chat.retryFailedTask(taskId)}
         />
       </div>
 
@@ -95,21 +97,5 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
         onClose={() => chat.setPreviewSessionId(null)}
       />
     </section>
-  );
-}
-
-function TaskBanner({ task }: { task: WebStateDto["tasks"][number] }) {
-  return (
-    <div className="mt-5 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--panel)/0.72)] px-4 py-3 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="rounded border border-[rgb(var(--border))] px-2 py-0.5 font-mono text-[11px] uppercase text-[rgb(var(--muted-foreground))]">
-          {task.status.replace("_", " ")}
-        </span>
-        <span className="font-medium">{task.title}</span>
-      </div>
-      <p className="mt-1 text-xs text-[rgb(var(--muted-foreground))]">
-        {task.reason ?? "Task is updating."}
-      </p>
-    </div>
   );
 }

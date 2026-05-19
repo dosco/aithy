@@ -275,7 +275,6 @@ describe("runMessage", () => {
           kind: "fact",
           title: "Favorite city",
           body: "The user often asks about Vancouver.",
-          labels: ["personal"],
           validFrom: null,
           validUntil: null,
           durationDays: null,

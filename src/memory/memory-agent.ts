@@ -4,7 +4,7 @@ import type { AppConfig } from "../config/env";
 import { buildMemoryAgentTools } from "./agent-tools";
 import { formatMemoryForRecall } from "./format";
 import type { SqliteMemoryStore } from "./memory-store";
-import { MEMORY_LABELS } from "./types";
+import { MEMORY_KINDS } from "./types";
 
 export interface MemoryAgentDeps {
   config: AppConfig;
@@ -35,11 +35,12 @@ WRITE (\`memory.write\`) only:
 - tentative interests or possible future preferences when they are specific and useful later. Preserve uncertainty: "I might try cold brew someday" should write "The user is interested in trying cold brew someday", not "The user likes cold brew."
 - project-specific conventions or constraints that will matter in future turns.
 - something the user explicitly asked you to remember (trigger='explicit').
-- time-bounded or episode-like information worth recalling (kind='event', body under ~500 words / 4 KB).
+- dated personal events worth recalling, such as travel plans, deadlines, illness recovery, or new jobs (usually kind='event', body under ~500 words / 4 KB).
 
 DO NOT WRITE:
 - anything derivable from current code or git history.
 - transient state for the current conversation.
+- coding strategy summaries, tool-use lessons, workflow outcomes, failure gotchas, or "what worked last time" notes. Those belong to dream episodes, not semantic memory.
 - speculation; only confirmed facts.
 - duplicates — \`memories\` contains recent existing durable memories. If the fact is already present, do not write it again.
 - context-only overlap in auto runs. Use \`[context ...]\` lines only to understand \`[new ...]\` lines; do not write a memory solely from context that was already processed earlier.
@@ -49,11 +50,23 @@ DO NOT WRITE:
 
 Prefer \`memory.supersede\` over delete+write when correcting an existing fact.
 
-KIND: 'fact' | 'preference' | 'instruction' | 'event'. Choose exactly one primary kind.
-KIND EXAMPLES: stable and tentative tastes are 'preference'; dated plans and bounded trips/deadlines are 'event'; user requests about future assistant behavior are 'instruction'.
-LABELS: choose zero or more controlled retrieval facets: ${MEMORY_LABELS.map((label) => `'${label}'`).join(", ")}. Use topic labels for where the memory is useful, and trait labels like 'deadline', 'recurring', 'time_bound', and 'verbatim_detail' only when the fact actually has that shape. Do not invent labels.
+KIND: choose exactly one primary kind from: ${MEMORY_KINDS.map((kind) => `'${kind}'`).join(", ")}.
+KIND GUIDANCE:
+- 'fact': stable fact not better captured by a more specific kind.
+- 'preference': stable or tentative tastes, likes, dislikes, style, and choice tendencies.
+- 'instruction': standing user request about future assistant behavior.
+- 'relationship': people, roles, and connections.
+- 'project_context': durable project/repo/product context.
+- 'decision': chosen direction, resolved tradeoff, or accepted rationale.
+- 'task': concrete thing to do or follow up on.
+- 'goal': desired future state, less concrete than a task.
+- 'event': dated plans, bounded trips/deadlines, illness recovery, new jobs, and other temporary events.
+- 'resource': file, URL, command, repo, artifact, or pointer.
+- 'constraint': user/project boundary or requirement.
+- 'vocabulary': local meaning of terms.
+- 'note': fallback only when useful but not classifiable.
 QUALITY: write dense, consolidated, self-contained sentences rather than atomic fragments. Attribute every fact to a named person or "the user"; resolve pronouns. Preserve verbatim details when exact wording matters, such as signs, paintings, book titles, pet behaviors, and similar details. For recurring activities, include an explicit frequency.
-TIME-BOUNDED: for travel plans, illness recovery, deadlines, new jobs, and other temporary events, use kind='event' and include validFrom, validUntil, durationDays, and evidence whenever the thread supports them. Dates must be ISO YYYY-MM-DD. validUntil is inclusive; memory.write will skip already-expired candidates and return expired=true.
+TIME-BOUNDED: for travel plans, illness recovery, deadlines, new jobs, and other temporary events, use kind='event' when no more specific kind fits, and include validFrom, validUntil, durationDays, and evidence whenever the thread supports them. Dates must be ISO YYYY-MM-DD. validUntil is inclusive; memory.write will skip already-expired candidates and return expired=true.
 IMPORTANCE: 0..1, default 0.5. Use 0.45-0.6 for simple preferences, 0.6-0.75 for emphasized preferences, 0.3-0.45 for tentative interests, and >0.7 only for critical or strongly emphasized memories.
 
 If the thread has nothing memory-worthy: call no tools and return summary "nothing to remember". That is the most common outcome — never invent a fact to justify a write, and never claim a write you didn't perform.

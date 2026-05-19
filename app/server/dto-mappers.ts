@@ -126,7 +126,6 @@ export function memoryDto(entry: MemoryEntry): MemoryDto {
     kind: entry.kind,
     title: entry.title,
     body: entry.body,
-    labels: entry.labels,
     validFrom: entry.validFrom,
     validUntil: entry.validUntil,
     durationDays: entry.durationDays,

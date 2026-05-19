@@ -123,6 +123,7 @@ describe("chat turn model", () => {
     const cases: ChatTurn[] = [
       repliedTurn("[stopped]"),
       repliedTurn("Error: model failed"),
+      repliedTurn("model failed", "failed"),
       deriveChatTurn({
         sessionId,
         messages: [item(user("hello", "2026-05-17T10:00:00.000Z"))],
@@ -138,6 +139,7 @@ describe("chat turn model", () => {
     ];
 
     expect(cases.map((current) => shouldDrainPending({ previous, current }))).toEqual([
+      false,
       false,
       false,
       false,
@@ -191,12 +193,15 @@ function busyTurn(): ChatTurn {
   });
 }
 
-function repliedTurn(content: string): ChatTurn {
+function repliedTurn(
+  content: string,
+  status?: Extract<SerializableBotMessage, { role: "assistant"; kind: "text" }>["status"],
+): ChatTurn {
   return deriveChatTurn({
     sessionId,
     messages: [
       item(user("hello", "2026-05-17T10:00:00.000Z")),
-      item(assistant(content, "2026-05-17T10:00:01.000Z")),
+      item(assistant(content, "2026-05-17T10:00:01.000Z", status)),
     ],
     tasks: [task({ status: "running", updatedAt: "2026-05-17T10:00:02.000Z" })],
     localTurn: IDLE_LOCAL_CHAT_TURN,
@@ -211,8 +216,12 @@ function user(content: string, createdAt: string): SerializableBotMessage {
   return { role: "user", content, createdAt };
 }
 
-function assistant(content: string, createdAt: string): SerializableBotMessage {
-  return { role: "assistant", kind: "text", content, createdAt };
+function assistant(
+  content: string,
+  createdAt: string,
+  status?: Extract<SerializableBotMessage, { role: "assistant"; kind: "text" }>["status"],
+): SerializableBotMessage {
+  return { role: "assistant", kind: "text", content, createdAt, ...(status ? { status } : {}) };
 }
 
 function toolCall(createdAt: string): SerializableBotMessage {

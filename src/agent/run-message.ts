@@ -15,7 +15,6 @@ import type { SqliteArtifactStore } from "../artifacts/artifact-store";
 import type { MemoryQueue } from "../memory/memory-queue";
 import type { NotificationCreate } from "../notifications/types";
 import { formatMemoryForRecall } from "../memory/format";
-import { formatEpisodeForRecall } from "../episodes/format";
 import type { SqliteUsageStore } from "../usage/usage-store";
 import type { SqliteSkillsStore } from "../skills/skills-store";
 import { captureProgramUsage } from "../usage/capture";
@@ -26,6 +25,7 @@ import { userProfileForAgent } from "../profile/service";
 import type { SoulProfile } from "../soul/types";
 import type { AssistantToolCallMessage } from "../session/types";
 import { isClarificationPause } from "./clarification";
+import { userFacingErrorText } from "./error-copy";
 import {
   artifactContextText,
   artifactIdsForRun,
@@ -61,6 +61,7 @@ import {
   type SearchPrefetcher,
   type SearchPrefetchOutput,
 } from "./search-prefetch";
+import { formatEpisodeForRecallWithEvidence } from "./episode-evidence";
 
 export interface RunMessageDeps {
   config: AppConfig;
@@ -169,15 +170,16 @@ export async function runMessage(
             })
           : [],
       ]);
+      const episodeResults = await Promise.all(episodeHits.map(async (episode) => ({
+        id: `episode:${episode.id}`,
+        content: await formatEpisodeForRecallWithEvidence(deps.sessions, episode),
+      })));
       const results = [
         ...memoryHits.map((m) => ({
           id: `memory:${m.id}`,
           content: formatMemoryForRecall(m),
         })),
-        ...episodeHits.map((episode) => ({
-          id: `episode:${episode.id}`,
-          content: formatEpisodeForRecall(episode),
-        })),
+        ...episodeResults,
       ];
       const toolMessage: AssistantToolCallMessage = {
         role: "assistant",
@@ -314,6 +316,7 @@ export async function runMessage(
       channelId: message.channelId,
       conversationId: message.conversationId,
       text: agentResponse,
+      status: "completed",
     };
   } catch (error) {
     if (error instanceof AxAIServiceAbortedError) {
@@ -323,7 +326,7 @@ export async function runMessage(
         turnMessages(
           message,
           toolCallMessages,
-          assistantTextMessage(stoppedText),
+          assistantTextMessage(stoppedText, { status: "cancelled" }),
           deps,
           await artifactMessagesForTurn({
             artifacts: deps.artifacts,
@@ -343,6 +346,7 @@ export async function runMessage(
         channelId: message.channelId,
         conversationId: message.conversationId,
         text: stoppedText,
+        status: "cancelled",
       };
     }
     if (isClarificationPause(error)) {
@@ -374,6 +378,7 @@ export async function runMessage(
           channelId: message.channelId,
           conversationId: message.conversationId,
           text: fallbackAnswer,
+          status: "completed",
         };
       }
       const question = error.question;
@@ -402,16 +407,17 @@ export async function runMessage(
         channelId: message.channelId,
         conversationId: message.conversationId,
         text: question,
+        status: "completed",
       };
     }
-    const errorText = error instanceof Error ? error.message : "Unknown agent error";
-    const reply = `Error: ${errorText}`;
+    const errorText = userFacingErrorText(error);
+    const reply = errorText;
     deps.sessions.appendMessages(
       message.conversationId,
       turnMessages(
         message,
         toolCallMessages,
-        assistantTextMessage(reply),
+        assistantTextMessage(reply, { status: "failed" }),
         deps,
         await artifactMessagesForTurn({
           artifacts: deps.artifacts,
@@ -432,6 +438,7 @@ export async function runMessage(
       channelId: message.channelId,
       conversationId: message.conversationId,
       text: reply,
+      status: "failed",
     };
   } finally {
     deps.activeRuns?.clear(message.conversationId);

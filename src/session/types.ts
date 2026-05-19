@@ -14,6 +14,8 @@ export interface SessionTokenTotals {
   total: number;
 }
 
+export type AssistantTextStatus = "completed" | "failed" | "cancelled";
+
 export interface UserMessage {
   role: "user";
   content: string;
@@ -24,6 +26,7 @@ export interface AssistantTextMessage {
   role: "assistant";
   kind: "text";
   content: string;
+  status?: AssistantTextStatus;
   thought?: string;
   usage?: TokenUsage;
   createdAt: string;

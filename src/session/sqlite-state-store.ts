@@ -7,6 +7,7 @@ import type {
   SessionStateStore,
   StoredSession,
 } from "./state-store";
+import { HOME_SESSION_ID } from "./home-session";
 import type {
   BotMessage,
   BotSessionSummary,
@@ -94,8 +95,9 @@ export class SqliteSessionStateStore implements SessionStateStore {
   listSessions(): BotSessionSummary[] {
     const rows = this.db.query(`
       SELECT * FROM sessions
+      WHERE id != $homeSessionId
       ORDER BY updated_at DESC, created_at DESC
-    `).all() as SessionRow[];
+    `).all({ $homeSessionId: HOME_SESSION_ID }) as SessionRow[];
     return rows.map(summaryFromRow);
   }
 
@@ -234,6 +236,34 @@ export class SqliteSessionStateStore implements SessionStateStore {
       newestId,
       hasMoreBefore,
     };
+  }
+
+  messagesByIdRange(
+    conversationId: string,
+    input: { startId: number; endId: number; limit: number },
+  ): Array<{ id: number; message: BotMessage }> {
+    const startId = Math.max(1, Math.floor(Math.min(input.startId, input.endId)));
+    const endId = Math.max(startId, Math.floor(Math.max(input.startId, input.endId)));
+    const limit = Math.max(1, Math.floor(input.limit));
+    const rows = this.db.query(`
+      SELECT id, role, message_kind, content, metadata_json, thought,
+             tool_name, tool_args, tool_result,
+             input_tokens, output_tokens, thought_tokens, total_tokens,
+             created_at
+      FROM messages
+      WHERE session_id = $id
+        AND id >= $startId
+        AND id <= $endId
+      ORDER BY id ASC
+      LIMIT $limit
+    `).all({
+      $id: conversationId,
+      $startId: startId,
+      $endId: endId,
+      $limit: limit,
+    }) as MessageRowWithId[];
+    const messages = messageRowsToEntries(rows);
+    return rows.map((row, index) => ({ id: row.id, message: messages[index] }));
   }
 
   private migrate(): void {

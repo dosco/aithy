@@ -14,11 +14,13 @@ import { useChatMessages } from "@/components/use-chat-messages";
 import { usePendingChatQueue } from "@/components/use-pending-chat-queue";
 import {
   respondSystemPermission,
+  retryTask,
   sendChatMessage,
   stopChatMessage,
 } from "@/server/actions.functions";
 import type { MessagePageDto, WebStateDto } from "@/server/dto";
 import type { CapabilityMatchKind } from "../../src/security/capability-policy";
+import { newSpecificSessionId } from "../../src/session/home-session";
 import type { SerializableBotMessage, WebLiveEvent } from "../../src/web/live-events";
 
 type PermissionMessage = Extract<SerializableBotMessage, { kind: "permission" }>;
@@ -62,6 +64,7 @@ export function useChatController({
   const [selectedSkills, setSelectedSkills] = useState<SelectedSkill[]>([]);
   const [previewSessionId, setPreviewSessionId] = useState<string | null>(null);
   const [localTurn, setLocalTurn] = useState<LocalChatTurn>(IDLE_LOCAL_CHAT_TURN);
+  const [retryingTaskIds, setRetryingTaskIds] = useState<Set<string>>(() => new Set());
   const activeSessionRef = useRef<string | null>(activeSessionId);
   const localTurnRef = useRef<LocalChatTurn>(localTurn);
   const previousTurnRef = useRef<ChatTurn | null>(null);
@@ -95,6 +98,14 @@ export function useChatController({
   const previewSession = useMemo(
     () => sessions.find((session) => session.conversationId === previewSessionId) ?? null,
     [sessions, previewSessionId],
+  );
+  const retryableChatTasks = useMemo(
+    () => tasks.filter((task) =>
+      task.kind === "chat.turn"
+      && (task.relatedSessionId === activeSessionId || task.conversationId === activeSessionId)
+      && task.status === "failed"
+      && task.canRetry),
+    [activeSessionId, tasks],
   );
 
   useEffect(() => {
@@ -168,7 +179,7 @@ export function useChatController({
 
     if (options.clearInput) setInput("");
     const wasDraft = !activeSessionId;
-    const conversationId = activeSessionId ?? crypto.randomUUID();
+    const conversationId = activeSessionId ?? newSpecificSessionId();
     const createdAt = new Date().toISOString();
     const nextLocalTurn: LocalChatTurn = {
       conversationId,
@@ -245,6 +256,19 @@ export function useChatController({
     await submitText(retryPermissionPrompt(message), { useSelectedSkills: false });
   }, [submitText]);
 
+  const retryFailedTask = useCallback(async (taskId: string) => {
+    setRetryingTaskIds((current) => new Set(current).add(taskId));
+    try {
+      await retryTask({ data: { taskId } });
+    } finally {
+      setRetryingTaskIds((current) => {
+        const next = new Set(current);
+        next.delete(taskId);
+        return next;
+      });
+    }
+  }, []);
+
   const editPendingMessage = useCallback((message: PendingChatMessage) => {
     removePending(message.conversationId, message.id);
     setInput(message.text);
@@ -288,13 +312,15 @@ export function useChatController({
     setInput,
     setSelectedSkills,
     sessionBusy: turn.busy,
-    activeTask: turn.activeTask,
+    retryableChatTasks,
+    retryingTaskIds,
     pendingMessages,
     submit,
     stop,
     editPendingMessage,
     deletePendingMessage,
     retryPermission,
+    retryFailedTask,
     handlePermissionDecision,
   };
 }

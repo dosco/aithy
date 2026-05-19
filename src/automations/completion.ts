@@ -7,13 +7,15 @@ export function completeAutomationRun(input: {
   automationId: string;
   automationRunId: string;
   text: string;
+  status?: "completed" | "failed" | "cancelled";
   conversationId: string;
   notify?: (input: NotificationCreate) => NotificationEntry | void;
 }): void {
   const automation = input.automations.get(input.automationId);
   if (!automation) return;
   const parsed = stripAttentionPrefix(input.text);
-  const status = input.text === "[stopped]" ? "cancelled" : input.text.startsWith("Error:") ? "failed" : "completed";
+  const status = input.status
+    ?? (input.text === "[stopped]" ? "cancelled" : input.text.startsWith("Error:") ? "failed" : "completed");
   input.automations.updateRun(input.automationRunId, {
     status,
     resultSummary: status === "completed" ? compact(parsed.text) : null,

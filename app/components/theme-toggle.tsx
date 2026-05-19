@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Moon, Sun } from "lucide-react";
+import { cn } from "@/lib/utils";
 import { saveSettingsWithSetupGateRefresh } from "@/lib/setup-gate";
 
 export function ThemeToggle() {
@@ -27,7 +28,8 @@ export function ThemeToggle() {
     <button
       onClick={() => void flip()}
       aria-label="Toggle dark mode"
-      className="flex h-8 w-8 items-center justify-center rounded-md transition hover:bg-[rgb(var(--muted))]"
+      aria-pressed={dark}
+      className={cn("app-top-icon", dark && "app-top-icon-active")}
     >
       {dark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
     </button>

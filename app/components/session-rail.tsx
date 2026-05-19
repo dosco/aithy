@@ -1,4 +1,4 @@
-import { useNavigate, useParams } from "@tanstack/react-router";
+import { useLocation, useNavigate, useParams } from "@tanstack/react-router";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import { Plus } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -6,11 +6,13 @@ import { useLiveEvent } from "@/components/live-events";
 import { getSessionsPageState } from "@/server/state.functions";
 import type { SessionSummaryDto } from "@/server/dto";
 import { cn } from "@/lib/utils";
+import { HOME_SESSION_ID } from "../../src/session/home-session";
 
 const RAIL_WIDTH = 288;
 
 export function SessionRail() {
   const navigate = useNavigate();
+  const location = useLocation();
   const params = useParams({ strict: false }) as { sessionId?: string };
   const reduce = useReducedMotion();
   const [open, setOpen] = useState(false);
@@ -57,7 +59,11 @@ export function SessionRail() {
 
   function pick(id: string) {
     setOpen(false);
-    void navigate({ to: "/chat/$sessionId", params: { sessionId: id } });
+    if (id === HOME_SESSION_ID) {
+      void navigate({ to: "/chat/$sessionId", params: { sessionId: HOME_SESSION_ID } });
+    } else {
+      void navigate({ to: "/chat/$sessionId", params: { sessionId: id } });
+    }
   }
 
   function startNew() {
@@ -131,7 +137,7 @@ export function SessionRail() {
                         </h3>
                         <div className="flex flex-col gap-0.5">
                           {items.map((session) => {
-                            const active = session.conversationId === params.sessionId;
+                            const active = isActiveSession(session.conversationId, params.sessionId, location.pathname);
                             return (
                               <motion.button
                                 key={session.conversationId}
@@ -194,6 +200,10 @@ function groupSessions(sessions: SessionSummaryDto[]): Record<GroupKey, SessionS
     else buckets.older.push(session);
   }
   return buckets;
+}
+
+function isActiveSession(id: string, routeSessionId: string | undefined, pathname: string): boolean {
+  return id === routeSessionId && !/^\/chat\/?$/.test(pathname);
 }
 
 function formatRelativeTime(iso: string): string {

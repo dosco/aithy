@@ -1,4 +1,21 @@
+import type { Database } from "bun:sqlite";
 import type { SqliteMigration } from "../sqlite/migrations";
+
+const MEMORY_KIND_VALUES = [
+  "'fact'",
+  "'preference'",
+  "'instruction'",
+  "'relationship'",
+  "'project_context'",
+  "'decision'",
+  "'task'",
+  "'goal'",
+  "'event'",
+  "'resource'",
+  "'constraint'",
+  "'vocabulary'",
+  "'note'",
+].join(", ");
 
 export const memoryMigrations: readonly SqliteMigration[] = [
   {
@@ -6,10 +23,9 @@ export const memoryMigrations: readonly SqliteMigration[] = [
     sql: `
       CREATE TABLE memories (
         id TEXT PRIMARY KEY,
-        kind TEXT NOT NULL CHECK (kind IN ('fact', 'preference', 'instruction', 'event')),
+        kind TEXT NOT NULL CHECK (kind IN (${MEMORY_KIND_VALUES})),
         title TEXT NOT NULL,
         body TEXT NOT NULL,
-        labels TEXT NOT NULL DEFAULT '[]',
         valid_from TEXT,
         valid_until TEXT,
         duration_days INTEGER,
@@ -32,27 +48,26 @@ export const memoryMigrations: readonly SqliteMigration[] = [
       CREATE VIRTUAL TABLE memories_fts USING fts5(
         title,
         body,
-        labels,
         content='memories',
         content_rowid='rowid',
         tokenize='unicode61 remove_diacritics 2'
       );
 
       CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN
-        INSERT INTO memories_fts(rowid, title, body, labels)
-        VALUES (new.rowid, new.title, new.body, new.labels);
+        INSERT INTO memories_fts(rowid, title, body)
+        VALUES (new.rowid, new.title, new.body);
       END;
 
       CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN
-        INSERT INTO memories_fts(memories_fts, rowid, title, body, labels)
-        VALUES ('delete', old.rowid, old.title, old.body, old.labels);
+        INSERT INTO memories_fts(memories_fts, rowid, title, body)
+        VALUES ('delete', old.rowid, old.title, old.body);
       END;
 
       CREATE TRIGGER memories_au AFTER UPDATE ON memories BEGIN
-        INSERT INTO memories_fts(memories_fts, rowid, title, body, labels)
-        VALUES ('delete', old.rowid, old.title, old.body, old.labels);
-        INSERT INTO memories_fts(rowid, title, body, labels)
-        VALUES (new.rowid, new.title, new.body, new.labels);
+        INSERT INTO memories_fts(memories_fts, rowid, title, body)
+        VALUES ('delete', old.rowid, old.title, old.body);
+        INSERT INTO memories_fts(rowid, title, body)
+        VALUES (new.rowid, new.title, new.body);
       END;
     `,
   },
@@ -109,7 +124,7 @@ export const memoryMigrations: readonly SqliteMigration[] = [
   {
     version: 4,
     precondition: (db) => {
-      const rows = db.query("PRAGMA table_info(memories)").all() as Array<{ name: string }>;
+      const rows = memoryColumns(db);
       return !rows.some((row) => row.name === "retrieved_count");
     },
     sql: `
@@ -118,10 +133,7 @@ export const memoryMigrations: readonly SqliteMigration[] = [
   },
   {
     version: 5,
-    precondition: (db) => {
-      const rows = db.query("PRAGMA table_info(memories)").all() as Array<{ name: string }>;
-      return rows.some((row) => row.name === "tags") || !rows.some((row) => row.name === "labels");
-    },
+    precondition: (db) => memoryColumns(db).some((row) => row.name === "tags"),
     sql: `
       DROP TRIGGER IF EXISTS memories_ai;
       DROP TRIGGER IF EXISTS memories_ad;
@@ -130,10 +142,9 @@ export const memoryMigrations: readonly SqliteMigration[] = [
 
       CREATE TABLE memories_new (
         id TEXT PRIMARY KEY,
-        kind TEXT NOT NULL CHECK (kind IN ('fact', 'preference', 'instruction', 'event')),
+        kind TEXT NOT NULL CHECK (kind IN (${MEMORY_KIND_VALUES})),
         title TEXT NOT NULL,
         body TEXT NOT NULL,
-        labels TEXT NOT NULL DEFAULT '[]',
         valid_from TEXT,
         valid_until TEXT,
         duration_days INTEGER,
@@ -150,7 +161,7 @@ export const memoryMigrations: readonly SqliteMigration[] = [
       );
 
       INSERT INTO memories_new (
-        rowid, id, kind, title, body, labels, valid_from, valid_until, duration_days, evidence, frequency, source, importance, created_at,
+        rowid, id, kind, title, body, valid_from, valid_until, duration_days, evidence, frequency, source, importance, created_at,
         updated_at, last_recalled_at, recall_count, retrieved_count, superseded_by
       )
       SELECT
@@ -159,21 +170,6 @@ export const memoryMigrations: readonly SqliteMigration[] = [
         CASE WHEN kind = 'episode' THEN 'event' ELSE kind END,
         title,
         body,
-        '[' || rtrim(
-          (CASE WHEN instr(' ' || lower(COALESCE(tags, '')) || ' ', ' project ') > 0 THEN '"project",' ELSE '' END) ||
-          (CASE WHEN instr(' ' || lower(COALESCE(tags, '')) || ' ', ' tooling ') > 0 THEN '"tooling",' ELSE '' END) ||
-          (CASE WHEN instr(' ' || lower(COALESCE(tags, '')) || ' ', ' workflow ') > 0 THEN '"workflow",' ELSE '' END) ||
-          (CASE WHEN instr(' ' || lower(COALESCE(tags, '')) || ' ', ' health ') > 0 THEN '"health",' ELSE '' END) ||
-          (CASE WHEN instr(' ' || lower(COALESCE(tags, '')) || ' ', ' travel ') > 0 THEN '"travel",' ELSE '' END) ||
-          (CASE WHEN instr(' ' || lower(COALESCE(tags, '')) || ' ', ' household ') > 0 THEN '"household",' ELSE '' END) ||
-          (CASE WHEN instr(' ' || lower(COALESCE(tags, '')) || ' ', ' media ') > 0 THEN '"media",' ELSE '' END) ||
-          (CASE WHEN instr(' ' || lower(COALESCE(tags, '')) || ' ', ' art ') > 0 THEN '"art",' ELSE '' END) ||
-          (CASE WHEN instr(' ' || lower(COALESCE(tags, '')) || ' ', ' deadline ') > 0 THEN '"deadline",' ELSE '' END) ||
-          (CASE WHEN instr(' ' || lower(COALESCE(tags, '')) || ' ', ' recurring ') > 0 THEN '"recurring",' ELSE '' END) ||
-          (CASE WHEN instr(' ' || lower(COALESCE(tags, '')) || ' ', ' time_bound ') > 0 THEN '"time_bound",' ELSE '' END) ||
-          (CASE WHEN instr(' ' || lower(COALESCE(tags, '')) || ' ', ' verbatim_detail ') > 0 THEN '"verbatim_detail",' ELSE '' END),
-          ','
-        ) || ']',
         NULL,
         NULL,
         NULL,
@@ -199,37 +195,36 @@ export const memoryMigrations: readonly SqliteMigration[] = [
       CREATE VIRTUAL TABLE memories_fts USING fts5(
         title,
         body,
-        labels,
         content='memories',
         content_rowid='rowid',
         tokenize='unicode61 remove_diacritics 2'
       );
 
-      INSERT INTO memories_fts(rowid, title, body, labels)
-      SELECT rowid, title, body, labels FROM memories;
+      INSERT INTO memories_fts(rowid, title, body)
+      SELECT rowid, title, body FROM memories;
 
       CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN
-        INSERT INTO memories_fts(rowid, title, body, labels)
-        VALUES (new.rowid, new.title, new.body, new.labels);
+        INSERT INTO memories_fts(rowid, title, body)
+        VALUES (new.rowid, new.title, new.body);
       END;
 
       CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN
-        INSERT INTO memories_fts(memories_fts, rowid, title, body, labels)
-        VALUES ('delete', old.rowid, old.title, old.body, old.labels);
+        INSERT INTO memories_fts(memories_fts, rowid, title, body)
+        VALUES ('delete', old.rowid, old.title, old.body);
       END;
 
       CREATE TRIGGER memories_au AFTER UPDATE ON memories BEGIN
-        INSERT INTO memories_fts(memories_fts, rowid, title, body, labels)
-        VALUES ('delete', old.rowid, old.title, old.body, old.labels);
-        INSERT INTO memories_fts(rowid, title, body, labels)
-        VALUES (new.rowid, new.title, new.body, new.labels);
+        INSERT INTO memories_fts(memories_fts, rowid, title, body)
+        VALUES ('delete', old.rowid, old.title, old.body);
+        INSERT INTO memories_fts(rowid, title, body)
+        VALUES (new.rowid, new.title, new.body);
       END;
     `,
   },
   {
     version: 6,
     precondition: (db) => {
-      const rows = db.query("PRAGMA table_info(memories)").all() as Array<{ name: string }>;
+      const rows = memoryColumns(db);
       return !rows.some((row) => row.name === "valid_until");
     },
     sql: `
@@ -240,4 +235,131 @@ export const memoryMigrations: readonly SqliteMigration[] = [
       ALTER TABLE memories ADD COLUMN frequency TEXT;
     `,
   },
+  {
+    version: 7,
+    precondition: (db) => {
+      const columns = memoryColumns(db);
+      if (columns.some((row) => row.name === "labels")) return true;
+      return !(memoryTableSql(db)?.includes("'relationship'") ?? false);
+    },
+    sql: `
+      DROP TRIGGER IF EXISTS memories_ai;
+      DROP TRIGGER IF EXISTS memories_ad;
+      DROP TRIGGER IF EXISTS memories_au;
+      DROP TABLE IF EXISTS memories_fts;
+
+      CREATE TABLE memories_new (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK (kind IN (${MEMORY_KIND_VALUES})),
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        valid_from TEXT,
+        valid_until TEXT,
+        duration_days INTEGER,
+        evidence TEXT,
+        frequency TEXT,
+        source TEXT,
+        importance REAL NOT NULL DEFAULT 0.5,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        last_recalled_at TEXT,
+        recall_count INTEGER NOT NULL DEFAULT 0,
+        retrieved_count INTEGER NOT NULL DEFAULT 0,
+        superseded_by TEXT REFERENCES memories_new(id) ON DELETE SET NULL
+      );
+
+      INSERT INTO memories_new (
+        rowid, id, kind, title, body, valid_from, valid_until, duration_days, evidence, frequency, source, importance, created_at,
+        updated_at, last_recalled_at, recall_count, retrieved_count, superseded_by
+      )
+      SELECT
+        rowid,
+        id,
+        CASE
+          WHEN kind IN (${MEMORY_KIND_VALUES}) THEN kind
+          WHEN kind = 'episode' THEN 'event'
+          ELSE 'fact'
+        END,
+        title,
+        body,
+        valid_from,
+        valid_until,
+        duration_days,
+        evidence,
+        frequency,
+        source,
+        importance,
+        created_at,
+        updated_at,
+        last_recalled_at,
+        recall_count,
+        retrieved_count,
+        superseded_by
+      FROM memories;
+
+      DROP TABLE memories;
+      ALTER TABLE memories_new RENAME TO memories;
+
+      CREATE INDEX memories_kind_idx ON memories(kind);
+      CREATE INDEX memories_updated_at_idx ON memories(updated_at DESC);
+      CREATE INDEX memories_active_idx ON memories(superseded_by) WHERE superseded_by IS NULL;
+
+      CREATE VIRTUAL TABLE memories_fts USING fts5(
+        title,
+        body,
+        content='memories',
+        content_rowid='rowid',
+        tokenize='unicode61 remove_diacritics 2'
+      );
+
+      INSERT INTO memories_fts(rowid, title, body)
+      SELECT rowid, title, body FROM memories;
+
+      CREATE TRIGGER memories_ai AFTER INSERT ON memories BEGIN
+        INSERT INTO memories_fts(rowid, title, body)
+        VALUES (new.rowid, new.title, new.body);
+      END;
+
+      CREATE TRIGGER memories_ad AFTER DELETE ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, title, body)
+        VALUES ('delete', old.rowid, old.title, old.body);
+      END;
+
+      CREATE TRIGGER memories_au AFTER UPDATE ON memories BEGIN
+        INSERT INTO memories_fts(memories_fts, rowid, title, body)
+        VALUES ('delete', old.rowid, old.title, old.body);
+        INSERT INTO memories_fts(rowid, title, body)
+        VALUES (new.rowid, new.title, new.body);
+      END;
+    `,
+  },
+  {
+    version: 8,
+    precondition: canReadVecTable,
+    sql: `
+      DELETE FROM memories_vec;
+      DELETE FROM memory_embed_meta;
+    `,
+  },
 ];
+
+function memoryColumns(db: Database): Array<{ name: string }> {
+  return db.query("PRAGMA table_info(memories)").all() as Array<{ name: string }>;
+}
+
+function memoryTableSql(db: Database): string | null {
+  const row = db
+    .query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'memories'")
+    .get() as { sql: string } | undefined;
+  return row?.sql ?? null;
+}
+
+function canReadVecTable(db: Database): boolean {
+  try {
+    db.query("SELECT rowid FROM memories_vec LIMIT 1").get();
+    db.query("SELECT memory_id FROM memory_embed_meta LIMIT 1").get();
+    return true;
+  } catch {
+    return false;
+  }
+}

@@ -1,8 +1,10 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { handleSlashCommand } from "../../src/commands/slash-commands";
+import { userFacingErrorText } from "../../src/agent/error-copy";
 import { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import { generateSessionName } from "../../src/session/session-names";
+import { ensureHomeSession, HOME_SESSION_ID } from "../../src/session/home-session";
 import { assertLoopbackRequest } from "../../src/settings/localhost";
 import { messageEvent } from "../../src/web/live-events";
 import { taskStatusEvent } from "../../src/tasks/live";
@@ -35,10 +37,14 @@ export const sendChatMessage = createServerFn({ method: "POST" })
     const user = userMessage(data.conversationId, text, new Date(data.createdAt));
     let taskId: string | null = null;
     try {
-      runtime.sessions.ensureLogicalSession(data.conversationId, {
-        name: generateSessionName(text),
-        nameSource: "generated",
-      });
+      if (data.conversationId === HOME_SESSION_ID) {
+        ensureHomeSession(runtime.sessions);
+      } else {
+        runtime.sessions.ensureLogicalSession(data.conversationId, {
+          name: generateSessionName(text),
+          nameSource: "generated",
+        });
+      }
       await runtime.sessionState.flush();
       runtime.settings.save({ ui: { lastActiveSessionId: data.conversationId } });
 
@@ -84,7 +90,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
         });
         if (failed) runtime.live.publish(taskStatusEvent(failed));
       }
-      const bot = assistantMessage(error instanceof Error ? `Error: ${error.message}` : "Unknown error");
+      const bot = assistantMessage(userFacingErrorText(error), { status: "failed" });
       runtime.sessions.appendMessages(data.conversationId, [bot]);
       try {
         await runtime.sessionState.flush();
