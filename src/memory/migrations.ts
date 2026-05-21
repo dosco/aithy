@@ -105,7 +105,7 @@ export const memoryMigrations: readonly SqliteMigration[] = [
     },
     sql: `
       CREATE VIRTUAL TABLE memories_vec USING vec0(
-        embedding float[384]
+        embedding float[1024]
       );
 
       CREATE TABLE memory_embed_meta (
@@ -341,6 +341,37 @@ export const memoryMigrations: readonly SqliteMigration[] = [
       DELETE FROM memory_embed_meta;
     `,
   },
+  {
+    version: 9,
+    precondition: (db) => {
+      try {
+        db.query("SELECT vec_version() AS v").get();
+      } catch {
+        return false;
+      }
+      return tableSql(db, "memories_vec")?.includes("float[384]") === true;
+    },
+    sql: `
+      DROP TABLE IF EXISTS memories_vec;
+      DROP TABLE IF EXISTS memory_embed_meta;
+
+      CREATE VIRTUAL TABLE memories_vec USING vec0(
+        embedding float[1024]
+      );
+
+      CREATE TABLE memory_embed_meta (
+        memory_id TEXT PRIMARY KEY,
+        body_hash TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        dim INTEGER NOT NULL,
+        embedded_at TEXT NOT NULL,
+        FOREIGN KEY (memory_id) REFERENCES memories(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX memory_embed_meta_model_idx
+        ON memory_embed_meta(model_id, dim);
+    `,
+  },
 ];
 
 function memoryColumns(db: Database): Array<{ name: string }> {
@@ -348,9 +379,13 @@ function memoryColumns(db: Database): Array<{ name: string }> {
 }
 
 function memoryTableSql(db: Database): string | null {
+  return tableSql(db, "memories");
+}
+
+function tableSql(db: Database, name: string): string | null {
   const row = db
-    .query("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'memories'")
-    .get() as { sql: string } | undefined;
+    .query("SELECT sql FROM sqlite_master WHERE name = $name")
+    .get({ $name: name }) as { sql: string } | undefined;
   return row?.sql ?? null;
 }
 

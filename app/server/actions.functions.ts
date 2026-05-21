@@ -6,7 +6,14 @@ export {
   getChildSessions,
   renameSession,
 } from "./session.actions";
-export { saveSettings, testParallelSearch } from "./settings.actions";
+export {
+  logoutGrokSubscriptionSignIn,
+  pollGrokSubscriptionSignIn,
+  saveLocalInferenceSettings,
+  saveSettings,
+  startGrokSubscriptionSignIn,
+  testParallelSearch,
+} from "./settings.actions";
 export { resetSystemOptions } from "./system.actions";
 export { listMemoryRuns, resetMemories, runMemoryConsolidate } from "./memory.actions";
 export {

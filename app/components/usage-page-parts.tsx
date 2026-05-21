@@ -4,6 +4,7 @@ import {
   PURPOSE_TINT,
   TOKEN_SEGMENTS,
   tokenValueFor,
+  usageProviderLabel,
   type DayStack,
   type ModelRow,
   type RangeTokenTotals,
@@ -336,7 +337,7 @@ export function ModelBreakdown({ rows }: { rows: ModelRow[] }) {
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium">{r.model}</div>
                 <div className="font-mono text-[10px] uppercase tracking-wide text-[rgb(var(--muted-foreground))]">
-                  {r.provider}
+                  {usageProviderLabel(r.provider, r.model)}
                 </div>
               </div>
               <div className="shrink-0 text-right">

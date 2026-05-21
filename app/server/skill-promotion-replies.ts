@@ -15,6 +15,7 @@ export async function tryHandleSkillPromotionReply(input: {
     text: user.text,
     createdAt: user.createdAt,
     config: runtime.config,
+    runtimeStore: runtime.runtimeStore,
     sessions: runtime.sessions,
     candidates: runtime.skillCandidates,
     promotions: runtime.skillPromotions,

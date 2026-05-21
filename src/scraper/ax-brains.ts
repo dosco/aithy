@@ -1,6 +1,5 @@
 import { ax, f } from "@ax-llm/ax";
-import type { AppConfig } from "../config/env";
-import { createAiService, createFastAiService } from "../agent/ai-service";
+import { createAiService, createFastAiService, type AiServiceConfigInput } from "../agent/ai-service";
 import { formatLink, formatPage, formatPagesForSynthesis } from "./format";
 import { cleanText } from "./text";
 import type {
@@ -42,20 +41,20 @@ Rules:
 - Keep the answer concise.`;
 
 export function createScraperAi(
-  config: AppConfig,
+  input: AiServiceConfigInput,
   factories: {
-    fast: (config: AppConfig) => unknown;
-    normal: (config: AppConfig) => unknown;
+    fast: (input: AiServiceConfigInput) => unknown;
+    normal: (input: AiServiceConfigInput) => unknown;
   } = {
     fast: createFastAiService,
     normal: createAiService,
   },
 ): unknown {
-  return factories.fast(config) ?? factories.normal(config);
+  return factories.fast(input) ?? factories.normal(input);
 }
 
-export function createAxLinkChooser(config: AppConfig) {
-  const ai = createScraperAi(config);
+export function createAxLinkChooser(input: AiServiceConfigInput) {
+  const ai = createScraperAi(input);
   const program = ax(chooseLinksSignature, {
     description: chooseLinksDescription,
     maxSteps: 1,
@@ -76,8 +75,8 @@ export function createAxLinkChooser(config: AppConfig) {
   };
 }
 
-export function createAxSynthesizer(config: AppConfig) {
-  const ai = createScraperAi(config);
+export function createAxSynthesizer(input: AiServiceConfigInput) {
+  const ai = createScraperAi(input);
   const program = ax(synthesizeSignature, {
     description: synthesizeDescription,
     maxSteps: 1,

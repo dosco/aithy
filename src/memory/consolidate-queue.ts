@@ -11,9 +11,10 @@ import { createConsolidatorAgent, formatStoreForConsolidator } from "./consolida
 import type { SqliteMemoryStore } from "./memory-store";
 import type { SqliteMemoryRunsStore } from "./memory-runs";
 import type { SqliteUsageStore } from "../usage/usage-store";
-import { captureProgramUsage } from "../usage/capture";
+import { captureProgramUsage, usageAttributionForConfig } from "../usage/capture";
 import type { SqliteTaskStore } from "../tasks/task-store";
 import type { TaskRecord } from "../tasks/types";
+import type { RuntimeStore } from "../runtime/runtime-store";
 
 const MAX_ATTEMPTS = 2;
 const JOB_TTL_MS = 5 * 60_000;
@@ -64,6 +65,7 @@ export interface ConsolidateQueueDeps {
   config: AppConfig;
   memory: SqliteMemoryStore;
   runs: SqliteMemoryRunsStore;
+  runtimeStore?: RuntimeStore;
   tasks?: SqliteTaskStore;
   onTaskStatus?: (task: TaskRecord) => void;
   usage?: SqliteUsageStore;
@@ -222,7 +224,11 @@ export class MemoryConsolidateQueue implements MemoryConsolidateHandle {
     }
 
     const before = this.deps.memory.rawCount();
-    const agent = createConsolidatorAgent({ config: this.deps.config, memory: this.deps.memory });
+    const agent = createConsolidatorAgent({
+      config: this.deps.config,
+      runtimeStore: this.deps.runtimeStore,
+      memory: this.deps.memory,
+    });
     const out = await agent.forward({ memories: formatStoreForConsolidator(all) });
     const after = this.deps.memory.rawCount();
     const delta = after - before;
@@ -232,6 +238,7 @@ export class MemoryConsolidateQueue implements MemoryConsolidateHandle {
         store: this.deps.usage,
         purpose: "memory.consolidate",
         runId,
+        attribution: usageAttributionForConfig(this.deps.config),
       });
     }
 

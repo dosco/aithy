@@ -1,12 +1,14 @@
 import { ax, f } from "@ax-llm/ax";
 import { createAiService } from "../agent/ai-service";
 import type { AppConfig } from "../config/env";
+import type { RuntimeStore } from "../runtime/runtime-store";
 import { buildMemoryAgentTools } from "./agent-tools";
 import { formatMemoryForRecall } from "./format";
 import type { SqliteMemoryStore } from "./memory-store";
 
 export interface ConsolidatorAgentDeps {
   config: AppConfig;
+  runtimeStore?: RuntimeStore;
   memory: SqliteMemoryStore;
 }
 
@@ -47,9 +49,10 @@ export interface ConsolidatorAgent {
 }
 
 export function createConsolidatorAgent(deps: ConsolidatorAgentDeps): ConsolidatorAgent {
-  const llm = createAiService(deps.config);
+  const llm = createAiService({ config: deps.config, runtimeStore: deps.runtimeStore });
   const tools = buildMemoryAgentTools({
     config: deps.config,
+    runtimeStore: deps.runtimeStore,
     memory: deps.memory,
     dedupeWrites: false,
   });

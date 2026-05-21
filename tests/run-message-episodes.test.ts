@@ -27,7 +27,7 @@ describe("runMessage episode recall", () => {
     const seenEpisodeExcludes: unknown[] = [];
 
     await runMessage(textMessage("m1", "test the postgres fix"), {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: { ...loadConfig(), sandboxProvider: "disabled" },
       events,
       sandbox: new MockSandboxProvider(),
       sessions,
@@ -139,7 +139,7 @@ describe("runMessage episode recall", () => {
     const sessions = sessionsFor(root, path.join(root, "state.db"));
 
     await runMessage(textMessage("m1", "test the postgres fix"), {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: { ...loadConfig(), sandboxProvider: "disabled" },
       events,
       sandbox: new MockSandboxProvider(),
       sessions,

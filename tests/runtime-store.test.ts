@@ -45,7 +45,7 @@ describe("RuntimeStore", () => {
   test("stores log events and filters by role", async () => {
     const { store } = await makeStore();
     store.appendLog({ role: "sandbox-worker", level: "info", source: "stdout", message: "vm ready" });
-    store.appendLog({ role: "embedding-worker", level: "warn", message: "model warming" });
+    store.appendLog({ role: "local-inference-worker", level: "warn", message: "model warming" });
 
     const logs = store.recentEvents({ kinds: ["log"], role: "sandbox-worker" });
     expect(logs).toHaveLength(1);
@@ -82,10 +82,10 @@ describe("RuntimeStore", () => {
   test("records service heartbeats for split runtime roles", async () => {
     const { store } = await makeStore();
     store.heartbeat("sandbox-worker", "ready", { provider: "disabled" });
-    store.heartbeat("embedding-worker", "starting", { model: "mini" });
+    store.heartbeat("local-inference-worker", "starting", { model: "mini" });
 
     expect(store.service("sandbox-worker")).toMatchObject({ role: "sandbox-worker", state: "ready" });
-    expect(store.services().map((service) => service.role)).toContain("embedding-worker");
+    expect(store.services().map((service) => service.role)).toContain("local-inference-worker");
     expect(store.recentEvents({ kinds: ["service-status"] })).toHaveLength(2);
     store.close();
   });

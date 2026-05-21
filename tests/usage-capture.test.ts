@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { captureProgramUsage } from "../src/usage/capture";
+import { loadConfig } from "../src/config/env";
+import { LOCAL_AI_PROVIDER, LOCAL_CHAT_MODEL_ALIAS } from "../src/local-inference/manifest";
+import { captureProgramUsage, usageAttributionForConfig } from "../src/usage/capture";
 
 describe("captureProgramUsage", () => {
   test("ignores non-iterable usage results", () => {
@@ -77,6 +79,40 @@ describe("captureProgramUsage", () => {
         cacheCreationTokens: 0,
         cacheReadTokens: 0,
         totalTokens: 7,
+      },
+    ]);
+  });
+
+  test("records configured local provider instead of OpenAI-compatible backend", () => {
+    const records: any[] = [];
+    const config = {
+      ...loadConfig({}),
+      aiProvider: LOCAL_AI_PROVIDER,
+      aiModel: LOCAL_CHAT_MODEL_ALIAS,
+    };
+
+    captureProgramUsage(
+      {
+        getUsage: () => [
+          {
+            ai: "OpenAI",
+            model: LOCAL_CHAT_MODEL_ALIAS,
+            tokens: { promptTokens: 3, completionTokens: 2, totalTokens: 5 },
+          },
+        ],
+      },
+      {
+        store: { record: (entry: unknown) => records.push(entry) } as any,
+        purpose: "chat",
+        attribution: usageAttributionForConfig(config),
+      },
+    );
+
+    expect(records).toMatchObject([
+      {
+        provider: LOCAL_AI_PROVIDER,
+        model: LOCAL_CHAT_MODEL_ALIAS,
+        totalTokens: 5,
       },
     ]);
   });

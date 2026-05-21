@@ -9,7 +9,7 @@ import { QueueSessionCache } from "./session-cache";
 import type { WebLiveEvent } from "../../../web/live-events";
 
 const CHAT_QUEUE_ID = "agent.chat";
-const CHAT_DEPENDENCIES: RuntimeServiceRole[] = ["sandbox-worker", "embedding-worker"];
+const BASE_CHAT_DEPENDENCIES: RuntimeServiceRole[] = ["sandbox-worker"];
 
 type RuntimeSocket = Bun.ServerWebSocket<{ role?: RuntimeServiceRole }>;
 
@@ -238,7 +238,7 @@ export class QueueServiceRuntime {
 
   private canDispatch(command: RuntimeCommandRow): boolean {
     if (command.targetRole !== "agent-worker" || command.kind !== "enqueue_user_chat") return true;
-    return CHAT_DEPENDENCIES.every((role) => this.services.get(role)?.state === "ready");
+    return this.chatDependencies().every((role) => this.services.get(role)?.state === "ready");
   }
 
   private setService(
@@ -321,6 +321,7 @@ export class QueueServiceRuntime {
 
   private publishChatQueueStatus(): void {
     const blockedReason = this.chatBlockedReason();
+    const dependencies = this.chatDependencies();
     const chatCommands = [...this.pendingCommands.values()]
       .filter((command) => command.targetRole === "agent-worker" && command.kind === "enqueue_user_chat");
     const activeCount = chatCommands.filter((command) => command.status === "claimed").length;
@@ -336,17 +337,21 @@ export class QueueServiceRuntime {
       depth,
       activeCount,
       blockedReason,
-      dependencyRoles: CHAT_DEPENDENCIES,
+      dependencyRoles: dependencies,
       updatedAt: new Date().toISOString(),
     });
   }
 
   private chatBlockedReason(): string | undefined {
-    const waiting = CHAT_DEPENDENCIES.flatMap((role) => {
+    const waiting = this.chatDependencies().flatMap((role) => {
       const service = this.services.get(role);
       return service?.state === "ready" ? [] : [`${role}: ${service?.state ?? "unknown"}`];
     });
     return waiting.length === 0 ? undefined : `waiting for ${waiting.join(", ")}`;
+  }
+
+  private chatDependencies(): RuntimeServiceRole[] {
+    return chatDependenciesForServices(this.services);
   }
 
   private closeSocket(ws: RuntimeSocket): void {
@@ -372,6 +377,22 @@ function sameServiceStatus(a: RuntimeServiceStatus, b: RuntimeServiceStatus): bo
     && a.state === b.state
     && a.pid === b.pid
     && JSON.stringify(a.detail ?? null) === JSON.stringify(b.detail ?? null);
+}
+
+export function chatDependenciesForServices(
+  services: ReadonlyMap<RuntimeServiceRole, RuntimeServiceStatus>,
+): RuntimeServiceRole[] {
+  const dependencies = [...BASE_CHAT_DEPENDENCIES];
+  if (localInferenceRequiredForServices(services)) dependencies.push("local-inference-worker");
+  return dependencies;
+}
+
+function localInferenceRequiredForServices(
+  services: ReadonlyMap<RuntimeServiceRole, RuntimeServiceStatus>,
+): boolean {
+  const detail = services.get("local-inference-worker")?.detail;
+  if (!detail || typeof detail !== "object") return false;
+  return (detail as Record<string, unknown>).required === true;
 }
 
 function reviveLogicalInput(input: unknown): Parameters<QueueSessionCache["ensure"]>[0] {

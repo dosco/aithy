@@ -22,6 +22,8 @@ import { SessionManager } from "../src/session/session-manager";
 import { SqliteSessionStateStore } from "../src/session/sqlite-state-store";
 import type { BotMessage } from "../src/session/types";
 import { SqliteTaskStore } from "../src/tasks/task-store";
+import { DEFAULT_LOCAL_AGENT_MODEL_ID, LOCAL_CHAT_MODEL_ALIAS } from "../src/local-inference/manifest";
+import { RuntimeStore } from "../src/runtime/runtime-store";
 
 const queues: MemoryQueue[] = [];
 const stores: Array<{ close(): void }> = [];
@@ -259,6 +261,65 @@ describe("MemoryQueue", () => {
     expect(fx.runs.recent(5)).toEqual([]);
   });
 
+  test("local auto triage resolves the local router before creating the agent", async () => {
+    let seenConfig: AppConfig | null = null;
+    const fx = await makeProcessingQueue({
+      configPatch: {
+        aiProvider: "local",
+        aiModel: DEFAULT_LOCAL_AGENT_MODEL_ID,
+        localAgentModel: DEFAULT_LOCAL_AGENT_MODEL_ID,
+        aiApiKey: undefined,
+      },
+      forward: async (_input, ctx) => {
+        seenConfig = ctx.config;
+        return { summary: "nothing to remember" };
+      },
+    });
+    fx.runtimeStore.heartbeat("local-inference-worker", "ready", {
+      required: true,
+      ready: true,
+      chatReady: true,
+      modelId: DEFAULT_LOCAL_AGENT_MODEL_ID,
+      baseUrl: "http://127.0.0.1:4321",
+      chatAlias: LOCAL_CHAT_MODEL_ALIAS,
+    });
+    fx.sessions.ensureLogicalSession("main");
+    append(fx.sessions, "main", user("my favourite city is Vancouver"));
+
+    await runAuto(fx.queue);
+
+    expect(seenConfig).toMatchObject({
+      aiProvider: "local",
+      aiApiUrl: "http://127.0.0.1:4321/v1",
+      aiApiKey: "local",
+      aiModel: LOCAL_CHAT_MODEL_ALIAS,
+    });
+  });
+
+  test("local auto triage skips cleanly until the local router is ready", async () => {
+    let called = false;
+    const fx = await makeProcessingQueue({
+      configPatch: {
+        aiProvider: "local",
+        aiModel: DEFAULT_LOCAL_AGENT_MODEL_ID,
+        localAgentModel: DEFAULT_LOCAL_AGENT_MODEL_ID,
+        aiApiKey: undefined,
+      },
+      forward: async () => {
+        called = true;
+        return { summary: "should not run" };
+      },
+    });
+    fx.sessions.ensureLogicalSession("main");
+    append(fx.sessions, "main", user("my favourite city is Vancouver"));
+
+    const result = await runAuto(fx.queue);
+
+    expect(result.summary).toContain("memory triage skipped");
+    expect(result.summary).toContain("Local inference is not ready yet");
+    expect(called).toBe(false);
+  });
+
   test("auto processing skips sub-session messages while advancing past them", async () => {
     const fx = await makeProcessingQueue();
     fx.sessions.ensureLogicalSession("main");
@@ -335,6 +396,7 @@ async function makeProcessingQueue(options: {
   const memory = new SqliteMemoryStore(stateDbPath);
   const runs = new SqliteMemoryRunsStore(stateDbPath);
   const extractions = new SqliteMemoryExtractionStore(stateDbPath);
+  const runtimeStore = new RuntimeStore(stateDbPath);
   const config = {
     stateDbPath,
     aiProvider: "openai",
@@ -358,22 +420,23 @@ async function makeProcessingQueue(options: {
     memory,
     sessions,
     runs,
+    runtimeStore,
     extractions,
     postFailureToSubSession: () => ({ sessionId: "memory-error", messageId: null }),
     notify: (input) => notifications.push(input),
     onQueueError: (message) => queueErrors.push(message),
-    agentFactory: () => ({
+    agentFactory: (deps) => ({
       program: {},
       forward: async (input) => {
-        if (options.forward) return options.forward(input, { config, memory });
+        if (options.forward) return options.forward(input, { config: deps.config, memory: deps.memory });
         seenThreads.push(input.thread);
         return { summary: "nothing to remember" };
       },
     }),
   });
   queues.push(queue);
-  stores.push(state, memory, runs, extractions);
-  return { queue, sessions, memory, runs, extractions, config, seenThreads, queueErrors, notifications };
+  stores.push(state, memory, runs, extractions, runtimeStore);
+  return { queue, sessions, memory, runs, extractions, runtimeStore, config, seenThreads, queueErrors, notifications };
 }
 
 async function runAuto(queue: MemoryQueue): Promise<{ summary: string }> {

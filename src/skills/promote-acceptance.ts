@@ -1,8 +1,9 @@
 import { createHash } from "node:crypto";
 import type { AppConfig } from "../config/env";
+import type { RuntimeStore } from "../runtime/runtime-store";
 import type { SessionManager } from "../session/session-manager";
 import type { AssistantTextMessage, UserMessage } from "../session/types";
-import { captureProgramUsage } from "../usage/capture";
+import { captureProgramUsage, usageAttributionForConfig } from "../usage/capture";
 import type { SqliteUsageStore } from "../usage/usage-store";
 import { createSkillCandidateDrafter, type SkillCandidateDrafter } from "./candidate-drafter";
 import { loadCandidateEvidence } from "./candidate-evidence";
@@ -21,6 +22,7 @@ export async function handleSkillPromotionReply(input: {
   text: string;
   createdAt: Date;
   config?: AppConfig;
+  runtimeStore?: RuntimeStore;
   sessions: SessionManager;
   candidates?: SqliteSkillCandidateStore;
   promotions?: SqliteSkillPromotionStore;
@@ -75,6 +77,7 @@ async function handleCandidateReply(input: {
   text: string;
   createdAt: Date;
   config?: AppConfig;
+  runtimeStore?: RuntimeStore;
   sessions: SessionManager;
   candidates?: SqliteSkillCandidateStore;
   promotions?: SqliteSkillPromotionStore;
@@ -111,10 +114,14 @@ async function handleCandidateReply(input: {
         input.sessions.appendMessages(input.conversationId, [user, assistant]);
         return { handled: true, user, assistant };
       }
-      const drafter = input.drafter ?? createSkillCandidateDrafter(requiredConfig(input.config));
+      const config = requiredConfig(input.config);
+      const drafter = input.drafter ?? createSkillCandidateDrafter({
+        config,
+        runtimeStore: input.runtimeStore,
+      });
       const evidence = input.loadEvidence
         ? input.loadEvidence(input.candidate)
-        : loadCandidateEvidence(requiredConfig(input.config).stateDbPath, input.candidate);
+        : loadCandidateEvidence(config.stateDbPath, input.candidate);
       const draft = await drafter.forward({
         candidate: input.candidate,
         evidence,
@@ -136,6 +143,7 @@ async function handleCandidateReply(input: {
           purpose: "skill.promote",
           sessionId: input.candidate.sourceSessionId,
           runId: input.candidate.id,
+          attribution: usageAttributionForConfig(config),
         });
       }
       assistant = assistantMessage(

@@ -24,7 +24,7 @@ describe("skills.read tool", () => {
       workspacePath: root,
       skills,
       loadedSkillIds: new Set(["bundle-skill"]),
-    } as any, loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }))
+    } as any, { ...loadConfig(), sandboxProvider: "disabled" })
       .find((item: any) => item.namespace === "skills" && item.name === "read") as any;
 
     expect(tool).toBeTruthy();

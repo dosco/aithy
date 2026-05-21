@@ -4,6 +4,7 @@ import path from "node:path";
 import { describe, expect, test } from "bun:test";
 import type { AppConfig } from "../src/config/env";
 import { EventBus } from "../src/events/bus";
+import { defaultLocalInferenceSettings } from "../src/local-inference/settings";
 import {
   appendChatLogToTraces,
   traceFilenameFor,
@@ -14,6 +15,7 @@ function makeConfig(tracesDir: string): AppConfig {
   return {
     aiProvider: "openai",
     aiModel: "gpt-4o",
+    localInference: defaultLocalInferenceSettings,
     sandboxProvider: "disabled",
     sandboxImage: "x",
     sandboxCpus: 1,

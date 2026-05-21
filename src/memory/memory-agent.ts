@@ -1,6 +1,7 @@
 import { ax, f } from "@ax-llm/ax";
 import { createAiService } from "../agent/ai-service";
 import type { AppConfig } from "../config/env";
+import type { RuntimeStore } from "../runtime/runtime-store";
 import { buildMemoryAgentTools } from "./agent-tools";
 import { formatMemoryForRecall } from "./format";
 import type { SqliteMemoryStore } from "./memory-store";
@@ -8,6 +9,7 @@ import { MEMORY_KINDS } from "./types";
 
 export interface MemoryAgentDeps {
   config: AppConfig;
+  runtimeStore?: RuntimeStore;
   memory: SqliteMemoryStore;
 }
 
@@ -87,8 +89,12 @@ export interface MemoryAgent {
 export function createMemoryAgent(deps: MemoryAgentDeps): MemoryAgent {
   // Triage runs against the primary model — the small/fast model hallucinates
   // tool calls (writes a confident summary without ever invoking memory.write).
-  const llm = createAiService(deps.config);
-  const tools = buildMemoryAgentTools({ config: deps.config, memory: deps.memory });
+  const llm = createAiService({ config: deps.config, runtimeStore: deps.runtimeStore });
+  const tools = buildMemoryAgentTools({
+    config: deps.config,
+    runtimeStore: deps.runtimeStore,
+    memory: deps.memory,
+  });
   const program = ax(memoryAgentSignature, {
     description,
     functions: tools,

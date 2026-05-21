@@ -1,15 +1,15 @@
 import { describe, expect, test } from "bun:test";
 import {
   createPullProgressTracker,
-  transformerProgressStatus,
+  modelDownloadProgressStatus,
 } from "../src/setup/status";
 
 describe("setup status translators", () => {
-  test("converts Transformers.js progress into model download status", () => {
-    const status = transformerProgressStatus(
+  test("converts model download progress into setup status", () => {
+    const status = modelDownloadProgressStatus(
       "memory.embedder",
       "memory model",
-      "Xenova/all-MiniLM-L6-v2",
+      "Qwen3-Embedding-0.6B",
       {
         status: "progress",
         progress: 50,
@@ -20,7 +20,7 @@ describe("setup status translators", () => {
 
     expect(status).toMatchObject({
       key: "memory.embedder",
-      label: "downloading memory model Xenova/all-MiniLM-L6-v2",
+      label: "downloading memory model Qwen3-Embedding-0.6B",
       active: true,
       progress: 0.5,
       loadedBytes: 10,

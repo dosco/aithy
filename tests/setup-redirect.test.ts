@@ -28,6 +28,7 @@ describe("setup redirect helpers", () => {
     expect(isSetupGuardExemptPath("/setup/")).toBe(true);
     expect(isSetupGuardExemptPath("/api/events")).toBe(true);
     expect(isSetupGuardExemptPath("/api/other")).toBe(false);
+    expect(isSetupGuardExemptPath("/local-inference/setup")).toBe(false);
     expect(isSetupGuardExemptPath("/chat")).toBe(false);
   });
 });

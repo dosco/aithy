@@ -70,9 +70,9 @@ export async function runtimeConsoleDto(
 
 export function staleRuntimeConsoleDto(
   error: unknown,
-  input: { logLimit?: number; commandLimit?: number } = {},
+  input: { logLimit?: number; commandLimit?: number; stateDbPath?: string } = {},
 ): RuntimeConsoleDto {
-  const store = new RuntimeStore(loadBaseConfig().stateDbPath);
+  const store = new RuntimeStore(input.stateDbPath ?? loadBaseConfig().stateDbPath);
   try {
     const message = errorMessage(error);
     const refreshedAt = new Date().toISOString();

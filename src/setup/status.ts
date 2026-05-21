@@ -10,7 +10,7 @@ export interface SetupStatusInput {
   totalBytes?: number;
 }
 
-export interface TransformerProgressEvent {
+export interface ModelDownloadProgressEvent {
   status?: string;
   name?: string;
   file?: string;
@@ -31,11 +31,11 @@ export interface PullProgressEventLike {
   bytesRead?: number;
 }
 
-export function transformerProgressStatus(
+export function modelDownloadProgressStatus(
   key: string,
   displayName: string,
   modelId: string,
-  event: TransformerProgressEvent,
+  event: ModelDownloadProgressEvent,
 ): SetupStatusInput | null {
   if (event.status === "ready") {
     return readyStatus(key, `${displayName} ready`);

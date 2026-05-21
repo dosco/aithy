@@ -56,7 +56,7 @@ export function createWebFetchTools(
           conversationId: ctx.session.conversationId,
           summary: `Fetching ${url}`,
         });
-        return smartScrape({ url, task }, { config });
+        return smartScrape({ url, task }, { config, runtimeStore: ctx.runtimeStore });
       })
       .build(),
   ];

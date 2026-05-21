@@ -2,7 +2,7 @@ import type { Embedder } from "../src/memory/embed";
 
 /**
  * Deterministic mock embedder for tests. Maps each unique input string to a
- * stable 384d vector based on a simple hash. Tests can construct a memory
+ * stable 1024d vector based on a simple hash. Tests can construct a memory
  * store with this embedder and exercise the hybrid retrieval path without
  * downloading a real model.
  *
@@ -12,7 +12,7 @@ import type { Embedder } from "../src/memory/embed";
  */
 export class MockEmbedder implements Embedder {
   readonly modelId = "mock-embedder-v1";
-  readonly dim = 384;
+  readonly dim = 1024;
   private ready = true;
   private failureReason: string | null = null;
   private readonly synonymVectors = new Map<string, Float32Array>();
@@ -49,6 +49,10 @@ export class MockEmbedder implements Embedder {
 
   async embedMany(texts: readonly string[]): Promise<Float32Array[]> {
     return texts.map((t) => this.embedSync(t));
+  }
+
+  async embedQuery(text: string): Promise<Float32Array> {
+    return this.embedSync(text);
   }
 
   private embedSync(text: string): Float32Array {

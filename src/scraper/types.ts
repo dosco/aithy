@@ -1,4 +1,5 @@
 import type { AppConfig } from "../config/env";
+import type { RuntimeStore } from "../runtime/runtime-store";
 
 export interface ScraperPage {
   url: string;
@@ -65,6 +66,7 @@ export interface SynthesizeInput {
 
 export interface SmartScraperDeps {
   config?: AppConfig;
+  runtimeStore?: RuntimeStore;
   renderPage?: (url: string) => Promise<RenderedPage>;
   chooseLinks?: (input: ChooseLinksInput) => Promise<LinkChoice[]>;
   synthesize?: (input: SynthesizeInput) => Promise<string>;

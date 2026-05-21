@@ -3,6 +3,9 @@ import type { RuntimeServiceRole } from "../protocol/types";
 import type { QueueServiceClient } from "../services/queue/client";
 
 const DEFAULT_SHUTDOWN_GRACE_MS = 10_000;
+const DEFAULT_HEALTHCHECK_INTERVAL_MS = 2_000;
+const DEFAULT_HEARTBEAT_STALE_MS = 15_000;
+const DEFAULT_STARTUP_GRACE_MS = 15_000;
 
 export interface ManagedServiceConfig {
   role: Exclude<RuntimeServiceRole, "web" | "queue-service">;
@@ -16,22 +19,51 @@ interface SupervisorOptions {
   queue: QueueServiceClient;
   queueUrl: string;
   services: ManagedServiceConfig[];
+  healthCheckIntervalMs?: number;
+  heartbeatStaleMs?: number;
+  startupGraceMs?: number;
 }
 
 export class RuntimeServiceSupervisor {
   private readonly services: ServiceProcess[] = [];
+  private healthTimer?: Timer;
 
   constructor(private readonly opts: SupervisorOptions) {
-    this.services = opts.services.map((config) => new ServiceProcess(opts.queue, opts.queueUrl, config));
+    this.services = opts.services.map((config) => new ServiceProcess(
+      opts.queue,
+      opts.queueUrl,
+      config,
+      {
+        heartbeatStaleMs: opts.heartbeatStaleMs ?? DEFAULT_HEARTBEAT_STALE_MS,
+        startupGraceMs: opts.startupGraceMs ?? DEFAULT_STARTUP_GRACE_MS,
+      },
+    ));
   }
 
   start(): void {
     for (const service of this.services) service.start();
+    this.healthTimer = setInterval(() => {
+      void this.checkHealth();
+    }, this.opts.healthCheckIntervalMs ?? DEFAULT_HEALTHCHECK_INTERVAL_MS);
+    this.healthTimer.unref();
+  }
+
+  async checkHealth(): Promise<void> {
+    await Promise.all(this.services.map((service) => service.checkHealth()));
   }
 
   async close(): Promise<void> {
+    if (this.healthTimer) {
+      clearInterval(this.healthTimer);
+      this.healthTimer = undefined;
+    }
     await Promise.all(this.services.map((service) => service.close()));
   }
+}
+
+interface ServiceHealthOptions {
+  heartbeatStaleMs: number;
+  startupGraceMs: number;
 }
 
 class ServiceProcess {
@@ -39,11 +71,13 @@ class ServiceProcess {
   private closing = false;
   private restartTimer?: Timer;
   private restarts = 0;
+  private startedAt = 0;
 
   constructor(
     private readonly queue: QueueServiceClient,
     private readonly queueUrl: string,
     private readonly config: ManagedServiceConfig,
+    private readonly health: ServiceHealthOptions,
   ) {}
 
   start(): void {
@@ -51,7 +85,11 @@ class ServiceProcess {
     if (process.env.AITHY_SERVICE_ROLE === this.config.role) return;
     if (process.env.AITHY_DISABLE_CHILD_SERVICES === "1") return;
     if (this.proc) return;
-    this.spawn();
+    try {
+      this.spawn();
+    } catch (error) {
+      this.recordStartFailure(error);
+    }
   }
 
   async close(): Promise<void> {
@@ -82,6 +120,45 @@ class ServiceProcess {
     }
   }
 
+  async checkHealth(now = Date.now()): Promise<void> {
+    if (this.config.enabled === false || this.closing || this.restartTimer) return;
+    const proc = this.proc;
+    if (!proc) return;
+    let service: Awaited<ReturnType<QueueServiceClient["service"]>>;
+    try {
+      service = await this.queue.service(this.config.role);
+    } catch (error) {
+      void sendBestEffort(this.queue.appendLog({
+        role: "web",
+        level: "warn",
+        source: "supervisor",
+        message: `${this.config.role} healthcheck could not read service status: ${errorMessage(error)}`,
+      }));
+      return;
+    }
+    const withinStartupGrace = now - this.startedAt < this.health.startupGraceMs;
+    const procPid = processId(proc);
+    const servicePid = typeof service?.pid === "number" ? service.pid : null;
+    const statusBelongsToProc = !procPid || !servicePid || procPid === servicePid;
+    if (!statusBelongsToProc && withinStartupGrace) return;
+    if (!service) {
+      if (!withinStartupGrace) this.restartFromHealthcheck({ reason: "missing heartbeat" });
+      return;
+    }
+    if (service.state === "failed" && statusBelongsToProc) {
+      this.restartFromHealthcheck({ reason: "reported failed", detail: service.detail });
+      return;
+    }
+    const lastSeenAt = Date.parse(service.lastSeenAt);
+    const stale = !Number.isFinite(lastSeenAt) || now - lastSeenAt > this.health.heartbeatStaleMs;
+    if (stale && !withinStartupGrace) {
+      this.restartFromHealthcheck({
+        reason: "stale heartbeat",
+        lastSeenAt: service.lastSeenAt,
+      });
+    }
+  }
+
   private spawn(): void {
     const entry = path.join(process.cwd(), this.config.entry);
     void sendBestEffort(this.queue.heartbeat(this.config.role, "starting", { entry }));
@@ -104,10 +181,12 @@ class ServiceProcess {
       },
     });
     this.proc = proc;
+    this.startedAt = Date.now();
     void captureLines(this.queue, this.config.role, "stdout", proc.stdout);
     void captureLines(this.queue, this.config.role, "stderr", proc.stderr);
     void proc.exited.then((code) => {
-      if (this.proc === proc) this.proc = null;
+      const owned = this.proc === proc;
+      if (owned) this.proc = null;
       const level = code === 0 ? "info" : "error";
       void sendBestEffort(this.queue.appendLog({
         role: "web",
@@ -115,20 +194,51 @@ class ServiceProcess {
         source: "supervisor",
         message: `${this.config.role} exited with code ${code}`,
       }));
-      if (this.closing) return;
-      const delayMs = Math.min(30_000, 500 * 2 ** Math.min(this.restarts, 6));
-      this.restarts += 1;
-      void sendBestEffort(this.queue.heartbeat(
-        this.config.role,
-        "failed",
-        { code, restartInMs: delayMs },
-      ));
-      this.restartTimer = setTimeout(() => {
-        this.restartTimer = undefined;
-        this.spawn();
-      }, delayMs);
-      this.restartTimer.unref();
+      if (this.closing || !owned) return;
+      this.scheduleRestart({ code });
     });
+  }
+
+  private recordStartFailure(error: unknown): void {
+    const message = errorMessage(error);
+    void sendBestEffort(this.queue.appendLog({
+      role: "web",
+      level: "error",
+      source: "supervisor",
+      message: `${this.config.role} failed to start: ${message}`,
+    }));
+    if (!this.closing) this.scheduleRestart({ error: message });
+  }
+
+  private restartFromHealthcheck(detail: Record<string, unknown>): void {
+    if (this.restartTimer) return;
+    const proc = this.proc;
+    this.proc = null;
+    void sendBestEffort(this.queue.appendLog({
+      role: "web",
+      level: "warn",
+      source: "supervisor",
+      message: `${this.config.role} failed healthcheck; restarting`,
+      detail,
+    }));
+    proc?.kill("SIGTERM");
+    void proc?.exited.catch(() => undefined);
+    this.scheduleRestart(detail);
+  }
+
+  private scheduleRestart(detail: Record<string, unknown>): void {
+    const delayMs = Math.min(30_000, 500 * 2 ** Math.min(this.restarts, 6));
+    this.restarts += 1;
+    void sendBestEffort(this.queue.heartbeat(
+      this.config.role,
+      "failed",
+      { ...detail, restartInMs: delayMs },
+    ));
+    this.restartTimer = setTimeout(() => {
+      this.restartTimer = undefined;
+      this.start();
+    }, delayMs);
+    this.restartTimer.unref();
   }
 }
 
@@ -183,6 +293,11 @@ function recordLine(
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function processId(proc: ReturnType<typeof Bun.spawn>): number | null {
+  const pid = (proc as { pid?: unknown }).pid;
+  return typeof pid === "number" ? pid : null;
 }
 
 async function sendBestEffort(promise: Promise<unknown>): Promise<void> {

@@ -31,7 +31,7 @@ export function bodyHash(text: string): string {
 }
 
 /**
- * Pack a 384d Float32 embedding for sqlite-vec. bun:sqlite does not accept
+ * Pack a Float32 embedding for sqlite-vec. bun:sqlite does not accept
  * raw ArrayBuffer — it must be a Uint8Array or Buffer. We standardize on
  * Uint8Array.
  */

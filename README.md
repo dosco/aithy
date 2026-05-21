@@ -27,7 +27,7 @@ bun run start
 
 Open `http://127.0.0.1:3000`. The welcome screen walks you through your name, optional profile details, choosing a provider, model, and API key.
 
-Local state lives at `~/.config/aithy/default/`. Set `AITHY_BOT_ID` or `AITHY_STATE_DIR` if you want a different namespace or multiple bots.
+Local state lives at `~/.config/aithy/default/`. Use the web UI and persisted settings for providers, keys, sandbox settings, search, and local inference.
 
 ## Why Aithy feels different
 
@@ -55,7 +55,7 @@ That is the heart of the consistency story: Aithy is not only asking a model to 
 
 ## MCP without context bloat
 
-Aithy ships with Parallel Search MCP for public web search. It works through Parallel's free anonymous endpoint by default, so no Parallel account or API key is required. For higher limits, set `AITHY_PARALLEL_API_KEY` or `PARALLEL_API_KEY`; for testing or proxying, set `AITHY_PARALLEL_SEARCH_MCP_URL`.
+Aithy ships with Parallel Search MCP for public web search. It works through Parallel's free anonymous endpoint by default, so no Parallel account or API key is required. For higher limits or proxying, configure Parallel search in Settings.
 
 The larger architecture is ready for much more than one search tool. Ax can expose MCP tools, prompts, and resources as callable functions, then make those functions available through the JavaScript runtime. That means Aithy can scale toward effectively unlimited MCPs without stuffing every tool definition into the model context. The model can discover and call what it needs, when it needs it, while the runtime keeps the tool surface outside the prompt budget.
 

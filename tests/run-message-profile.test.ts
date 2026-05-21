@@ -16,7 +16,7 @@ describe("runMessage profile input", () => {
     const seenInputs: any[] = [];
 
     await runMessage(textMessage("m1", "hello"), {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: { ...loadConfig(), sandboxProvider: "disabled" },
       events: new EventBus(),
       sandbox: new MockSandboxProvider(),
       sessions: sessionsFor(root, path.join(root, "state.db")),

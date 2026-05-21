@@ -5,7 +5,7 @@ import os from "node:os";
 import path from "node:path";
 import { createAgentTools } from "../src/agent/tools";
 import { resolveSandboxPathForHostPath } from "../src/agent/tools/mount-tools";
-import { loadConfig } from "../src/config/env";
+import { loadConfig, type AppConfig } from "../src/config/env";
 import { MockSandboxProvider } from "../src/sandbox/mock-provider";
 
 describe("sandbox provider file operations", () => {
@@ -44,7 +44,7 @@ describe("agent sandbox tools", () => {
   test("omits mount tools when sandboxing is disabled", () => {
     const names = createAgentTools(
       {} as any,
-      loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      disabledConfig(),
     )
       .map((tool: any) => `${tool.namespace}.${tool.name}`);
 
@@ -61,7 +61,7 @@ describe("agent sandbox tools", () => {
   test("includes mount tools for microsandbox", () => {
     const names = createAgentTools(
       {} as any,
-      loadConfig({ AITHY_SANDBOX_PROVIDER: "microsandbox" }),
+      microsandboxConfig(),
     )
       .map((tool: any) => `${tool.namespace}.${tool.name}`);
 
@@ -75,7 +75,7 @@ describe("agent sandbox tools", () => {
 
   test("omits system.bash when host shell is disabled", () => {
     const config = {
-      ...loadConfig({ AITHY_SANDBOX_PROVIDER: "microsandbox" }),
+      ...microsandboxConfig(),
       systemBashEnabled: false,
     };
     const names = createAgentTools({} as any, config)
@@ -134,3 +134,11 @@ describe("agent sandbox tools", () => {
     })).resolves.toBe("/workspace/plain.txt");
   });
 });
+
+function disabledConfig(): AppConfig {
+  return { ...loadConfig(), sandboxProvider: "disabled" };
+}
+
+function microsandboxConfig(): AppConfig {
+  return { ...loadConfig(), sandboxProvider: "microsandbox" };
+}

@@ -7,6 +7,7 @@ import { createConsolidatorAgent } from "../src/memory/consolidator-agent";
 import { createMemoryAgent } from "../src/memory/memory-agent";
 import { buildMemoryAgentTools } from "../src/memory/agent-tools";
 import { SqliteMemoryStore } from "../src/memory/memory-store";
+import { defaultLocalInferenceSettings } from "../src/local-inference/settings";
 
 describe("memory agents", () => {
   test("triage uses a direct tool-capable generator", async () => {
@@ -168,6 +169,7 @@ async function fixture(): Promise<{ config: AppConfig; memory: SqliteMemoryStore
     aiProvider: "openai",
     aiApiKey: "sk-test",
     aiModel: "test",
+    localInference: defaultLocalInferenceSettings,
     sandboxProvider: "disabled",
     sandboxImage: "python:3.11-slim",
     sandboxCpus: 1,

@@ -4,7 +4,6 @@ node_modules/
 # Local environment and secrets
 .env
 .env.*
-!.env.example
 
 # Local agent/runtime state
 .axbot/

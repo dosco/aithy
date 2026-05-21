@@ -1,11 +1,15 @@
 import { rm } from "node:fs/promises";
 import { sandboxNameFor } from "../sandbox/sandbox-name";
 import { AX_AI_PROVIDERS } from "../agent/ai-providers";
+import { deleteGrokSubscriptionTokens } from "../grok-subscription/store";
 import { deleteProviderApiKey } from "../settings/secrets";
 
 export async function clearManagedProviderSecrets(botId: string): Promise<void> {
   await Promise.allSettled(
-    AX_AI_PROVIDERS.map((provider) => deleteProviderApiKey(provider, botId)),
+    [
+      ...AX_AI_PROVIDERS.map((provider) => deleteProviderApiKey(provider, botId)),
+      deleteGrokSubscriptionTokens(botId),
+    ],
   );
 }
 

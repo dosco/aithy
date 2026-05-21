@@ -43,7 +43,12 @@ export function SearchSettingsTab({
   const [testResult, setTestResult] = useState<ParallelSearchTestDto | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
   const urlError = validateSearchUrl(config.parallelSearchMcpUrl);
-  const mode = parallelApiKey.trim() ? "api-key" : parallelSearch.mode;
+  const mode = parallelSearch.mode === "grok-subscription"
+    ? "grok-subscription"
+    : parallelApiKey.trim() ? "api-key" : parallelSearch.mode;
+  const parallelSecret = parallelSearch.provider === "parallel"
+    ? parallelSearch
+    : { provider: "parallel", configured: false, source: null };
   const canTest = !testBusy && !urlError && testQuery.trim().length >= 2;
 
   async function runTest() {
@@ -70,8 +75,8 @@ export function SearchSettingsTab({
   return (
     <div className="grid gap-5">
       <Section
-        title="Public web search"
-        subtitle="Parallel Search MCP works through the anonymous public endpoint by default. Add a Parallel API key only when you want higher limits."
+        title="Web search"
+        subtitle="A connected Grok subscription upgrades web.search automatically. Parallel remains the fallback."
       >
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="MCP endpoint">
@@ -84,7 +89,7 @@ export function SearchSettingsTab({
           </Field>
           <Field label="Mode">
             <div className="flex h-11 items-center rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5 text-sm">
-              {mode === "api-key" ? "API key override" : "Anonymous public search"}
+              {searchModeLabel(mode)}
             </div>
           </Field>
         </div>
@@ -93,11 +98,11 @@ export function SearchSettingsTab({
             {urlError}
           </p>
         ) : null}
-        <Field label="Parallel API key override">
+        <Field label="Parallel fallback API key">
           <ApiKeyInput
             value={parallelApiKey}
             onChange={setParallelApiKey}
-            secret={parallelSearch}
+            secret={parallelSecret}
             fallback="Anonymous mode: no key required"
             clearLabel={parallelApiKey ? "Clear pending Parallel API key" : "Use anonymous search"}
             onClear={() => {
@@ -108,7 +113,7 @@ export function SearchSettingsTab({
         </Field>
       </Section>
 
-      <Section title="Test search" subtitle="Runs the same Parallel MCP web.search path that the agent uses.">
+      <Section title="Test search" subtitle="Runs the same web.search route that the agent uses.">
         <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
           <Field label="Query">
             <input
@@ -133,9 +138,9 @@ export function SearchSettingsTab({
         {testResult ? (
           <div className="grid gap-2 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] p-3 text-sm">
             <div className="flex flex-wrap items-center gap-2 text-xs text-[rgb(var(--muted-foreground))]">
-              <span>{testResult.mode === "api-key" ? "API key" : "Anonymous"}</span>
+              <span>{searchModeLabel(testResult.mode)}</span>
               <span aria-hidden="true">/</span>
-              <span>{testResult.provider}</span>
+              <span>{testResult.provider === "grok-subscription" ? "Grok subscription" : "Parallel"}</span>
               <span aria-hidden="true">/</span>
               <span className="break-all">{testResult.url}</span>
             </div>
@@ -154,6 +159,12 @@ export function SearchSettingsTab({
       </div>
     </div>
   );
+}
+
+function searchModeLabel(mode: ParallelSearchStatusDto["mode"]): string {
+  if (mode === "grok-subscription") return "Grok subscription";
+  if (mode === "api-key") return "Parallel API key";
+  return "Parallel anonymous";
 }
 
 function setConfigValue<K extends keyof ConfigDto>(

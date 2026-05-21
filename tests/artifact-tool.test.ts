@@ -27,7 +27,7 @@ describe("artifact.publish tool", () => {
       artifactRunId: "run-1",
       artifactRunOutboxPath: "/outbox/sessions/conversation/runs/run-1",
       capabilities: new CapabilityBroker(runtimeStore),
-    } as any, loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }))
+    } as any, { ...loadConfig(), sandboxProvider: "disabled" })
       .find((item: any) => item.namespace === "artifact" && item.name === "publish") as any;
 
     expect(tool).toBeTruthy();
@@ -76,7 +76,7 @@ describe("artifact.write tool", () => {
       artifactRunId: "run-1",
       artifactRunOutboxPath: "/outbox/sessions/conversation/runs/run-1",
       capabilities: new CapabilityBroker(runtimeStore),
-    } as any, loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }))
+    } as any, { ...loadConfig(), sandboxProvider: "disabled" })
       .find((item: any) => item.namespace === "artifact" && item.name === "write") as any;
 
     expect(tool).toBeTruthy();

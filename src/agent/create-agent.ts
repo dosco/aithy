@@ -10,6 +10,7 @@ import {
 } from "@ax-llm/ax";
 import type { AppConfig } from "../config/env";
 import type { EventBus } from "../events/bus";
+import type { RuntimeStore } from "../runtime/runtime-store";
 import { combineResponderDescription } from "../profile/service";
 import type { SoulProfile } from "../soul/types";
 import type { AithyAgentProgram, AxAgentConfigBoundary, AxServiceHandle } from "./ax-boundary";
@@ -37,6 +38,7 @@ export type AgentFunctionCallHandler = (
 
 export interface CreateAithyAgentOptions {
   config: AppConfig;
+  runtimeStore?: RuntimeStore;
   tools: AxAgentFunction[];
   events: EventBus;
   conversationId: string;
@@ -154,6 +156,7 @@ export function actorDescriptionForSandbox(config: AppConfig): string {
 
 export function createAithyAgent({
   config,
+  runtimeStore,
   tools,
   events,
   conversationId,
@@ -164,8 +167,9 @@ export function createAithyAgent({
   onMemoriesSearch,
   onFunctionCall,
 }: CreateAithyAgentOptions): CreatedAgent {
-  const llm = createAiService(config);
-  const fastLlm = createFastAiService(config);
+  const aiInput = { config, runtimeStore };
+  const llm = createAiService(aiInput);
+  const fastLlm = createFastAiService(aiInput);
 
   const responderOptions: Record<string, unknown> = {
     description: combineResponderDescription(soul?.responderDescription),

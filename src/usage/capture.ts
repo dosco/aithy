@@ -1,5 +1,7 @@
 import type { SqliteUsageStore } from "./usage-store";
 import type { UsagePurpose } from "./types";
+import type { AppConfig } from "../config/env";
+import { isCustomOpenAIProvider, isLocalAiProvider } from "../agent/ai-providers";
 
 /**
  * ax exposes per-(provider, model) aggregated usage through `program.getUsage()`
@@ -30,6 +32,13 @@ export interface CaptureOpts {
   purpose: UsagePurpose;
   sessionId?: string | null;
   runId?: string | null;
+  attribution?: readonly UsageAttribution[];
+}
+
+export interface UsageAttribution {
+  backendProvider: string;
+  provider: string;
+  model?: string;
 }
 
 export function captureProgramUsage(program: unknown, opts: CaptureOpts): void {
@@ -52,8 +61,9 @@ export function captureProgramUsage(program: unknown, opts: CaptureOpts): void {
     const cacheRead = tokens.cacheReadTokens ?? 0;
     const total = tokens.totalTokens ?? input + output + thought;
     if (total <= 0) continue;
+    const attribution = usageAttributionForEntry(entry, opts.attribution);
     opts.store.record({
-      provider: entry.ai ?? "unknown",
+      provider: attribution?.provider ?? normalizedProvider(entry.ai) ?? "unknown",
       model: entry.model ?? "unknown",
       purpose: opts.purpose,
       inputTokens: input,
@@ -76,6 +86,24 @@ export function captureProgramUsage(program: unknown, opts: CaptureOpts): void {
   }
 }
 
+export function usageAttributionForConfig(config: AppConfig): UsageAttribution[] {
+  const entries: UsageAttribution[] = [
+    {
+      backendProvider: backendProviderForUsage(config.aiProvider),
+      provider: config.aiProvider,
+      model: config.aiModel,
+    },
+  ];
+  if (config.fastAiProvider) {
+    entries.push({
+      backendProvider: backendProviderForUsage(config.fastAiProvider),
+      provider: config.fastAiProvider,
+      model: config.fastAiModel,
+    });
+  }
+  return entries;
+}
+
 function normalizeUsage(rawUsage: unknown): ProgramUsageEntry[] {
   if (Array.isArray(rawUsage)) return rawUsage.filter(isUsageEntry);
   if (!rawUsage || typeof rawUsage !== "object") return [];
@@ -93,4 +121,25 @@ function usageEntries(value: unknown): ProgramUsageEntry[] {
 
 function isUsageEntry(value: unknown): value is ProgramUsageEntry {
   return Boolean(value) && typeof value === "object";
+}
+
+function usageAttributionForEntry(
+  entry: ProgramUsageEntry,
+  attributions: readonly UsageAttribution[] | undefined,
+): UsageAttribution | undefined {
+  if (!attributions?.length) return undefined;
+  const entryProvider = normalizedProvider(entry.ai);
+  const entryModel = entry.model;
+  return attributions.find((candidate) => {
+    if (normalizedProvider(candidate.backendProvider) !== entryProvider) return false;
+    return candidate.model && entryModel ? candidate.model === entryModel : true;
+  });
+}
+
+function backendProviderForUsage(provider: string): string {
+  return isCustomOpenAIProvider(provider) || isLocalAiProvider(provider) ? "openai" : provider;
+}
+
+function normalizedProvider(provider: string | undefined): string | undefined {
+  return provider?.trim().toLowerCase() || undefined;
 }

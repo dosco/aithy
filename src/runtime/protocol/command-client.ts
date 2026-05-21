@@ -3,12 +3,13 @@ import type { QueueServiceClient } from "../services/queue/client";
 import type {
   CommandCompletion,
   EmbeddingCommand,
+  LocalInferenceCommand,
   QueueControlCommand,
   RuntimeServiceRole,
   SandboxCommand,
 } from "./types";
 
-type RuntimeCommand = SandboxCommand | EmbeddingCommand | QueueControlCommand;
+type RuntimeCommand = SandboxCommand | EmbeddingCommand | LocalInferenceCommand | QueueControlCommand;
 type RuntimeCommandTransport = RuntimeStore | QueueServiceClient;
 
 export interface SendRuntimeCommandOptions {

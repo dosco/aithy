@@ -1,4 +1,5 @@
 import { a as testAiChat } from "../../src/agent/ai-smoke-test";
+import { isLocalAiProvider, isXaiGrokSubscriptionProvider } from "../../src/agent/ai-providers";
 import type { AppConfig } from "../../src/config/env";
 import { aiConfigurationIssues, fastAiConfigurationIssues } from "../../src/config/validate";
 import { normalizePostedSecret, readProviderApiKey } from "../../src/settings/secrets";
@@ -43,6 +44,7 @@ export async function assertPrimaryAiSettings(
   if (missing.length > 0) {
     throw new Error(`AI settings require ${missing.join(", ")}`);
   }
+  if (isLocalAiProvider(provider) || isXaiGrokSubscriptionProvider(provider)) return;
   if (
     !apiKey
     && provider === config.aiProvider

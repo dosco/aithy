@@ -1,5 +1,27 @@
 import { z } from "zod";
 
+const localInferenceRuntimeInput = z.object({
+  llamaServerPath: z.string().max(2000).optional(),
+  contextSize: z.number().int().min(4096).max(262144).optional(),
+  embeddingContextSize: z.number().int().min(1024).max(32768).optional(),
+  rerankerContextSize: z.number().int().min(1024).max(40960).optional(),
+  gpuLayers: z.number().int().min(0).max(999).optional(),
+  flashAttention: z.boolean().optional(),
+  batchSize: z.number().int().min(1).max(8192).optional(),
+  ubatchSize: z.number().int().min(1).max(8192).optional(),
+  modelsMax: z.number().int().min(1).max(16).optional(),
+  kvCacheType: z.enum(["f16", "q8_0"]).optional(),
+  thinkingMode: z.boolean().optional(),
+  maxOutputTokens: z.number().int().min(1).max(81920).optional(),
+  temperature: z.number().min(0).max(2).optional(),
+  topK: z.number().int().min(1).max(100).optional(),
+  topP: z.number().min(0).max(1).optional(),
+  minP: z.number().min(0).max(1).optional(),
+  repeatPenalty: z.number().min(0).max(3).optional(),
+  presencePenalty: z.number().min(0).max(3).optional(),
+  frequencyPenalty: z.number().min(0).max(3).optional(),
+});
+
 export const sessionInput = z.object({
   conversationId: z.string().min(1).optional(),
 });
@@ -59,6 +81,8 @@ export const settingsInput = z.object({
     aiApiUrl: z.string().max(500).optional().nullable(),
     aiApiKey: z.string().optional().nullable(),
     aiModel: z.string().optional().nullable(),
+    localAgentModel: z.string().optional().nullable(),
+    localInference: localInferenceRuntimeInput.optional(),
     fastAiProvider: z.string().optional(),
     fastAiApiUrl: z.string().max(500).optional().nullable(),
     fastAiModel: z.string().optional(),
@@ -105,6 +129,15 @@ export const parallelSearchTestInput = z.object({
   query: z.string().trim().min(2).max(200),
   url: z.string().trim().min(1).max(500).optional(),
   apiKey: z.string().max(500).optional(),
+});
+
+export const grokSubscriptionLoginPollInput = z.object({
+  loginId: z.string().min(1),
+});
+
+export const localInferenceSettingsInput = z.object({
+  localAgentModel: z.string().trim().min(1).max(500),
+  localInference: localInferenceRuntimeInput.optional(),
 });
 
 export const soulInput = z.object({

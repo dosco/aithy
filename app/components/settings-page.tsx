@@ -1,18 +1,12 @@
 import { useState } from "react";
-import { useRouter } from "@tanstack/react-router";
-import { ConfirmDialog } from "@/components/confirm-dialog";
 import { PageFrame } from "@/components/page-frame";
 import { SettingsDangerZone } from "@/components/settings-danger-zone";
-import {
-  type PrimaryClearAction,
-  networkValue,
-  primaryClearCopy,
-} from "@/components/settings-page-helpers";
+import { networkValue } from "@/components/settings-page-helpers";
 import {
   AgentSettingsSection,
   UserProfileSection,
 } from "@/components/settings-identity-sections";
-import { ModelSettingsTab, SandboxSettingsTab } from "@/components/settings-runtime-tabs";
+import { SandboxSettingsTab } from "@/components/settings-runtime-tabs";
 import { SearchSettingsTab } from "@/components/settings-search-tab";
 import { PermissionsSettingsTab } from "@/components/settings-permissions-tab";
 import { ThemeSync } from "@/components/theme-sync";
@@ -20,22 +14,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { saveSettingsWithSetupGateRefresh } from "@/lib/setup-gate";
 import type {
   ProfileDto,
-  SecretStatusDto,
   SettingsPageStateDto,
   SoulDto,
 } from "@/server/dto";
-import { CUSTOM_OPENAI_PROVIDER } from "../../src/agent/ai-providers";
 
 export function SettingsPage({ initialState }: { initialState: SettingsPageStateDto }) {
-  const router = useRouter();
   const [config, setConfig] = useState(initialState.config);
-  const [secret, setSecret] = useState(initialState.secret);
-  const [fastSecret, setFastSecret] = useState<SecretStatusDto | null>(
-    initialState.fastSecret,
-  );
   const [parallelSearch, setParallelSearch] = useState(initialState.parallelSearch);
-  const [apiKey, setApiKey] = useState("");
-  const [fastApiKey, setFastApiKey] = useState("");
   const [parallelApiKey, setParallelApiKey] = useState("");
   const [saved, setSaved] = useState(false);
   const [saveBusy, setSaveBusy] = useState(false);
@@ -45,35 +30,16 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
   const [profile, setProfile] = useState<ProfileDto>(initialState.profile);
   const [ui, setUi] = useState(initialState.settings.ui);
   const [permissionRules, setPermissionRules] = useState(initialState.permissionRules);
-  const [primaryClearAction, setPrimaryClearAction] =
-    useState<PrimaryClearAction | null>(null);
-  const [primaryClearBusy, setPrimaryClearBusy] = useState(false);
 
   async function save(options?: {
-    clearApiKey?: boolean;
-    clearAiModel?: boolean;
     clearParallelApiKey?: boolean;
   }) {
-    const clearAiModel =
-      options?.clearAiModel ?? config.aiModel.trim().length === 0;
     setSaveBusy(true);
     setSaveError(null);
     try {
       const result = await saveSettingsWithSetupGateRefresh({
         data: {
           runtime: {
-            aiProvider: config.aiProvider,
-            aiApiUrl:
-              config.aiProvider === CUSTOM_OPENAI_PROVIDER
-                ? config.aiApiUrl.trim()
-                : null,
-            aiModel: clearAiModel ? null : config.aiModel,
-            fastAiProvider: config.fastAiProvider,
-            fastAiApiUrl:
-              config.fastAiProvider === CUSTOM_OPENAI_PROVIDER
-                ? config.fastAiApiUrl.trim()
-                : null,
-            fastAiModel: config.fastAiModel,
             sandboxProvider:
               config.sandboxProvider === "disabled"
                 ? "disabled"
@@ -94,27 +60,15 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
           ui: {
             detailsDefault: ui.detailsDefault,
           },
-          apiKey: options?.clearApiKey ? undefined : apiKey || undefined,
-          clearApiKey: options?.clearApiKey,
-          clearAiModel,
-          fastApiKey: fastApiKey || undefined,
           parallelApiKey: options?.clearParallelApiKey ? undefined : parallelApiKey || undefined,
           clearParallelApiKey: options?.clearParallelApiKey,
         },
       });
       setConfig(result.config);
       setUi(result.settings.ui);
-      setSecret(result.secret);
-      setFastSecret(result.fastSecret);
       setParallelSearch(result.parallelSearch);
-      setApiKey("");
-      setFastApiKey("");
       setParallelApiKey("");
       setSkippedPaths(result.skippedPaths ?? []);
-      if (!result.aiConfigured && (options?.clearApiKey || clearAiModel)) {
-        await router.navigate({ to: "/chat" });
-        return;
-      }
       setSaved(true);
       setTimeout(() => setSaved(false), 1400);
     } catch (error) {
@@ -126,27 +80,14 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
     }
   }
 
-  async function clearPrimary(action: PrimaryClearAction) {
-    setPrimaryClearBusy(true);
-    try {
-      await save(
-        action === "model" ? { clearAiModel: true } : { clearApiKey: true },
-      );
-    } finally {
-      setPrimaryClearBusy(false);
-      setPrimaryClearAction(null);
-    }
-  }
-
   return (
     <PageFrame
       eyebrow="Control room"
-      title="Local settings, model wiring, sandbox shape."
+      title="Local settings, search, sandbox shape."
     >
       <ThemeSync ui={ui} />
-      <Tabs defaultValue="model">
+      <Tabs defaultValue="search">
         <TabsList className="mb-6">
-          <TabsTrigger value="model">Model</TabsTrigger>
           <TabsTrigger value="search">Search</TabsTrigger>
           <TabsTrigger value="sandbox">Sandbox</TabsTrigger>
           <TabsTrigger value="permissions">Permissions</TabsTrigger>
@@ -163,23 +104,6 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
             {saveError}
           </p>
         ) : null}
-
-        <TabsContent value="model">
-          <ModelSettingsTab
-            config={config}
-            setConfig={setConfig}
-            secret={secret}
-            fastSecret={fastSecret}
-            apiKey={apiKey}
-            fastApiKey={fastApiKey}
-            setApiKey={setApiKey}
-            setFastApiKey={setFastApiKey}
-            setPrimaryClearAction={setPrimaryClearAction}
-            saved={saved}
-            saveBusy={saveBusy}
-            onSave={() => void save()}
-          />
-        </TabsContent>
 
         <TabsContent value="search">
           <SearchSettingsTab
@@ -230,15 +154,11 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
           <SettingsDangerZone
             onSystemReset={(state) => {
               setConfig(state.config);
-              setSecret(state.secret);
-              setFastSecret(state.fastSecret);
               setParallelSearch(state.parallelSearch);
               setSoul(state.soul);
               setProfile(state.profile);
               setUi(state.settings.ui);
               setPermissionRules(state.permissionRules);
-              setApiKey("");
-              setFastApiKey("");
               setParallelApiKey("");
               setSkippedPaths([]);
             }}
@@ -252,17 +172,6 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
           stored in the encrypted secrets store.
         </p>
       </div>
-      <ConfirmDialog
-        open={primaryClearAction !== null}
-        title={primaryClearCopy(primaryClearAction).title}
-        body={primaryClearCopy(primaryClearAction).body}
-        confirmLabel={primaryClearCopy(primaryClearAction).confirmLabel}
-        busy={primaryClearBusy}
-        onCancel={() => setPrimaryClearAction(null)}
-        onConfirm={() => {
-          if (primaryClearAction) void clearPrimary(primaryClearAction);
-        }}
-      />
     </PageFrame>
   );
 }

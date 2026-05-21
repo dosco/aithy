@@ -1,6 +1,7 @@
 import { ax, f } from "@ax-llm/ax";
 import { createAiService, createFastAiService } from "../agent/ai-service";
 import type { AppConfig } from "../config/env";
+import type { RuntimeStore } from "../runtime/runtime-store";
 import { EPISODE_OUTCOMES, type AgentEpisodeUpsert, type EpisodeOutcome } from "./types";
 
 export interface DreamDetection {
@@ -59,8 +60,8 @@ Rules:
 - canonicalTexts should be stable across repeats of the same task/approach.
 - This runs unattended and has no tools.`;
 
-export function createDreamDetector(config: AppConfig): DreamDetector {
-  const llm = createFastAiService(config) ?? createAiService(config);
+export function createDreamDetector(input: AppConfig | { config: AppConfig; runtimeStore?: RuntimeStore }): DreamDetector {
+  const llm = createFastAiService(input) ?? createAiService(input);
   const program = ax(signature, {
     description,
     maxSteps: 1,

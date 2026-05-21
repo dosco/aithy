@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { actorDescriptionForSandbox, createAithyAgent } from "../src/agent/create-agent";
 import { EventBus } from "../src/events/bus";
+import { defaultLocalInferenceSettings } from "../src/local-inference/settings";
 
 describe("createAithyAgent", () => {
   test("constructs an Ax v20 agent with inline functions", () => {
@@ -8,6 +9,7 @@ describe("createAithyAgent", () => {
       config: {
         aiProvider: "openai",
         aiApiKey: "sk-test",
+        localInference: defaultLocalInferenceSettings,
         sandboxProvider: "disabled",
         sandboxImage: "python:3.11-slim",
         sandboxCpus: 1,
@@ -133,6 +135,7 @@ function configFixture(sandboxProvider: "microsandbox" | "disabled") {
   return {
     aiProvider: "openai",
     aiApiKey: "sk-test",
+    localInference: defaultLocalInferenceSettings,
     sandboxProvider,
     sandboxImage: "python:3.11-slim",
     sandboxCpus: 1,

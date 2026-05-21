@@ -4,7 +4,7 @@ export const SERVICE_ROLES = [
   "web",
   "agent-worker",
   "sandbox-worker",
-  "embedding-worker",
+  "local-inference-worker",
   "queue-service",
 ] as const;
 
@@ -88,9 +88,14 @@ export type SandboxCommand =
 
 export type EmbeddingCommand =
   | { kind: "embedding.embedMany"; payload: { texts: string[] }; result: { vectors: number[][] } }
+  | { kind: "embedding.embedQuery"; payload: { text: string }; result: { vector: number[] } }
   | { kind: "embedding.rerank"; payload: { query: string; docs: string[] }; result: { scores: number[] } }
   | { kind: "embedding.backfill_now"; payload: Record<string, never>; result: { done: number; skipped: number } }
   | { kind: "embedding.reload_settings"; payload: Record<string, never>; result: void };
+
+export type LocalInferenceCommand =
+  | { kind: "local-inference.reload_settings"; payload: Record<string, never>; result: void }
+  | { kind: "local-inference.status"; payload: Record<string, never>; result: unknown };
 
 export type QueueControlCommandKind =
   | "queue.pause"

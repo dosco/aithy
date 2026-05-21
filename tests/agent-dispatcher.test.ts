@@ -3,7 +3,13 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 import { Queue } from "bunqueue/client";
-import { AgentDispatcher, UserChatCommandProducer, UserChatQueueProducer, type UserChatJobResult } from "../src/agent/dispatcher";
+import {
+  AgentDispatcher,
+  UserChatCommandProducer,
+  UserChatQueueProducer,
+  type AgentWorkerContext,
+  type UserChatJobResult,
+} from "../src/agent/dispatcher";
 import { bunqueueDataPath } from "../src/queue/embedded";
 import { RuntimeStore } from "../src/runtime/runtime-store";
 import type { SetupStatusInput } from "../src/setup/status";
@@ -11,7 +17,7 @@ import type { SetupStatusInput } from "../src/setup/status";
 async function makeDispatcher(opts: {
   parallelAgents: number;
   ensureBotSandbox: () => Promise<void>;
-  process: (data: any) => Promise<UserChatJobResult>;
+  process: (data: any, context: AgentWorkerContext) => Promise<UserChatJobResult>;
   onStatus?: (status: SetupStatusInput) => void;
   onCompleted?: (data: any, result: UserChatJobResult) => void;
   onFailed?: (data: any, error: Error) => void;
@@ -252,8 +258,8 @@ describe("AgentDispatcher", () => {
     await waitFor(() => completed.includes("c-status"));
 
     expect(statuses[0]).toMatchObject({
-      key: "agent",
-      label: "Please wait agent starting",
+      key: "agent.1",
+      label: "agent 1 starting",
       active: true,
     });
     expect(statuses.map((status) => status.label)).not.toContain("waiting for response");
@@ -309,6 +315,85 @@ describe("AgentDispatcher", () => {
       status: "completed",
       createdAt: new Date().toISOString(),
     });
+    await dispatcher.close();
+  });
+
+  test("reuses logical worker ids for serial agent runs", async () => {
+    const workerIds: number[] = [];
+    const completed: string[] = [];
+    const { dispatcher } = await makeDispatcher({
+      parallelAgents: 1,
+      ensureBotSandbox: async () => undefined,
+      process: async (data, context) => {
+        workerIds.push(context.agentWorkerId);
+        return {
+          conversationId: data.conversationId,
+          text: `ok:${data.text}`,
+          status: "completed",
+          createdAt: new Date().toISOString(),
+        };
+      },
+      onCompleted: (_data, result) => completed.push(result.conversationId),
+    });
+
+    await dispatcher.enqueueUserChat({
+      conversationId: "one",
+      text: "a",
+      createdAt: new Date().toISOString(),
+      skillIds: [],
+    });
+    await dispatcher.enqueueUserChat({
+      conversationId: "two",
+      text: "b",
+      createdAt: new Date().toISOString(),
+      skillIds: [],
+    });
+
+    await waitFor(() => completed.length === 2);
+    expect(workerIds).toEqual([1, 1]);
+    await dispatcher.close();
+  });
+
+  test("assigns logical worker ids across concurrent agent runs", async () => {
+    let releaseJobs: (() => void) | undefined;
+    const blocked = new Promise<void>((resolve) => {
+      releaseJobs = resolve;
+    });
+    const workerIds: number[] = [];
+    const completed: string[] = [];
+    const { dispatcher } = await makeDispatcher({
+      parallelAgents: 2,
+      ensureBotSandbox: async () => undefined,
+      process: async (data, context) => {
+        workerIds.push(context.agentWorkerId);
+        await blocked;
+        return {
+          conversationId: data.conversationId,
+          text: `ok:${data.text}`,
+          status: "completed",
+          createdAt: new Date().toISOString(),
+        };
+      },
+      onCompleted: (_data, result) => completed.push(result.conversationId),
+    });
+
+    await dispatcher.enqueueUserChat({
+      conversationId: "one",
+      text: "a",
+      createdAt: new Date().toISOString(),
+      skillIds: [],
+    });
+    await dispatcher.enqueueUserChat({
+      conversationId: "two",
+      text: "b",
+      createdAt: new Date().toISOString(),
+      skillIds: [],
+    });
+
+    await waitFor(() => workerIds.length === 2);
+    expect([...workerIds].sort()).toEqual([1, 2]);
+    releaseJobs?.();
+    await waitFor(() => completed.length === 2);
     await dispatcher.close();
   });
 });

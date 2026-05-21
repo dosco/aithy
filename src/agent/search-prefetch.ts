@@ -1,7 +1,7 @@
 import type { ChannelMessage } from "../channel/types";
 import type { AppConfig } from "../config/env";
-import type { ParallelSearchResult } from "../search/parallel-search-client";
-import { parallelWebSearch } from "../search/parallel-search-client";
+import type { WebSearchResult } from "../search/web-search-provider";
+import { webSearch } from "../search/web-search-provider";
 import { argsPreview } from "../security/capability-broker";
 import type { BotMessage, AssistantToolCallMessage } from "../session/types";
 import type { ToolContext } from "./tool-context";
@@ -16,7 +16,7 @@ export interface SearchPrefetchAttempt {
   query: string;
   task: string;
   ok: boolean;
-  result?: ParallelSearchResult;
+  result?: WebSearchResult;
   error?: string;
 }
 
@@ -33,7 +33,7 @@ export async function prefetchSearchForMessage(input: {
   config: AppConfig;
   toolContext: ToolContext;
   onToolCall?: (message: AssistantToolCallMessage) => void;
-  search?: typeof parallelWebSearch;
+  search?: typeof webSearch;
 }): Promise<SearchPrefetchOutput | undefined> {
   const query = queryForMessage(input.message, input.toolContext.session.messages);
   if (!query) return undefined;
@@ -61,10 +61,7 @@ export async function prefetchSearchForMessage(input: {
       conversationId: input.toolContext.session.conversationId,
       summary: `Searching the web for ${query}`,
     });
-    const result = await (input.search ?? parallelWebSearch)(toolArgs, {
-      url: input.config.parallelSearchMcpUrl,
-      apiKey: input.config.parallelApiKey,
-    });
+    const result = await (input.search ?? webSearch)(toolArgs, input.config);
     attempts.push({ query, task, ok: true, result });
     toolMessage.toolResult = {
       ok: true,

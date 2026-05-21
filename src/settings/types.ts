@@ -1,4 +1,5 @@
 import type { AppConfig, GlobalMount, SandboxProviderKind } from "../config/env";
+import type { LocalInferenceSettings } from "../local-inference/settings";
 
 export type { GlobalMount };
 
@@ -29,6 +30,8 @@ export interface RuntimeSettings {
   aiApiUrl?: string | null;
   aiApiKey?: string | null;
   aiModel?: string | null;
+  localAgentModel?: string | null;
+  localInference?: Partial<LocalInferenceSettings>;
   fastAiProvider?: string;
   fastAiApiUrl?: string | null;
   fastAiModel?: string;

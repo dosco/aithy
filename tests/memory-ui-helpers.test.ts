@@ -1,6 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { buildMemoryHelp } from "../app/components/mind/memory-help";
 import {
+  chatTextFragmentHref,
+  parseMemoryEvidence,
+  shortSessionId,
+} from "../app/components/mind/memory-evidence";
+import {
   isQuietMemoryRunSummary,
   memoryRunSummaryForDisplay,
 } from "../app/components/mind/memory-run-display";
@@ -57,6 +62,41 @@ describe("memory UI helpers", () => {
       });
       expect(help.summary).toContain("when a related request matches it");
     }
+  });
+
+  test("parseMemoryEvidence extracts friendly session evidence", () => {
+    const parsed = parseMemoryEvidence(
+      "In session cc639770-8e2c-48b4-b265-666f44cca5f9, the user said: i like coffee, really like it",
+    );
+
+    expect(parsed).toEqual({
+      kind: "user_quote",
+      text: "i like coffee, really like it",
+      sourceLabel: "You said",
+      sessionId: "cc639770-8e2c-48b4-b265-666f44cca5f9",
+    });
+    expect(shortSessionId(parsed!.sessionId!)).toBe("a5f9");
+  });
+
+  test("chatTextFragmentHref links to chat with encoded source text", () => {
+    expect(chatTextFragmentHref(
+      "cc639770-8e2c-48b4-b265-666f44cca5f9",
+      "i like coffee, really like it",
+    )).toBe(
+      "/chat/cc639770-8e2c-48b4-b265-666f44cca5f9#:~:text=i%20like%20coffee%2C%20really%20like%20it",
+    );
+    expect(chatTextFragmentHref("session-a", "foo-bar")).toBe(
+      "/chat/session-a#:~:text=foo%2Dbar",
+    );
+  });
+
+  test("parseMemoryEvidence leaves plain evidence readable", () => {
+    expect(parseMemoryEvidence("User said they run everything with bun.")).toEqual({
+      kind: "plain",
+      text: "User said they run everything with bun.",
+      sourceLabel: "Evidence",
+      sessionId: null,
+    });
   });
 
   test("quiet memory run summaries are hidden from the prominent ribbon line", () => {

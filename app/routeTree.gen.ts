@@ -18,6 +18,8 @@ import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SessionsRouteImport } from './routes/sessions'
 import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as MemoryRouteImport } from './routes/memory'
+import { Route as LocalInferenceRouteImport } from './routes/local-inference'
+import { Route as InferenceRouteImport } from './routes/inference'
 import { Route as ConsoleRouteImport } from './routes/console'
 import { Route as ChatRouteImport } from './routes/chat'
 import { Route as AutomationsRouteImport } from './routes/automations'
@@ -72,6 +74,16 @@ const MemoryRoute = MemoryRouteImport.update({
   path: '/memory',
   getParentRoute: () => rootRouteImport,
 } as any)
+const LocalInferenceRoute = LocalInferenceRouteImport.update({
+  id: '/local-inference',
+  path: '/local-inference',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InferenceRoute = InferenceRouteImport.update({
+  id: '/inference',
+  path: '/inference',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ConsoleRoute = ConsoleRouteImport.update({
   id: '/console',
   path: '/console',
@@ -119,6 +131,8 @@ export interface FileRoutesByFullPath {
   '/automations': typeof AutomationsRoute
   '/chat': typeof ChatRouteWithChildren
   '/console': typeof ConsoleRoute
+  '/inference': typeof InferenceRoute
+  '/local-inference': typeof LocalInferenceRoute
   '/memory': typeof MemoryRoute
   '/notifications': typeof NotificationsRoute
   '/sessions': typeof SessionsRoute
@@ -138,6 +152,8 @@ export interface FileRoutesByTo {
   '/automations': typeof AutomationsRoute
   '/chat': typeof ChatRouteWithChildren
   '/console': typeof ConsoleRoute
+  '/inference': typeof InferenceRoute
+  '/local-inference': typeof LocalInferenceRoute
   '/memory': typeof MemoryRoute
   '/notifications': typeof NotificationsRoute
   '/sessions': typeof SessionsRoute
@@ -158,6 +174,8 @@ export interface FileRoutesById {
   '/automations': typeof AutomationsRoute
   '/chat': typeof ChatRouteWithChildren
   '/console': typeof ConsoleRoute
+  '/inference': typeof InferenceRoute
+  '/local-inference': typeof LocalInferenceRoute
   '/memory': typeof MemoryRoute
   '/notifications': typeof NotificationsRoute
   '/sessions': typeof SessionsRoute
@@ -179,6 +197,8 @@ export interface FileRouteTypes {
     | '/automations'
     | '/chat'
     | '/console'
+    | '/inference'
+    | '/local-inference'
     | '/memory'
     | '/notifications'
     | '/sessions'
@@ -198,6 +218,8 @@ export interface FileRouteTypes {
     | '/automations'
     | '/chat'
     | '/console'
+    | '/inference'
+    | '/local-inference'
     | '/memory'
     | '/notifications'
     | '/sessions'
@@ -217,6 +239,8 @@ export interface FileRouteTypes {
     | '/automations'
     | '/chat'
     | '/console'
+    | '/inference'
+    | '/local-inference'
     | '/memory'
     | '/notifications'
     | '/sessions'
@@ -237,6 +261,8 @@ export interface RootRouteChildren {
   AutomationsRoute: typeof AutomationsRoute
   ChatRoute: typeof ChatRouteWithChildren
   ConsoleRoute: typeof ConsoleRoute
+  InferenceRoute: typeof InferenceRoute
+  LocalInferenceRoute: typeof LocalInferenceRoute
   MemoryRoute: typeof MemoryRoute
   NotificationsRoute: typeof NotificationsRoute
   SessionsRoute: typeof SessionsRoute
@@ -315,6 +341,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MemoryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/local-inference': {
+      id: '/local-inference'
+      path: '/local-inference'
+      fullPath: '/local-inference'
+      preLoaderRoute: typeof LocalInferenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inference': {
+      id: '/inference'
+      path: '/inference'
+      fullPath: '/inference'
+      preLoaderRoute: typeof InferenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/console': {
       id: '/console'
       path: '/console'
@@ -390,6 +430,8 @@ const rootRouteChildren: RootRouteChildren = {
   AutomationsRoute: AutomationsRoute,
   ChatRoute: ChatRouteWithChildren,
   ConsoleRoute: ConsoleRoute,
+  InferenceRoute: InferenceRoute,
+  LocalInferenceRoute: LocalInferenceRoute,
   MemoryRoute: MemoryRoute,
   NotificationsRoute: NotificationsRoute,
   SessionsRoute: SessionsRoute,

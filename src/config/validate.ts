@@ -1,7 +1,7 @@
 import type { AppConfig } from "./env";
-import { isCustomOpenAIProvider } from "../agent/ai-providers";
+import { isCustomOpenAIProvider, isXaiGrokSubscriptionProvider } from "../agent/ai-providers";
 
-const providersWithoutApiKey = new Set(["ollama"]);
+const providersWithoutApiKey = new Set(["ollama", "local", "xai-grok-subscription"]);
 
 /**
  * Non-throwing predicate: does this config have everything the agent needs to
@@ -20,6 +20,9 @@ export function aiConfigurationIssues(config: AppConfig): string[] {
   if (requiresApiKey(config.aiProvider) && !config.aiApiKey) {
     missing.push("provider API key");
   }
+  if (isXaiGrokSubscriptionProvider(config.aiProvider) && !config.grokSubscriptionConnected) {
+    missing.push("Grok subscription sign-in");
+  }
   return missing;
 }
 
@@ -34,6 +37,9 @@ export function fastAiConfigurationIssues(config: AppConfig): string[] {
     : config.fastAiApiKey;
   if (requiresApiKey(config.fastAiProvider) && !fastApiKey) {
     missing.push("fast provider API key");
+  }
+  if (isXaiGrokSubscriptionProvider(config.fastAiProvider) && !config.grokSubscriptionConnected) {
+    missing.push("fast Grok subscription sign-in");
   }
   return missing;
 }

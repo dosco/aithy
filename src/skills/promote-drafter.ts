@@ -1,6 +1,7 @@
 import { ax, f } from "@ax-llm/ax";
 import { createAiService } from "../agent/ai-service";
 import type { AppConfig } from "../config/env";
+import type { RuntimeStore } from "../runtime/runtime-store";
 import type { DetectedPattern } from "./promote-detector";
 import type { SkillDraft } from "./promote-store";
 import type { SkillEntry } from "./skills-store";
@@ -32,8 +33,8 @@ Use only facts visible in the examples. Do not include secrets, raw long outputs
 The body must be practical markdown guidance. Prefer short checklists and caveats over narration.
 The id must be a lowercase slug. Avoid ids that collide with existing skills.`;
 
-export function createSkillPromotionDrafter(config: AppConfig): SkillPromotionDrafter {
-  const llm = createAiService(config);
+export function createSkillPromotionDrafter(input: AppConfig | { config: AppConfig; runtimeStore?: RuntimeStore }): SkillPromotionDrafter {
+  const llm = createAiService(input);
   const program = ax(draftSignature, {
     description,
     maxSteps: 1,

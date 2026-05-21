@@ -4,7 +4,7 @@ import path from "node:path";
 import { AxAgentClarificationError } from "@ax-llm/ax";
 import { describe, expect, test } from "bun:test";
 import type { ChannelMessage } from "../src/channel/types";
-import { loadConfig } from "../src/config/env";
+import { loadConfig, type AppConfig } from "../src/config/env";
 import { EventBus } from "../src/events/bus";
 import { runMessage } from "../src/agent/run-message";
 import { MockSandboxProvider } from "../src/sandbox/mock-provider";
@@ -22,7 +22,7 @@ describe("runMessage", () => {
     const seenInputs: any[] = [];
 
     const deps = {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: disabledConfig(),
       events,
       sandbox,
       sessions,
@@ -92,7 +92,7 @@ describe("runMessage", () => {
     const seenInputs: any[] = [];
 
     const reply = await runMessage(message, {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: disabledConfig(),
       events: new EventBus(),
       sandbox: new MockSandboxProvider(),
       sessions,
@@ -132,7 +132,7 @@ describe("runMessage", () => {
 
     const clarifyEvents = new EventBus();
     const deps = {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: disabledConfig(),
       events: clarifyEvents,
       sandbox: new MockSandboxProvider(),
       sessions,
@@ -165,7 +165,7 @@ describe("runMessage", () => {
     const root = await mkdtemp(path.join(tmpdir(), "aithy-run-"));
     const seenOptions: any[] = [];
     const deps = {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: disabledConfig(),
       events: new EventBus(),
       sandbox: new MockSandboxProvider(),
       sessions: sessionsFor(root, path.join(root, "state.db")),
@@ -196,7 +196,7 @@ describe("runMessage", () => {
     const sessions = sessionsFor(root, path.join(root, "state.db"));
 
     await runMessage(textMessage("m1", "run pwd"), {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: disabledConfig(),
       events,
       sandbox: new MockSandboxProvider(),
       sessions,
@@ -261,7 +261,7 @@ describe("runMessage", () => {
     const sessions = sessionsFor(root, path.join(root, "state.db"));
 
     await runMessage(textMessage("m1", "look it up"), {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: disabledConfig(),
       events,
       sandbox: new MockSandboxProvider(),
       sessions,
@@ -358,7 +358,7 @@ describe("runMessage", () => {
     const enqueued: string[] = [];
 
     await runMessage(textMessage("m1", "remember my favourite city is Vancouver"), {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: disabledConfig(),
       events: new EventBus(),
       sandbox,
       sessions,
@@ -437,7 +437,7 @@ function depsFor(root: string, dbPath: string, seenInputs: any[]) {
   const sandbox = new MockSandboxProvider();
   const events = new EventBus();
   return {
-    config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+    config: disabledConfig(),
     events,
     sandbox,
     sessions: new SessionManager({
@@ -473,6 +473,10 @@ function sessionsFor(root: string, dbPath: string): SessionManager {
     ttlMs: 1000,
     state: new SqliteSessionStateStore(dbPath),
   });
+}
+
+function disabledConfig(): AppConfig {
+  return { ...loadConfig(), sandboxProvider: "disabled" };
 }
 
 function textMessage(id: string, text: string): ChannelMessage {

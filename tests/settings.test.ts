@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 import { CUSTOM_OPENAI_PROVIDER } from "../src/agent/ai-providers";
+import { DEFAULT_LOCAL_AGENT_MODEL_ID, DEFAULT_LOCAL_EMBEDDING_MODEL, LOCAL_AI_PROVIDER } from "../src/local-inference/manifest";
 import { loadConfig } from "../src/config/env";
 import { isLoopbackRequest } from "../src/settings/localhost";
 import {
@@ -54,6 +55,14 @@ describe("web settings", () => {
       aiProvider: CUSTOM_OPENAI_PROVIDER,
       aiApiUrl: "https://api.example.test/v1",
       aiModel: "gpt-next",
+      localInference: {
+        contextSize: 131072,
+        embeddingContextSize: 8192,
+        modelsMax: 3,
+        temperature: 1,
+        topP: 0.8,
+        thinkingMode: false,
+      },
       sandboxProvider: "disabled",
       sandboxImage: "ubuntu:24.04",
       systemBashEnabled: false,
@@ -64,10 +73,48 @@ describe("web settings", () => {
     expect(next.aiApiUrl).toBe("https://api.example.test/v1");
     expect(next.aiModel).toBe("gpt-next");
     expect(next.aiApiKey).toBeUndefined();
+    expect(next.localInference).toMatchObject({
+      contextSize: 131072,
+      embeddingContextSize: 8192,
+      modelsMax: 3,
+      temperature: 1,
+      topP: 0.8,
+      thinkingMode: false,
+    });
     expect(next.sandboxProvider).toBe("disabled");
     expect(next.systemBashEnabled).toBe(false);
     expect(next.parallelSearchMcpUrl).toBe("https://search.example.test/mcp");
     expect(runtimeSandboxChanged(base, next)).toBe(true);
+  });
+
+  test("uses local agent model for Local provider without requiring a key", () => {
+    const next = applyRuntimeSettings(loadConfig({}), {
+      aiProvider: LOCAL_AI_PROVIDER,
+      localAgentModel: "hf:example/model:test.gguf",
+    });
+
+    expect(next.aiProvider).toBe(LOCAL_AI_PROVIDER);
+    expect(next.aiModel).toBe("hf:example/model:test.gguf");
+    expect(next.localAgentModel).toBe("hf:example/model:test.gguf");
+    expect(next.aiApiKey).toBeUndefined();
+  });
+
+  test("falls back to the managed local model when a local model id is invalid", () => {
+    const next = applyRuntimeSettings(loadConfig({}), {
+      aiProvider: LOCAL_AI_PROVIDER,
+      localAgentModel: "not-a-local-id",
+    });
+
+    expect(next.aiModel).toBe(DEFAULT_LOCAL_AGENT_MODEL_ID);
+  });
+
+  test("falls back when a managed non-chat local model is selected for chat", () => {
+    const next = applyRuntimeSettings(loadConfig({}), {
+      aiProvider: LOCAL_AI_PROVIDER,
+      localAgentModel: DEFAULT_LOCAL_EMBEDDING_MODEL.id,
+    });
+
+    expect(next.aiModel).toBe(DEFAULT_LOCAL_AGENT_MODEL_ID);
   });
 
   test("clears custom OpenAI base URL when provider changes away", () => {
@@ -85,15 +132,13 @@ describe("web settings", () => {
   });
 
   test("merges Parallel search key overrides without requiring one", () => {
-    const base = loadConfig({
-      AITHY_PARALLEL_API_KEY: "pk-env",
-    });
+    const base = loadConfig();
     const anonymous = applyRuntimeSettings(base, {
       parallelApiKey: null,
     }, undefined, undefined, null);
     const keyed = applyRuntimeSettings(base, {}, undefined, undefined, "pk-settings");
 
-    expect(applyRuntimeSettings(loadConfig({}), {}).parallelApiKey).toBeUndefined();
+    expect(applyRuntimeSettings(loadConfig(), {}).parallelApiKey).toBeUndefined();
     expect(anonymous.parallelApiKey).toBeUndefined();
     expect(keyed.parallelApiKey).toBe("pk-settings");
   });

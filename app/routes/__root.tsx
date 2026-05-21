@@ -31,7 +31,11 @@ export const Route = createRootRoute({
   beforeLoad: async ({ location }) => {
     if (isSetupGuardExemptPath(location.pathname)) return;
     const state = await readSetupGateState();
-    if (!state.aiConfigured || !state.profileConfigured) {
+    if (
+      !state.aiConfigured
+      || !state.profileConfigured
+      || (state.localInferenceRequired && !state.localInferenceReady)
+    ) {
       throw redirect({
         to: "/setup",
         search: { redirect: sanitizeSetupRedirect(location.href) },

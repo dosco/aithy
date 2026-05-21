@@ -37,7 +37,7 @@ describe("search prefetch", () => {
     const toolCalls: unknown[] = [];
     const output = await prefetchSearchForMessage({
       message: textMessage("m1", "what was the Giants Dodgers score yesterday"),
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: { ...loadConfig(), sandboxProvider: "disabled" },
       toolContext: { session: { conversationId: "conversation", messages: [] }, events: new EventBus() } as any,
       onToolCall: (message) => toolCalls.push(message),
       search: async ({ query }) => ({
@@ -64,7 +64,7 @@ describe("runMessage search prefetch integration", () => {
     const seenInputs: any[] = [];
 
     const reply = await runMessage(textMessage("m1", "what was the Giants Dodgers score yesterday"), {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: { ...loadConfig(), sandboxProvider: "disabled" },
       events: new EventBus(),
       sandbox: new MockSandboxProvider(),
       sessions,
@@ -100,7 +100,7 @@ describe("runMessage search prefetch integration", () => {
     const root = await mkdtemp(path.join(tmpdir(), "aithy-search-prefetch-"));
 
     const reply = await runMessage(textMessage("m1", "what was the Giants Dodgers score yesterday"), {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: { ...loadConfig(), sandboxProvider: "disabled" },
       events: new EventBus(),
       sandbox: new MockSandboxProvider(),
       sessions: sessionsFor(root),

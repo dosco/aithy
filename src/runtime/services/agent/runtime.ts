@@ -7,7 +7,7 @@ import { completeAutomationRun, failAutomationRun } from "../../../automations/c
 import { AutomationQueue, sessionsEvent } from "../../../automations/queue";
 import { SqliteAutomationStore } from "../../../automations/store";
 import type { AutomationToolActions } from "../../../automations/tool-actions";
-import { AgentDispatcher, type UserChatJobData, type UserChatJobResult } from "../../../agent/dispatcher";
+import { AgentDispatcher } from "../../../agent/dispatcher";
 import { EventBus } from "../../../events/bus";
 import { MemoryConsolidateQueue } from "../../../memory/consolidate-queue";
 import { MemoryExpiryQueue } from "../../../memory/expiry-queue";
@@ -46,11 +46,12 @@ import { SandboxCommandClient } from "../sandbox/client";
 import { QueueServiceClient } from "../queue/client";
 import { RemoteSessionStateStore } from "../queue/session-state-client";
 import { payloadString, userChatPayload } from "./command-payloads";
+import { LocalInferenceWarmupGate } from "./local-inference-warmup";
 import { scheduleAgentBackgroundQueues } from "./schedules";
-
 export class AgentWorkerRuntime {
   private heartbeatTimer?: Timer;
   private shutdownPromise?: Promise<void>;
+  private readonly localInferenceWarmup = new LocalInferenceWarmupGate();
   private lastQueueKey = "";
 
   private constructor(
@@ -178,10 +179,7 @@ export class AgentWorkerRuntime {
     const publishTask = (task: TaskRecord) => events.emit({ type: "task.status", task });
 
     const memoryQueue = new MemoryQueue({
-      config,
-      memory,
-      sessions,
-      runs: memoryRuns,
+      config, memory, sessions, runs: memoryRuns, runtimeStore,
       tasks,
       onTaskStatus: publishTask,
       postFailureToSubSession: postSub,
@@ -189,11 +187,12 @@ export class AgentWorkerRuntime {
       usage,
       onQueueError,
     });
-    const memoryConsolidate = new MemoryConsolidateQueue({ config, memory, runs: memoryRuns, tasks, onTaskStatus: publishTask, usage, notify, onQueueError });
+    const memoryConsolidate = new MemoryConsolidateQueue({ config, memory, runs: memoryRuns, runtimeStore, tasks, onTaskStatus: publishTask, usage, notify, onQueueError });
     const memoryExpiry = new MemoryExpiryQueue({ config, memory, tasks, onTaskStatus: publishTask, notify, onQueueError });
     const dreamQueue = new DreamQueue({
       config,
       episodes,
+      runtimeStore,
       tasks,
       onTaskStatus: publishTask,
       usage,
@@ -202,6 +201,7 @@ export class AgentWorkerRuntime {
     const skillCandidateQueue = new SkillCandidateQueue({
       config,
       candidates: skillCandidates,
+      runtimeStore,
       tasks,
       onTaskStatus: publishTask,
       postToSubSession: postSub,
@@ -286,8 +286,9 @@ export class AgentWorkerRuntime {
           rt.publishQueueStatus();
         }
       },
-      process: async (data: UserChatJobData): Promise<UserChatJobResult> => {
+      process: async (data, context) => {
         if (!runtimeRef) throw new Error("agent worker runtime not initialized");
+        await runtimeRef.localInferenceWarmup.ensure({ config: runtimeRef.config, context, events: runtimeRef.events, runtimeStore: runtimeRef.runtimeStore });
         return processUserChatJob(runtimeRef, data);
       },
     });
@@ -448,7 +449,7 @@ export class AgentWorkerRuntime {
       this.sessions.setGlobalMounts(next.globalMounts);
       this.sessions.refreshAllMounts();
     }
-    await this.queue.submitCommand("embedding-worker", "embedding.reload_settings");
+    await this.queue.submitCommand("local-inference-worker", "embedding.reload_settings");
     this.memoryQueue.updateConfig(next);
     this.memoryConsolidate.updateConfig(next);
     this.dreamQueue.updateConfig(next);

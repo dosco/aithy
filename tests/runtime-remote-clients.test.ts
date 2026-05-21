@@ -35,13 +35,14 @@ describe("runtime remote clients", () => {
 
   test("remote embed and rerank commands complete cleanly", async () => {
     const store = await makeStore();
-    store.heartbeat("embedding-worker", "ready");
+    store.heartbeat("local-inference-worker", "ready");
     const embedder = new RemoteEmbedder(store);
     const reranker = new RemoteReranker(store);
     setTimeout(() => completeEmbeddingCommands(store), 10).unref();
 
     const vectors = await embedder.embedMany(["hello"]);
     expect(Array.from(vectors[0])).toEqual([1, 2, 3]);
+    await expect(embedder.embedQuery("hello")).resolves.toEqual(new Float32Array([4, 5, 6]));
     await expect(reranker.rerank("hello", ["doc"])).resolves.toEqual([0.7]);
     store.close();
   });
@@ -54,10 +55,13 @@ async function makeStore(): Promise<RuntimeStore> {
 
 function completeEmbeddingCommands(store: RuntimeStore): void {
   const timer = setInterval(() => {
-    const [command] = store.claimPendingCommands("embedding-worker");
+    const [command] = store.claimPendingCommands("local-inference-worker");
     if (!command) return;
     if (command.kind === "embedding.embedMany") {
       store.completeCommand(command.id, "completed", { ok: true, result: { vectors: [[1, 2, 3]] } });
+    }
+    if (command.kind === "embedding.embedQuery") {
+      store.completeCommand(command.id, "completed", { ok: true, result: { vector: [4, 5, 6] } });
     }
     if (command.kind === "embedding.rerank") {
       store.completeCommand(command.id, "completed", { ok: true, result: { scores: [0.7] } });

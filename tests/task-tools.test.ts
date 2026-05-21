@@ -27,7 +27,7 @@ describe("tasks.getTasks tool", () => {
     const tool = createAgentTools({
       session: { conversationId: "c1" },
       tasks,
-    } as any, loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }))
+    } as any, { ...loadConfig(), sandboxProvider: "disabled" })
       .find((item: any) => item.namespace === "tasks" && item.name === "getTasks") as any;
 
     expect(tool).toBeTruthy();

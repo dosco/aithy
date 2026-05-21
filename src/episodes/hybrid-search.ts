@@ -69,7 +69,7 @@ export async function episodeHybridSearch(
       const [ftsHits, vecHits] = await Promise.all([
         runFts(db, ftsExpr, excludeFilter),
         embedder
-          .embed(raw)
+          .embedQuery(raw)
           .then((vec) => runVec(db, vec, excludeFilter))
           .catch(() => [] as RankedHit[]),
       ]);

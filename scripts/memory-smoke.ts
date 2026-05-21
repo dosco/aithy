@@ -14,10 +14,11 @@ import { applyRuntimeSettings } from "../src/settings/resolve";
 import { readProviderApiKey } from "../src/settings/secrets";
 import { createMemoryAgent } from "../src/memory/memory-agent";
 import { SqliteMemoryStore } from "../src/memory/memory-store";
-import { EmbedService } from "../src/memory/embed";
+import { LocalLlamaEmbedder } from "../src/local-inference/http-client";
 import { probeAndConfigureSqlite } from "../src/memory/vec-extension";
 
-const hybridMode = process.argv.includes("--hybrid");
+const args = parseArgs(process.argv.slice(2));
+const hybridMode = args.hybrid;
 
 probeAndConfigureSqlite();
 
@@ -35,11 +36,13 @@ try {
   const config = applyRuntimeSettings(baseConfig, {}, apiKey, undefined);
   const stamped = { ...config, stateDbPath: dbPath };
 
-  const embedder = hybridMode
-    ? new EmbedService({
-        cacheDir: path.join(dir, "cache"),
-        log: (m) => console.log(`[embedder] ${m}`),
-      })
+  const baseUrl = args.localInferenceUrl?.trim();
+  if (hybridMode && !baseUrl) {
+    console.error("✗ set --url for --hybrid");
+    process.exit(2);
+  }
+  const embedder = hybridMode && baseUrl
+    ? new LocalLlamaEmbedder(() => baseUrl)
     : undefined;
   if (embedder) {
     console.log("loading embedder...");
@@ -106,4 +109,25 @@ try {
   }
 } finally {
   rmSync(dir, { recursive: true, force: true });
+}
+
+function parseArgs(rawArgs: string[]): { hybrid: boolean; localInferenceUrl?: string } {
+  let hybrid = false;
+  let localInferenceUrl: string | undefined;
+  for (let i = 0; i < rawArgs.length; i += 1) {
+    const arg = rawArgs[i];
+    if (arg === "--hybrid") {
+      hybrid = true;
+      continue;
+    }
+    if (arg === "--url") {
+      localInferenceUrl = rawArgs[i + 1];
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith("--url=")) {
+      localInferenceUrl = arg.slice("--url=".length);
+    }
+  }
+  return { hybrid, localInferenceUrl };
 }

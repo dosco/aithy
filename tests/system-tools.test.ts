@@ -115,7 +115,7 @@ async function systemToolContext(input: { root?: string; runtimeStore?: RuntimeS
 }
 
 function systemBashTool(ctx: any) {
-  return createAgentTools(ctx, loadConfig({ AITHY_SANDBOX_PROVIDER: "microsandbox" }))
+  return createAgentTools(ctx, { ...loadConfig(), sandboxProvider: "microsandbox" })
     .find((tool: any) => tool.namespace === "system" && tool.name === "bash") as any;
 }
 

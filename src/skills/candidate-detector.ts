@@ -1,6 +1,7 @@
 import { ax, f } from "@ax-llm/ax";
 import { createAiService, createFastAiService } from "../agent/ai-service";
 import type { AppConfig } from "../config/env";
+import type { RuntimeStore } from "../runtime/runtime-store";
 import type { SkillCandidateEntry } from "./candidate-store";
 
 export interface SkillCandidateDetection {
@@ -54,8 +55,8 @@ Bad candidates:
 
 Use existingCandidateIds when the transcript matures an existing developing candidate. Return empty arrays when there is nothing skill-worthy. Keep at most three candidates.`;
 
-export function createSkillCandidateDetector(config: AppConfig): SkillCandidateDetector {
-  const llm = createFastAiService(config) ?? createAiService(config);
+export function createSkillCandidateDetector(input: AppConfig | { config: AppConfig; runtimeStore?: RuntimeStore }): SkillCandidateDetector {
+  const llm = createFastAiService(input) ?? createAiService(input);
   const program = ax(signature, {
     description,
     maxSteps: 1,

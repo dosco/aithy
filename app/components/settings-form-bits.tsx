@@ -17,6 +17,12 @@ export const fieldClass =
 export const selectClass =
   `${fieldClass} appearance-none pr-10 bg-no-repeat bg-[right_0.875rem_center] bg-[length:0.75rem_0.75rem] cursor-pointer bg-[image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23888' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'><polyline points='3,6 8,11 13,6'/></svg>")]`;
 
+export interface ModelOption {
+  value: string;
+  label: string;
+  detail?: string;
+}
+
 export function Section({
   title,
   subtitle,
@@ -72,11 +78,7 @@ export function ApiKeyInput({
   onClear?: () => void;
   clearLabel?: string;
 }) {
-  const placeholder = secret?.configured
-    ? secret.source === "environment"
-      ? "Configured by environment"
-      : `Stored in ${secret.source}`
-    : fallback;
+  const placeholder = secret?.configured ? `Stored in ${secret.source}` : fallback;
   const canClear = Boolean(onClear) && (secret?.configured || value.length > 0);
   return (
     <div
@@ -99,7 +101,7 @@ export function ApiKeyInput({
       />
       {secret?.configured ? (
         <span className="flex shrink-0 items-center gap-1 border-l border-[rgb(var(--border))] px-3 text-[10px] font-medium uppercase tracking-wider text-[rgb(var(--muted-foreground))]">
-          <Check className="h-3 w-3" /> {secret.source === "environment" ? "env" : secret.source}
+          <Check className="h-3 w-3" /> {secret.source}
         </span>
       ) : null}
       {onClear ? (
@@ -127,6 +129,7 @@ export function ModelCombobox({
   disabled,
   placeholder,
   onClear,
+  modelOptions,
   clearLabel = "Clear model",
 }: {
   provider: string;
@@ -135,18 +138,27 @@ export function ModelCombobox({
   disabled?: boolean;
   placeholder?: string;
   onClear?: () => void;
+  modelOptions?: readonly (string | ModelOption)[];
   clearLabel?: string;
 }) {
-  const models = provider ? modelsForProvider(provider) : [];
-  const options = value && !models.includes(value) ? [value, ...models] : models;
+  const models = normalizeModelOptions(modelOptions ?? (provider ? modelsForProvider(provider) : []));
+  const options = value && !models.some((model) => model.value === value)
+    ? [modelOption(value), ...models]
+    : models;
+  const selected = options.find((model) => model.value === value);
   const canClear = Boolean(onClear) && value.trim().length > 0;
   const [open, setOpen] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const displayValue = selected?.label && !open && !focused ? selected.label : value;
 
   return (
     <div
       className="relative"
       onBlur={(event) => {
-        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+        if (!event.currentTarget.contains(event.relatedTarget)) {
+          setOpen(false);
+          setFocused(false);
+        }
       }}
     >
       <div
@@ -157,10 +169,11 @@ export function ModelCombobox({
       >
         <input
           className="h-11 w-full bg-transparent px-3.5 text-sm outline-none placeholder:text-[rgb(var(--muted-foreground))] disabled:cursor-not-allowed"
-          value={value}
+          value={displayValue}
           disabled={disabled}
           placeholder={placeholder}
           onFocus={() => {
+            setFocused(true);
             if (!disabled && options.length > 0) setOpen(true);
           }}
           onChange={(event) => onChange(event.target.value)}
@@ -187,26 +200,42 @@ export function ModelCombobox({
         <div className="absolute left-0 right-0 top-full z-50 mt-1.5 max-h-64 overflow-auto rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] p-1.5 shadow-lg">
           {options.map((model) => (
             <button
-              key={model}
+              key={model.value}
               type="button"
               onMouseDown={(event) => event.preventDefault()}
               onClick={() => {
-                onChange(model);
+                onChange(model.value);
                 setOpen(false);
+                setFocused(false);
               }}
               className={cn(
-                "flex h-10 w-full items-center justify-between gap-3 rounded-lg px-3 text-left text-sm transition hover:bg-[rgb(var(--muted))] focus:bg-[rgb(var(--muted))] focus:outline-none",
-                model === value && "font-medium",
+                "flex min-h-10 w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-[rgb(var(--muted))] focus:bg-[rgb(var(--muted))] focus:outline-none",
+                model.value === value && "font-medium",
               )}
             >
-              <span className="truncate">{model}</span>
-              {model === value ? <Check className="h-4 w-4 shrink-0" /> : null}
+              <span className="min-w-0">
+                <span className="block truncate">{model.label}</span>
+                {model.detail ? (
+                  <span className="block truncate text-xs font-normal text-[rgb(var(--muted-foreground))]">
+                    {model.detail}
+                  </span>
+                ) : null}
+              </span>
+              {model.value === value ? <Check className="h-4 w-4 shrink-0" /> : null}
             </button>
           ))}
         </div>
       ) : null}
     </div>
   );
+}
+
+function normalizeModelOptions(options: readonly (string | ModelOption)[]): ModelOption[] {
+  return options.map((option) => typeof option === "string" ? modelOption(option) : option);
+}
+
+function modelOption(value: string): ModelOption {
+  return { value, label: value };
 }
 
 function ClearButton({

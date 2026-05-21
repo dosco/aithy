@@ -1,10 +1,11 @@
 import { Database } from "bun:sqlite";
 import type { Job } from "bunqueue/client";
 import type { AppConfig } from "../config/env";
-import { captureProgramUsage } from "../usage/capture";
+import { captureProgramUsage, usageAttributionForConfig } from "../usage/capture";
 import type { SqliteUsageStore } from "../usage/usage-store";
 import type { SqliteTaskStore } from "../tasks/task-store";
 import type { TaskRecord } from "../tasks/types";
+import type { RuntimeStore } from "../runtime/runtime-store";
 import {
   createEmbeddedQueueWorker,
   isDuplicateJobWriteError,
@@ -29,6 +30,7 @@ export interface SkillPromoteQueueDeps {
   config: AppConfig;
   skills: SqliteSkillsStore;
   promotions: SqliteSkillPromotionStore;
+  runtimeStore?: RuntimeStore;
   tasks?: SqliteTaskStore;
   onTaskStatus?: (task: TaskRecord) => void;
   postToSubSession: (input: {
@@ -173,7 +175,10 @@ export class SkillPromoteQueue {
     }
 
     const existing = new Set(this.deps.skills.getAll().map((s) => s.id));
-    const drafter = this.deps.drafter ?? createSkillPromotionDrafter(this.deps.config);
+    const drafter = this.deps.drafter ?? createSkillPromotionDrafter({
+      config: this.deps.config,
+      runtimeStore: this.deps.runtimeStore,
+    });
     let suggested = 0;
     for (const pattern of patterns) {
       if (this.deps.promotions.hasSignature(pattern.signature)) continue;
@@ -191,6 +196,7 @@ export class SkillPromoteQueue {
           purpose: "skill.promote",
           sessionId: pattern.sourceSessionId,
           runId: pattern.signature,
+          attribution: usageAttributionForConfig(this.deps.config),
         });
       }
       const sub = await this.deps.postToSubSession({

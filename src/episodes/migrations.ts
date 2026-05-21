@@ -79,7 +79,38 @@ export const episodeMigrations: readonly SqliteMigration[] = [
     },
     sql: `
       CREATE VIRTUAL TABLE agent_episodes_vec USING vec0(
-        embedding float[384]
+        embedding float[1024]
+      );
+
+      CREATE TABLE agent_episode_embed_meta (
+        episode_id TEXT PRIMARY KEY,
+        body_hash TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        dim INTEGER NOT NULL,
+        embedded_at TEXT NOT NULL,
+        FOREIGN KEY (episode_id) REFERENCES agent_episodes(id) ON DELETE CASCADE
+      );
+
+      CREATE INDEX agent_episode_embed_meta_model_idx
+        ON agent_episode_embed_meta(model_id, dim);
+    `,
+  },
+  {
+    version: 3,
+    precondition: (db) => {
+      try {
+        db.query("SELECT vec_version() AS v").get();
+      } catch {
+        return false;
+      }
+      return tableSql(db, "agent_episodes_vec")?.includes("float[384]") === true;
+    },
+    sql: `
+      DROP TABLE IF EXISTS agent_episodes_vec;
+      DROP TABLE IF EXISTS agent_episode_embed_meta;
+
+      CREATE VIRTUAL TABLE agent_episodes_vec USING vec0(
+        embedding float[1024]
       );
 
       CREATE TABLE agent_episode_embed_meta (
@@ -96,3 +127,10 @@ export const episodeMigrations: readonly SqliteMigration[] = [
     `,
   },
 ];
+
+function tableSql(db: import("bun:sqlite").Database, name: string): string | null {
+  const row = db
+    .query("SELECT sql FROM sqlite_master WHERE name = $name")
+    .get({ $name: name }) as { sql: string } | undefined;
+  return row?.sql ?? null;
+}

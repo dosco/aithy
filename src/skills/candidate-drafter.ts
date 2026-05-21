@@ -1,6 +1,7 @@
 import { ax, f } from "@ax-llm/ax";
 import { createAiService } from "../agent/ai-service";
 import type { AppConfig } from "../config/env";
+import type { RuntimeStore } from "../runtime/runtime-store";
 import type { SkillCandidateEntry } from "./candidate-store";
 import type { SkillDraft } from "./promote-store";
 import type { SkillEntry } from "./skills-store";
@@ -34,8 +35,8 @@ Use only facts visible in the candidate and evidence. Do not include secrets, ra
 The body must be practical markdown guidance. Prefer short checklists and caveats over narration.
 The id must be a lowercase slug. Avoid ids that collide with existing skills.`;
 
-export function createSkillCandidateDrafter(config: AppConfig): SkillCandidateDrafter {
-  const llm = createAiService(config);
+export function createSkillCandidateDrafter(input: AppConfig | { config: AppConfig; runtimeStore?: RuntimeStore }): SkillCandidateDrafter {
+  const llm = createAiService(input);
   const program = ax(signature, {
     description,
     maxSteps: 1,

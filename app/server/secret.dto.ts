@@ -1,7 +1,8 @@
 import type { AppConfig } from "../../src/config/env";
+import { grokSubscriptionStatus as readGrokSubscriptionStatus } from "../../src/grok-subscription/store";
 import { readParallelApiKey, readProviderApiKey } from "../../src/settings/secrets";
 import type { StoredSettings } from "../../src/settings/types";
-import type { ParallelSearchStatusDto, SecretStatusDto } from "./dto-types";
+import type { GrokSubscriptionStatusDto, ParallelSearchStatusDto, SecretStatusDto } from "./dto-types";
 
 export async function secretStatus(
   config: AppConfig,
@@ -29,6 +30,16 @@ export async function parallelSearchStatus(
   config: AppConfig,
   settings?: StoredSettings,
 ): Promise<ParallelSearchStatusDto> {
+  const grok = await grokSubscriptionStatusDto(config);
+  if (grok.connected) {
+    return {
+      provider: "grok-subscription",
+      configured: true,
+      source: "bun.secrets",
+      mode: "grok-subscription",
+      url: config.parallelSearchMcpUrl,
+    };
+  }
   if (settings?.runtime.parallelApiKey === null) {
     return {
       provider: "parallel",
@@ -39,7 +50,7 @@ export async function parallelSearchStatus(
     };
   }
   const stored = await readParallelApiKey(config.botId);
-  const source = stored ? "bun.secrets" : config.parallelApiKey ? "environment" : null;
+  const source = stored ? "bun.secrets" : null;
   return {
     provider: "parallel",
     configured: Boolean(source),
@@ -47,4 +58,10 @@ export async function parallelSearchStatus(
     mode: source ? "api-key" : "anonymous",
     url: config.parallelSearchMcpUrl,
   };
+}
+
+export async function grokSubscriptionStatusDto(
+  config: AppConfig,
+): Promise<GrokSubscriptionStatusDto> {
+  return readGrokSubscriptionStatus(config.botId, config.stateDbPath);
 }

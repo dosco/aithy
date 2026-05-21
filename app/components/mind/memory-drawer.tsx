@@ -1,10 +1,11 @@
-import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
 import { Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, FormError, FormTextarea, fieldClass } from "@/components/lib/form-bits";
 import { cn } from "@/lib/utils";
 import type { MemoryDto } from "@/server/dto";
 import { MEMORY_KINDS, type MemoryKind } from "../../../src/memory/types";
+import { MemoryEvidenceBlock, parseMemoryEvidence } from "./memory-evidence";
 import { buildMemoryHelp } from "./memory-help";
 import type { MemoryForm } from "./memory-tile";
 
@@ -208,14 +209,11 @@ function MemoryEditor({
           </Field>
         </section>
 
-        <Field label="Evidence" className="mt-5">
-          <FormTextarea
-            rows={2}
-            value={form.evidence}
-            onChange={(event) => onChange({ ...form, evidence: event.target.value })}
-            className="min-h-16 resize-none"
-          />
-        </Field>
+        <MemoryEvidenceEditor
+          key={memory?.id ?? "new"}
+          value={form.evidence}
+          onChange={(evidence) => onChange({ ...form, evidence })}
+        />
         <Field label="Body" className="mt-5">
           <FormTextarea
             rows={8}
@@ -245,6 +243,44 @@ function MemoryEditor({
         </div>
       </footer>
     </>
+  );
+}
+
+function MemoryEvidenceEditor({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [editingRaw, setEditingRaw] = useState(false);
+  const parsed = parseMemoryEvidence(value);
+  const showRaw = !parsed || editingRaw;
+
+  return (
+    <section className="mt-5 grid gap-1.5">
+      <span className="text-[10px] font-medium uppercase tracking-wider text-[rgb(var(--muted-foreground))]">
+        Evidence
+      </span>
+      {parsed ? <MemoryEvidenceBlock evidence={value} /> : null}
+      {showRaw ? (
+        <FormTextarea
+          rows={2}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="min-h-16 resize-none"
+        />
+      ) : null}
+      {parsed ? (
+        <button
+          type="button"
+          className="w-fit text-xs font-medium text-[rgb(var(--muted-foreground))] underline-offset-4 hover:text-[rgb(var(--foreground))] hover:underline"
+          onClick={() => setEditingRaw((open) => !open)}
+        >
+          {editingRaw ? "Hide raw evidence" : "Edit raw evidence"}
+        </button>
+      ) : null}
+    </section>
   );
 }
 

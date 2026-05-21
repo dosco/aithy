@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AppConfig } from "../src/config/env";
 import { ActiveRunRegistry } from "../src/agent/active-runs";
+import { defaultLocalInferenceSettings } from "../src/local-inference/settings";
 import { globalMountsChanged } from "../src/settings/resolve";
 import {
   computeMountName,
@@ -15,6 +16,7 @@ import type { SandboxProvider, SessionMount } from "../src/sandbox/provider";
 function configFixture(globalMounts: AppConfig["globalMounts"] = []): AppConfig {
   return {
     aiProvider: "openai",
+    localInference: defaultLocalInferenceSettings,
     sandboxProvider: "disabled",
     sandboxImage: "x",
     sandboxCpus: 1,

@@ -1,6 +1,6 @@
 import { useCallback, useMemo } from "react";
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, House } from "lucide-react";
 import { ChatComposer } from "@/components/chat-composer";
 import { ChatTimeline } from "@/components/chat-timeline";
 import { useChatUi } from "@/components/chat-ui-context";
@@ -9,6 +9,7 @@ import { SubSessionDrawer } from "@/components/sub-session-drawer";
 import { ThemeSync } from "@/components/theme-sync";
 import { useChatController } from "@/components/use-chat-controller";
 import type { WebStateDto } from "@/server/dto";
+import { HOME_SESSION_ID } from "../../src/session/home-session";
 
 export function ChatPage({ initialState }: { initialState: WebStateDto }) {
   const navigate = useNavigate();
@@ -41,19 +42,27 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
     navigateToSession,
   });
   const { details } = useChatUi();
+  const isHome = chat.activeSessionId === HOME_SESSION_ID;
 
   return (
     <section className="app-chat-page mx-auto flex min-h-screen w-full flex-col pt-24">
       <ThemeSync ui={initialState.settings.ui} />
-      {chat.activeSession?.parentSessionId ? (
+      {chat.activeSession?.parentSessionId || isHome ? (
         <header className="app-chat-header">
-          <Link
-            to="/chat/$sessionId"
-            params={{ sessionId: chat.activeSession.parentSessionId }}
-            className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-[rgb(var(--muted-foreground))] transition hover:text-[rgb(var(--foreground))]"
-          >
-            <ArrowLeft className="h-3 w-3" /> back to parent
-          </Link>
+          {chat.activeSession?.parentSessionId ? (
+            <Link
+              to="/chat/$sessionId"
+              params={{ sessionId: chat.activeSession.parentSessionId }}
+              className="mt-1.5 inline-flex items-center gap-1.5 text-xs text-[rgb(var(--muted-foreground))] transition hover:text-[rgb(var(--foreground))]"
+            >
+              <ArrowLeft className="h-3 w-3" /> back to parent
+            </Link>
+          ) : null}
+          {isHome ? (
+            <div className="mt-1.5 inline-flex items-center gap-1.5 rounded-full border border-[rgb(var(--border))] bg-[rgb(var(--panel)/0.72)] px-2.5 py-1 font-mono text-[10px] uppercase tracking-[0.16em] text-[rgb(var(--muted-foreground))]">
+              <House className="h-3 w-3" /> Home
+            </div>
+          ) : null}
         </header>
       ) : null}
 

@@ -5,12 +5,11 @@
  *   bun run memory <session id>
  *   bun run memory <session id> --hybrid
  */
-import path from "node:path";
 import { existsSync } from "node:fs";
 import { loadConfig, type AppConfig } from "../src/config/env";
 import { assertStartupConfig } from "../src/config/validate";
 import { createMemoryAgent } from "../src/memory/memory-agent";
-import { EmbedService } from "../src/memory/embed";
+import { LocalLlamaEmbedder } from "../src/local-inference/http-client";
 import { SqliteMemoryStore } from "../src/memory/memory-store";
 import { probeAndConfigureSqlite } from "../src/memory/vec-extension";
 import { applyRuntimeSettings } from "../src/settings/resolve";
@@ -22,6 +21,7 @@ import type { BotMessage } from "../src/session/types";
 interface Args {
   sessionId: string;
   hybrid: boolean;
+  localInferenceUrl?: string;
 }
 
 const args = parseArgs(process.argv.slice(2));
@@ -50,12 +50,13 @@ if (session.messages.length === 0) {
   process.exit(0);
 }
 
-const stateRoot = path.dirname(config.stateDbPath);
+const baseUrl = args.localInferenceUrl?.trim();
+if (args.hybrid && !baseUrl) {
+  console.error("Set --url for --hybrid.");
+  process.exit(1);
+}
 const embedder = args.hybrid
-  ? new EmbedService({
-      cacheDir: path.join(stateRoot, "cache"),
-      log: (m) => console.error(`[embedder] ${m}`),
-    })
+  ? new LocalLlamaEmbedder(() => baseUrl ?? null)
   : undefined;
 if (embedder) {
   console.error("loading embedder...");
@@ -127,20 +128,35 @@ function parseArgs(rawArgs: string[]): Args {
     printHelp();
     process.exit(0);
   }
-  const flags = new Set(args.filter((arg) => arg.startsWith("-")));
-  const sessionId = args.find((arg) => !arg.startsWith("-"));
+  const flags = new Set(args.filter((arg) => arg.startsWith("-") && arg !== "--url"));
+  let localInferenceUrl: string | undefined;
+  const positional: string[] = [];
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === "--url") {
+      localInferenceUrl = args[i + 1];
+      i += 1;
+      continue;
+    }
+    if (arg.startsWith("--url=")) {
+      localInferenceUrl = arg.slice("--url=".length);
+      continue;
+    }
+    if (!arg.startsWith("-")) positional.push(arg);
+  }
+  const sessionId = positional[0];
   if (!sessionId) {
     printHelp();
     process.exit(2);
   }
   for (const flag of flags) {
-    if (flag !== "--hybrid") {
+    if (flag !== "--hybrid" && !flag.startsWith("--url=")) {
       console.error(`Unknown flag: ${flag}`);
       printHelp();
       process.exit(2);
     }
   }
-  return { sessionId, hybrid: flags.has("--hybrid") };
+  return { sessionId, hybrid: flags.has("--hybrid"), localInferenceUrl };
 }
 
 function normalizeArgs(args: string[]): string[] {
@@ -154,5 +170,5 @@ function normalizeArgs(args: string[]): string[] {
 }
 
 function printHelp(): void {
-  console.log("Usage: bun run memory <session id> [--hybrid]");
+  console.log("Usage: bun run memory <session id> [--hybrid --url <local inference base URL>]");
 }

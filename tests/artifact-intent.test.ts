@@ -23,12 +23,14 @@ describe("artifact intent repair", () => {
     let calls = 0;
 
     await runMessage(textMessage("create a file called bird.txt with a haiku"), {
-      config: loadConfig({
-        AITHY_SANDBOX_PROVIDER: "disabled",
-        AITHY_STATE_DIR: root,
-        AITHY_WORKSPACE_ROOT: workspaceRoot,
-        AITHY_OUTBOX_ROOT: outboxRoot,
-      }),
+      config: {
+        ...loadConfig(),
+        sandboxProvider: "disabled",
+        stateDir: root,
+        stateDbPath: dbPath,
+        workspaceRoot,
+        outboxRoot,
+      },
       events: new EventBus(),
       sandbox: new MockSandboxProvider(),
       sessions,

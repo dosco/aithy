@@ -1,6 +1,7 @@
 import { f, fn, type AxAgentFunction } from "@ax-llm/ax";
 import type { AppConfig } from "../config/env";
 import { createAiService, createFastAiService } from "../agent/ai-service";
+import type { RuntimeStore } from "../runtime/runtime-store";
 import { createAxDedupeDecider, dedupeExtractedItems } from "../conversation-analysis";
 import { assertIsoDate, isExpired, normalizeMemoryTiming } from "./time-bound";
 import type { SqliteMemoryStore } from "./memory-store";
@@ -12,6 +13,7 @@ const MEMORY_DEDUPE_CRITERIA = `The candidate is a duplicate only if an existing
 
 export interface MemoryAgentToolDeps {
   config: AppConfig;
+  runtimeStore?: RuntimeStore;
   memory: SqliteMemoryStore;
   dedupeDecider?: MemoryDedupeDecider;
   dedupeWrites?: boolean;
@@ -52,7 +54,7 @@ export function buildMemoryAgentTools(deps: MemoryAgentToolDeps): AxAgentFunctio
         };
         if (isExpired(candidate.validUntil)) return { id: "", deduped: false, expired: true };
         if (dedupeWrites) {
-          dedupeDecider ??= createMemoryDedupeDecider(deps.config);
+          dedupeDecider ??= createMemoryDedupeDecider(deps);
           return writeDedupedMemory(memory, dedupeDecider, candidate);
         }
         const entry = memory.upsert(candidate);
@@ -139,8 +141,9 @@ export interface MemoryDedupeDecider {
   isDuplicate(candidate: MemoryUpsert, matches: readonly MemoryEntry[]): Promise<boolean>;
 }
 
-function createMemoryDedupeDecider(config: AppConfig): MemoryDedupeDecider {
-  const llm = createFastAiService(config) ?? createAiService(config);
+function createMemoryDedupeDecider(deps: Pick<MemoryAgentToolDeps, "config" | "runtimeStore">): MemoryDedupeDecider {
+  const aiInput = { config: deps.config, runtimeStore: deps.runtimeStore };
+  const llm = createFastAiService(aiInput) ?? createAiService(aiInput);
   const decider = createAxDedupeDecider<MemoryUpsert, MemoryEntry>(llm);
   return {
     async isDuplicate(candidate, matches) {

@@ -1,4 +1,5 @@
 import { loadConfig, type AppConfig } from "../config/env";
+import { grokSubscriptionStatus } from "../grok-subscription/store";
 import { applyRuntimeSettings } from "../settings/resolve";
 import { readParallelApiKey, readProviderApiKey } from "../settings/secrets";
 import type { StoredSettings } from "../settings/types";
@@ -27,9 +28,13 @@ export async function resolveEffectiveConfig(
     settings.runtime.parallelApiKey === null
       ? null
       : secrets.parallelApiKey ?? await readParallelApiKey(baseConfig.botId) ?? baseConfig.parallelApiKey;
-  return applyRuntimeSettings(baseConfig, settings.runtime, apiKey, fastApiKey, parallelApiKey);
+  const grok = await grokSubscriptionStatus(baseConfig.botId, baseConfig.stateDbPath);
+  return {
+    ...applyRuntimeSettings(baseConfig, settings.runtime, apiKey, fastApiKey, parallelApiKey),
+    grokSubscriptionConnected: grok.connected,
+  };
 }
 
 export function loadBaseConfig(): AppConfig {
-  return loadConfig(process.env, { traceEnabled: process.argv.includes("--trace") });
+  return loadConfig({ traceEnabled: process.argv.includes("--trace") });
 }

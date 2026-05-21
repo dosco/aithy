@@ -289,7 +289,7 @@ class RuntimeImpl implements AithyRuntime {
       services: [
         { role: "agent-worker", entry: "src/runtime/services/agent/worker.ts" },
         { role: "sandbox-worker", entry: "src/runtime/services/sandbox/worker.ts" },
-        { role: "embedding-worker", entry: "src/runtime/services/embedding/worker.ts" },
+        { role: "local-inference-worker", entry: "src/runtime/services/local-inference/worker.ts" },
       ],
     });
     runtime.workerSupervisor.start();
@@ -344,6 +344,7 @@ class RuntimeImpl implements AithyRuntime {
     }
     this.config = nextConfig;
     await this.queue.submitCommand("agent-worker", "reload_settings");
+    await this.queue.submitCommand("local-inference-worker", "local-inference.reload_settings");
     return nextSettings;
   }
 

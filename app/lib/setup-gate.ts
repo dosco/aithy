@@ -23,9 +23,18 @@ export async function readSetupGateState(): Promise<SetupGateStateDto> {
   return pendingGateState;
 }
 
-export function setCachedSetupGateState(state: SetupGateStateDto): void {
+export function setCachedSetupGateState(
+  state: Pick<SetupGateStateDto, "aiConfigured" | "profileConfigured"> & Partial<SetupGateStateDto>,
+): void {
   gateStateVersion += 1;
-  cachedGateState = state;
+  cachedGateState = {
+    aiConfigured: state.aiConfigured,
+    profileConfigured: state.profileConfigured,
+    localInferenceRequired: state.localInferenceRequired ?? false,
+    localInferenceReady: state.localInferenceReady ?? true,
+    localInferenceActive: state.localInferenceActive ?? false,
+    localInferenceError: state.localInferenceError ?? null,
+  };
   pendingGateState = null;
 }
 
@@ -36,6 +45,10 @@ export async function saveSettingsWithSetupGateRefresh(
   setCachedSetupGateState({
     aiConfigured: result.aiConfigured,
     profileConfigured: cachedGateState?.profileConfigured ?? true,
+    localInferenceRequired: result.setupGate.localInferenceRequired,
+    localInferenceReady: result.setupGate.localInferenceReady,
+    localInferenceActive: result.setupGate.localInferenceActive,
+    localInferenceError: result.setupGate.localInferenceError,
   });
   return result;
 }

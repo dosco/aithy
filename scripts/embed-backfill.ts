@@ -5,21 +5,21 @@
  *
  * Idempotent and resumable — run as many times as you like.
  */
-import path from "node:path";
 import { loadConfig } from "../src/config/env";
-import { EmbedService } from "../src/memory/embed";
+import { LocalLlamaEmbedder } from "../src/local-inference/http-client";
 import { SqliteMemoryStore } from "../src/memory/memory-store";
 import { probeAndConfigureSqlite } from "../src/memory/vec-extension";
 
 probeAndConfigureSqlite();
 
 const config = loadConfig();
-const stateRoot = path.dirname(config.stateDbPath);
+const baseUrl = localInferenceUrlFromArgs(process.argv.slice(2));
+if (!baseUrl) {
+  console.error("✗ set --url to a running llama-server router base URL");
+  process.exit(1);
+}
 
-const embedder = new EmbedService({
-  cacheDir: path.join(stateRoot, "cache"),
-  log: (m) => console.error(`[embedder] ${m}`),
-});
+const embedder = new LocalLlamaEmbedder(() => baseUrl);
 
 console.error("loading embedder...");
 await embedder.init();
@@ -45,3 +45,12 @@ const result = await memory.backfillEmbeddings();
 const elapsed = Date.now() - t0;
 console.error(`done=${result.done} skipped=${result.skipped} elapsed=${elapsed}ms`);
 process.exit(0);
+
+function localInferenceUrlFromArgs(args: string[]): string | undefined {
+  for (let i = 0; i < args.length; i += 1) {
+    const arg = args[i];
+    if (arg === "--url") return args[i + 1]?.trim();
+    if (arg.startsWith("--url=")) return arg.slice("--url=".length).trim();
+  }
+  return undefined;
+}

@@ -8,6 +8,7 @@ import {
   type SettingsPatch,
   type StoredSettings,
 } from "./types";
+import { normalizeLocalInferenceSettings } from "../local-inference/settings";
 
 interface MetadataRow {
   value: string;
@@ -100,6 +101,9 @@ function normalizeRuntimeSettings(runtime: StoredSettings["runtime"]): StoredSet
   else delete next.sandboxProvider;
   if (typeof next.systemBashEnabled !== "boolean") {
     delete next.systemBashEnabled;
+  }
+  if (next.localInference !== undefined) {
+    next.localInference = normalizeLocalInferenceSettings(next.localInference);
   }
   return next;
 }

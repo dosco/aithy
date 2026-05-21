@@ -5,6 +5,7 @@ import {
   BookOpen,
   Brain,
   Bug,
+  Cpu,
   Eye,
   History,
   House,
@@ -32,11 +33,12 @@ import { HOME_SESSION_ID } from "../../src/session/home-session";
 const navItems = [
   { to: "/skills", label: "Skills", icon: BookOpen },
   { to: "/memory", label: "Memory", icon: Brain },
-  { to: "/usage", label: "Usage", icon: BarChart3 },
-  { to: "/tasks", label: "Tasks", icon: ListChecks },
   { to: "/attentions", label: "Attentions", icon: Eye },
-  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/tasks", label: "Tasks", icon: ListChecks },
+  { to: "/usage", label: "Usage", icon: BarChart3 },
   { to: "/themes", label: "Themes", icon: Palette },
+  { to: "/settings", label: "Settings", icon: Settings },
+  { to: "/inference", label: "Inference", icon: Cpu },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {
@@ -116,7 +118,7 @@ function TopChrome() {
   }
 
   function openDeleteDialog() {
-    if (!activeSessionId) return;
+    if (!activeSessionId || activeSessionId === HOME_SESSION_ID) return;
     setPendingDeleteSessionId(activeSessionId);
     setExpanded(false);
   }
@@ -125,16 +127,11 @@ function TopChrome() {
     if (!pendingDeleteSessionId) return;
     setDeleting(true);
     try {
-      const deletedHome = pendingDeleteSessionId === HOME_SESSION_ID;
       const result = await deleteSession({ data: { conversationId: pendingDeleteSessionId } });
       const next = result.sessions[0] ?? null;
       setSessions(result.sessions);
       setPendingDeleteSessionId(null);
-      if (deletedHome) {
-        await navigate({ to: "/chat/$sessionId", params: { sessionId: HOME_SESSION_ID } });
-      } else if (next?.conversationId === HOME_SESSION_ID) {
-        await navigate({ to: "/chat/$sessionId", params: { sessionId: HOME_SESSION_ID } });
-      } else if (next) {
+      if (next) {
         await navigate({ to: "/chat/$sessionId", params: { sessionId: next.conversationId } });
       } else {
         await navigate({ to: "/sessions" });
@@ -212,6 +209,7 @@ function TopChrome() {
                 >
                   {activeSessionId ? (
                     <SessionMenuActions
+                      canDelete={activeSessionId !== HOME_SESSION_ID}
                       details={details}
                       onDelete={openDeleteDialog}
                       onToggleDetails={() => {
@@ -261,10 +259,12 @@ function TopChrome() {
 }
 
 function SessionMenuActions({
+  canDelete,
   details,
   onDelete,
   onToggleDetails,
 }: {
+  canDelete: boolean;
   details: boolean;
   onDelete: () => void;
   onToggleDetails: () => void;
@@ -282,14 +282,16 @@ function SessionMenuActions({
           {details ? "On" : "Off"}
         </span>
       </button>
-      <button
-        type="button"
-        onClick={onDelete}
-        className="flex items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm text-[rgb(var(--muted-foreground))] transition-colors hover:bg-[rgb(var(--danger)/0.09)] hover:text-[rgb(var(--danger))]"
-      >
-        <Trash2 className="h-4 w-4" />
-        <span className="whitespace-nowrap">Delete session</span>
-      </button>
+      {canDelete ? (
+        <button
+          type="button"
+          onClick={onDelete}
+          className="flex items-center gap-3 rounded-md px-3 py-2.5 text-left text-sm text-[rgb(var(--muted-foreground))] transition-colors hover:bg-[rgb(var(--danger)/0.09)] hover:text-[rgb(var(--danger))]"
+        >
+          <Trash2 className="h-4 w-4" />
+          <span className="whitespace-nowrap">Delete session</span>
+        </button>
+      ) : null}
     </div>
   );
 }

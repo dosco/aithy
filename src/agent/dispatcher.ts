@@ -37,6 +37,10 @@ export interface UserChatJobResult {
   createdAt: string;
 }
 
+export interface AgentWorkerContext {
+  agentWorkerId: number;
+}
+
 export interface EnqueuedUserChatJob {
   jobId: string;
   conversationId: string;
@@ -64,10 +68,10 @@ interface AgentDispatcherOptions {
   /** Single-flight gate: must resolve before each job runs. */
   ensureBotSandbox: () => Promise<void>;
   /** Pure processor: takes serializable job data, returns serializable result. */
-  process: (data: UserChatJobData) => Promise<UserChatJobResult>;
+  process: (data: UserChatJobData, context: AgentWorkerContext) => Promise<UserChatJobResult>;
   onCompleted?: (data: UserChatJobData, result: UserChatJobResult) => void;
   onFailed?: (data: UserChatJobData, error: Error) => void;
-  onStarted?: (data: UserChatJobData, jobId: string) => void;
+  onStarted?: (data: UserChatJobData, jobId: string, context: AgentWorkerContext) => void;
   onStatus?: (status: SetupStatusInput) => void;
   onError?: QueueErrorReporter;
 }
@@ -163,6 +167,8 @@ function submitRuntimeCommand(
 export class AgentDispatcher implements UserChatQueueClient {
   private readonly app: EmbeddedQueueWorker<UserChatJobData, UserChatJobResult>;
   private readonly pending = new Map<string, PendingJob>();
+  private readonly activeAgentWorkerIds = new Map<string, number>();
+  private agentWorkerLimit = 1;
   private resumeScheduled = false;
   private blockedReason: string | null = null;
 
@@ -255,7 +261,7 @@ export class AgentDispatcher implements UserChatQueueClient {
   }
 
   queueStatus(
-    dependencyRoles: RuntimeServiceRole[] = ["sandbox-worker", "embedding-worker"],
+    dependencyRoles: RuntimeServiceRole[] = ["sandbox-worker"],
   ): RuntimeQueueStatus {
     return {
       id: "agent.chat",
@@ -272,6 +278,7 @@ export class AgentDispatcher implements UserChatQueueClient {
   /** Hot-reload concurrency from the settings page. Clamped to [1, MAX]. */
   setConcurrency(parallelAgents: number): void {
     const clamped = Math.max(1, Math.min(MAX_PARALLEL_AGENTS, Math.floor(parallelAgents)));
+    this.agentWorkerLimit = clamped;
     if (this.app.worker.concurrency !== clamped) {
       this.app.worker.concurrency = clamped;
     }
@@ -289,16 +296,46 @@ export class AgentDispatcher implements UserChatQueueClient {
         createdAt: new Date().toISOString(),
       };
     }
-    this.opts.onStatus?.({ key: "agent", label: "Please wait agent starting", active: true });
+    const context = { agentWorkerId: this.allocateAgentWorkerId(jobId) };
+    this.opts.onStatus?.({
+      key: `agent.${context.agentWorkerId}`,
+      label: `agent ${context.agentWorkerId} starting`,
+      active: true,
+    });
     try {
       await this.opts.ensureBotSandbox();
-      this.opts.onStatus?.({ key: "agent", label: "agent started", active: false });
-      this.opts.onStarted?.(job.data, jobId);
-      return await this.opts.process(job.data);
+      this.opts.onStatus?.({
+        key: `agent.${context.agentWorkerId}`,
+        label: `agent ${context.agentWorkerId} started`,
+        active: false,
+      });
+      this.opts.onStarted?.(job.data, jobId, context);
+      return await this.opts.process(job.data, context);
     } catch (error) {
-      this.opts.onStatus?.({ key: "agent", label: "agent start ended", active: false });
+      this.opts.onStatus?.({
+        key: `agent.${context.agentWorkerId}`,
+        label: `agent ${context.agentWorkerId} ended`,
+        active: false,
+      });
       throw error;
+    } finally {
+      this.releaseAgentWorkerId(jobId);
     }
+  }
+
+  private allocateAgentWorkerId(jobId: string): number {
+    const active = new Set(this.activeAgentWorkerIds.values());
+    for (let id = 1; id <= this.agentWorkerLimit; id += 1) {
+      if (active.has(id)) continue;
+      this.activeAgentWorkerIds.set(jobId, id);
+      return id;
+    }
+    this.activeAgentWorkerIds.set(jobId, this.agentWorkerLimit);
+    return this.agentWorkerLimit;
+  }
+
+  private releaseAgentWorkerId(jobId: string): void {
+    this.activeAgentWorkerIds.delete(jobId);
   }
 
   private resumeWorkerSoon(): void {

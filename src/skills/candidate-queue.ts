@@ -16,6 +16,7 @@ import {
   type SkillCandidateDetection,
   type SkillCandidateDetector,
 } from "./candidate-detector";
+import type { RuntimeStore } from "../runtime/runtime-store";
 
 export const SKILL_CANDIDATE_BATCH_DELAY_MS = 5 * 60_000;
 export const SKILL_CANDIDATE_DEDUP_TTL_MS = 10 * 60_000;
@@ -50,6 +51,7 @@ interface MessageRow {
 export interface SkillCandidateQueueDeps {
   config: AppConfig;
   candidates: SqliteSkillCandidateStore;
+  runtimeStore?: RuntimeStore;
   tasks?: SqliteTaskStore;
   onTaskStatus?: (task: TaskRecord) => void;
   postToSubSession: (input: {
@@ -278,7 +280,10 @@ export class SkillCandidateQueue {
     }
 
     const openCandidates = this.deps.candidates.openBySession(sessionId);
-    const detector = this.deps.detector ?? createSkillCandidateDetector(this.deps.config);
+    const detector = this.deps.detector ?? createSkillCandidateDetector({
+      config: this.deps.config,
+      runtimeStore: this.deps.runtimeStore,
+    });
     const transcript = formatTranscript(overlap, newRows);
     const detections = await detector.forward({ openCandidates, transcript });
     let stored = 0;

@@ -32,10 +32,9 @@ if (target.kind === "all") {
   await rm(baseConfig.stateDir, { force: true, recursive: true });
   console.log(`Removed Aithy state root: ${baseConfig.stateDir}`);
 } else {
-  const config = loadConfig({ ...process.env, AITHY_BOT_ID: target.botId });
-  const botStateDir = path.join(config.stateDir, config.botId);
-  await removeMicrosandboxVm(config.botId);
-  await removeBotStateDir(config.stateDir, config.botId);
+  const botStateDir = path.join(baseConfig.stateDir, target.botId);
+  await removeMicrosandboxVm(target.botId);
+  await removeBotStateDir(baseConfig.stateDir, target.botId);
   console.log(`Removed Aithy state: ${botStateDir}`);
 }
 

@@ -68,7 +68,7 @@ export async function hybridSearch(
       const [ftsHits, vecHits] = await Promise.all([
         runFts(db, ftsExpr, kindFilter, excludeFilter),
         embedder
-          .embed(raw)
+          .embedQuery(raw)
           .then((vec) => runVec(db, vec, kindFilter, excludeFilter))
           .catch(() => [] as RankedHit[]),
       ]);

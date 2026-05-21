@@ -20,9 +20,11 @@ import { createMemoryAgent, type MemoryAgent, type MemoryAgentDeps } from "./mem
 import type { SqliteMemoryStore } from "./memory-store";
 import type { SqliteMemoryRunsStore } from "./memory-runs";
 import type { SqliteUsageStore } from "../usage/usage-store";
-import { captureProgramUsage } from "../usage/capture";
+import { captureProgramUsage, usageAttributionForConfig } from "../usage/capture";
 import type { SqliteTaskStore } from "../tasks/task-store";
 import type { TaskRecord } from "../tasks/types";
+import { resolveAiServiceConfig } from "../agent/ai-service";
+import type { RuntimeStore } from "../runtime/runtime-store";
 
 export const AUTO_MEMORY_BATCH_DELAY_MS = 10 * 60_000;
 export const AUTO_MEMORY_DEDUP_TTL_MS = 15 * 60_000;
@@ -53,6 +55,7 @@ export interface MemoryQueueDeps {
   memory: SqliteMemoryStore;
   sessions: SessionManager;
   runs: SqliteMemoryRunsStore;
+  runtimeStore?: RuntimeStore;
   tasks?: SqliteTaskStore;
   onTaskStatus?: (task: TaskRecord) => void;
   extractions?: SqliteMemoryExtractionStore;
@@ -235,11 +238,17 @@ export class MemoryQueue {
     if (missingAi.length > 0) {
       return { summary: `memory triage skipped: missing ${missingAi.join(", ")}` };
     }
-    if (data.trigger === "auto") return this.processAuto();
-    return this.processExplicit(data);
+    let config: AppConfig;
+    try {
+      config = resolveAiServiceConfig({ config: this.deps.config, runtimeStore: this.deps.runtimeStore });
+    } catch (error) {
+      return { summary: `memory triage skipped: ${errorMessage(error)}` };
+    }
+    if (data.trigger === "auto") return this.processAuto(config);
+    return this.processExplicit(data, config);
   }
 
-  private async processExplicit(data: Extract<MemoryJobData, { trigger: "explicit" }>): Promise<{ summary: string }> {
+  private async processExplicit(data: Extract<MemoryJobData, { trigger: "explicit" }>, config: AppConfig): Promise<{ summary: string }> {
     if (!this.deps.sessions.getSummary(data.sessionId)) {
       return { summary: "session deleted" };
     }
@@ -252,10 +261,11 @@ export class MemoryQueue {
       runId: data.runId,
       hint: data.hint,
       thread,
+      config,
     });
   }
 
-  private async processAuto(): Promise<{ summary: string }> {
+  private async processAuto(config: AppConfig): Promise<{ summary: string }> {
     const batch = this.extractions.loadBatch({
       limit: AUTO_MEMORY_MAX_MESSAGES_PER_RUN,
       overlap: AUTO_MEMORY_OVERLAP_MESSAGES,
@@ -278,6 +288,7 @@ export class MemoryQueue {
             sessionId: segment.sessionId,
             runId,
             thread: formatSegmentThread(segment),
+            config,
           });
           processed += 1;
         } catch (error) {
@@ -300,6 +311,7 @@ export class MemoryQueue {
     runId: string;
     hint?: string;
     thread: string;
+    config: AppConfig;
   }): Promise<{ summary: string }> {
     this.deps.runs.recordStart({
       id: input.runId,
@@ -308,7 +320,8 @@ export class MemoryQueue {
     });
     const agentFactory = this.deps.agentFactory ?? createMemoryAgent;
     const agent = agentFactory({
-      config: this.deps.config,
+      config: input.config,
+      runtimeStore: this.deps.runtimeStore,
       memory: this.deps.memory,
     });
     // Snapshot raw row count so we can detect hallucinated tool calls. Any
@@ -331,6 +344,7 @@ export class MemoryQueue {
         purpose: "memory.triage",
         sessionId: input.sessionId,
         runId: input.runId,
+        attribution: usageAttributionForConfig(input.config),
       });
     }
     if (anyToolFired) {
@@ -374,6 +388,10 @@ export class MemoryQueue {
     const task = this.deps.tasks.update(taskId, patch);
     if (task) this.deps.onTaskStatus?.(task);
   }
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export function autoMemoryJobOptions(runId: string): JobOptions {

@@ -17,7 +17,7 @@ import type { NotificationCreate } from "../notifications/types";
 import { formatMemoryForRecall } from "../memory/format";
 import type { SqliteUsageStore } from "../usage/usage-store";
 import type { SqliteSkillsStore } from "../skills/skills-store";
-import { captureProgramUsage } from "../usage/capture";
+import { captureProgramUsage, usageAttributionForConfig } from "../usage/capture";
 import type { SandboxProvider } from "../sandbox/provider";
 import type { SessionManager } from "../session/session-manager";
 import type { UserProfile } from "../profile/types";
@@ -205,6 +205,7 @@ export async function runMessage(
     : undefined;
   const { program, llm } = agentFactory({
     config: deps.config,
+    runtimeStore: deps.runtimeStore,
     tools: createAgentTools(toolContext, deps.config),
     events: deps.events,
     conversationId: message.conversationId,
@@ -304,6 +305,7 @@ export async function runMessage(
         store: deps.usage,
         purpose: "chat",
         sessionId: message.conversationId,
+        attribution: usageAttributionForConfig(deps.config),
       });
     }
     enqueueAutoMemoryTask(deps, message.conversationId);

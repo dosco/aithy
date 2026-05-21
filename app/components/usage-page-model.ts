@@ -1,4 +1,6 @@
 import type { UsageBucketDto } from "@/server/dto";
+import { providerDisplayName } from "../../src/agent/ai-providers";
+import { LOCAL_CHAT_MODEL_ALIAS } from "../../src/local-inference/manifest";
 
 export const PURPOSE_TINT: Record<string, string> = {
   chat: "fill-sky-500",
@@ -127,4 +129,15 @@ export function groupByModel(rows: UsageBucketDto[]): ModelRow[] {
     }
   }
   return [...map.values()].sort((a, b) => b.totalTokens - a.totalTokens);
+}
+
+export function usageProviderLabel(provider: string, model: string): string {
+  if (isLegacyLocalUsage(provider, model)) return "Local";
+  const normalized = provider.trim().toLowerCase();
+  return providerDisplayName(normalized || provider);
+}
+
+function isLegacyLocalUsage(provider: string, model: string): boolean {
+  if (provider.trim().toLowerCase() !== "openai") return false;
+  return model === LOCAL_CHAT_MODEL_ALIAS || model === "Qwen3.5-4B" || model.toLowerCase().endsWith(".gguf");
 }

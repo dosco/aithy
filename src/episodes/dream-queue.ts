@@ -10,9 +10,10 @@ import {
 import type { SqliteTaskStore } from "../tasks/task-store";
 import type { TaskRecord } from "../tasks/types";
 import type { SqliteUsageStore } from "../usage/usage-store";
-import { captureProgramUsage } from "../usage/capture";
+import { captureProgramUsage, usageAttributionForConfig } from "../usage/capture";
 import { detectionToUpsert, createDreamDetector, type DreamDetector } from "./dream-detector";
 import type { SqliteEpisodeStore } from "./episode-store";
+import type { RuntimeStore } from "../runtime/runtime-store";
 
 export const DREAM_BATCH_DELAY_MS = 5 * 60_000;
 export const DREAM_DEDUP_TTL_MS = 10 * 60_000;
@@ -46,6 +47,7 @@ interface MessageRow {
 export interface DreamQueueDeps {
   config: AppConfig;
   episodes: SqliteEpisodeStore;
+  runtimeStore?: RuntimeStore;
   tasks?: SqliteTaskStore;
   usage?: SqliteUsageStore;
   onTaskStatus?: (task: TaskRecord) => void;
@@ -251,7 +253,10 @@ export class DreamQueue {
       db.close();
     }
 
-    const detector = this.deps.detector ?? createDreamDetector(this.deps.config);
+    const detector = this.deps.detector ?? createDreamDetector({
+      config: this.deps.config,
+      runtimeStore: this.deps.runtimeStore,
+    });
     const transcript = formatTranscript(overlap, newRows);
     const detections = await detector.forward({ transcript });
     if (this.deps.usage) {
@@ -259,6 +264,7 @@ export class DreamQueue {
         store: this.deps.usage,
         purpose: "memory.dream",
         sessionId,
+        attribution: usageAttributionForConfig(this.deps.config),
       });
     }
 

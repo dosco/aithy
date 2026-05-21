@@ -5,6 +5,11 @@ import {
   DEFAULT_PARALLEL_AGENTS,
   DEFAULT_SESSION_TTL_MS,
 } from "./limits";
+import {
+  DEFAULT_LOCAL_AGENT_MODEL_ID,
+} from "../local-inference/manifest";
+import { DEFAULT_OPENAI_MODEL } from "../agent/ai-providers";
+import { defaultLocalInferenceSettings, type LocalInferenceSettings } from "../local-inference/settings";
 
 export type SandboxProviderKind = "microsandbox" | "disabled";
 
@@ -17,6 +22,8 @@ export interface AppConfig {
   aiApiUrl?: string;
   aiApiKey?: string;
   aiModel?: string;
+  localAgentModel?: string;
+  localInference: LocalInferenceSettings;
   fastAiProvider?: string;
   fastAiApiUrl?: string;
   fastAiApiKey?: string;
@@ -31,6 +38,7 @@ export interface AppConfig {
   parallelAgents: number;
   parallelSearchMcpUrl: string;
   parallelApiKey?: string;
+  grokSubscriptionConnected?: boolean;
   systemBashEnabled: boolean;
   workspaceRoot: string;
   outboxRoot: string;
@@ -43,43 +51,29 @@ export interface AppConfig {
 }
 
 export function loadConfig(
-  env = process.env,
   overrides: Partial<Pick<AppConfig, "traceEnabled">> = {},
 ): AppConfig {
-  const sandboxProvider = parseSandboxProvider(env.AITHY_SANDBOX_PROVIDER);
-  const botId = parseBotId(env.AITHY_BOT_ID);
-  const stateDir = expandHome(env.AITHY_STATE_DIR ?? "~/.config/aithy");
+  const botId = "default";
+  const stateDir = expandHome("~/.config/aithy");
 
   return {
     aiProvider: "openai",
-    sandboxProvider,
-    sandboxImage: env.AITHY_SANDBOX_IMAGE ?? "python:3.11-slim",
-    sandboxCpus: parsePositiveInt(env.AITHY_SANDBOX_CPUS, 1),
-    sandboxMemoryMb: parsePositiveInt(env.AITHY_SANDBOX_MEMORY_MB, 512),
-    sandboxNetwork: parseSandboxNetwork(env.AITHY_SANDBOX_NETWORK),
-    sessionTtlMs: parsePositiveInt(
-      env.AITHY_SESSION_TTL_MS,
-      DEFAULT_SESSION_TTL_MS,
-    ),
-    idleParkMs: parsePositiveInt(
-      env.AITHY_IDLE_PARK_MS,
-      DEFAULT_IDLE_PARK_MS,
-    ),
-    parallelAgents: parsePositiveInt(
-      env.AITHY_PARALLEL_AGENTS,
-      DEFAULT_PARALLEL_AGENTS,
-    ),
-    parallelSearchMcpUrl:
-      cleanString(env.AITHY_PARALLEL_SEARCH_MCP_URL)
-      ?? "https://search.parallel.ai/mcp",
-    parallelApiKey:
-      cleanString(env.AITHY_PARALLEL_API_KEY)
-      ?? cleanString(env.PARALLEL_API_KEY),
-    systemBashEnabled: parseBoolean(env.AITHY_SYSTEM_BASH_ENABLED, true),
-    workspaceRoot:
-      env.AITHY_WORKSPACE_ROOT ?? path.join(stateDir, botId, "workspace"),
-    outboxRoot:
-      env.AITHY_OUTBOX_ROOT ?? path.join(stateDir, botId, "outbox"),
+    aiModel: DEFAULT_OPENAI_MODEL,
+    localAgentModel: DEFAULT_LOCAL_AGENT_MODEL_ID,
+    localInference: defaultLocalInferenceSettings,
+    sandboxProvider: "microsandbox",
+    sandboxImage: "python:3.11-slim",
+    sandboxCpus: 1,
+    sandboxMemoryMb: 512,
+    sandboxNetwork: "none",
+    sessionTtlMs: DEFAULT_SESSION_TTL_MS,
+    idleParkMs: DEFAULT_IDLE_PARK_MS,
+    parallelAgents: DEFAULT_PARALLEL_AGENTS,
+    parallelSearchMcpUrl: "https://search.parallel.ai/mcp",
+    grokSubscriptionConnected: false,
+    systemBashEnabled: true,
+    workspaceRoot: path.join(stateDir, botId, "workspace"),
+    outboxRoot: path.join(stateDir, botId, "outbox"),
     botId,
     stateDir,
     stateDbPath: path.join(stateDir, botId, "state.db"),
@@ -87,41 +81,6 @@ export function loadConfig(
     tracesDir: path.join(stateDir, botId, "traces"),
     globalMounts: [],
   };
-}
-
-function parseSandboxProvider(value?: string): SandboxProviderKind {
-  if (value === "disabled" || value === "mock") return "disabled";
-  return "microsandbox";
-}
-
-function parseSandboxNetwork(value?: string): AppConfig["sandboxNetwork"] {
-  if (value === "public" || value === "allow-all") return value;
-  return "none";
-}
-
-function parsePositiveInt(value: string | undefined, fallback: number): number {
-  if (!value) return fallback;
-  const parsed = Number.parseInt(value, 10);
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
-}
-
-function parseBoolean(value: string | undefined, fallback: boolean): boolean {
-  if (value === undefined) return fallback;
-  const normalized = value.trim().toLowerCase();
-  if (["1", "true", "yes", "on"].includes(normalized)) return true;
-  if (["0", "false", "no", "off"].includes(normalized)) return false;
-  return fallback;
-}
-
-function cleanString(value: string | undefined): string | undefined {
-  const trimmed = value?.trim();
-  return trimmed ? trimmed : undefined;
-}
-
-function parseBotId(value: string | undefined): string {
-  const trimmed = value?.trim() || "default";
-  const safe = trimmed.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
-  return safe || "default";
 }
 
 function expandHome(value: string): string {

@@ -28,7 +28,7 @@ describe("url prefetch", () => {
     const toolCalls: unknown[] = [];
     const output = await prefetchUrlsForMessage({
       message: textMessage("m1", "what does this mean https://example.com/post?s=20"),
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: { ...loadConfig(), sandboxProvider: "disabled" },
       toolContext: { session: { conversationId: "conversation" }, events } as any,
       onToolCall: (message) => toolCalls.push(message),
       scrape: async ({ url }) => ({
@@ -57,7 +57,7 @@ describe("runMessage URL prefetch integration", () => {
     const seenInputs: any[] = [];
 
     const reply = await runMessage(textMessage("m1", "what does this mean https://example.com/post"), {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: { ...loadConfig(), sandboxProvider: "disabled" },
       events: new EventBus(),
       sandbox: new MockSandboxProvider(),
       sessions,
@@ -96,7 +96,7 @@ describe("runMessage URL prefetch integration", () => {
     events.subscribe((event) => emitted.push(event));
 
     const reply = await runMessage(textMessage("m1", "what does this mean https://example.com/post"), {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: { ...loadConfig(), sandboxProvider: "disabled" },
       events,
       sandbox: new MockSandboxProvider(),
       sessions: sessionsFor(root),

@@ -5,10 +5,10 @@ describe("RuntimeLogRateLimiter", () => {
   test("suppresses repeated info logs inside the window", () => {
     const limiter = new RuntimeLogRateLimiter(5_000);
     const input = {
-      role: "embedding-worker" as const,
+      role: "local-inference-worker" as const,
       level: "info" as const,
       source: "setup",
-      message: "downloading memory model Xenova/all-MiniLM-L6-v2",
+      message: "downloading local model Qwen3 Embedding 0.6B Q8_0",
     };
 
     expect(limiter.shouldPublish(input, 1_000)).toBe(true);
@@ -20,16 +20,16 @@ describe("RuntimeLogRateLimiter", () => {
     const limiter = new RuntimeLogRateLimiter(5_000);
 
     expect(limiter.shouldPublish({
-      role: "embedding-worker",
+      role: "local-inference-worker",
       level: "info",
       source: "setup",
-      message: "downloading memory model Xenova/all-MiniLM-L6-v2",
+      message: "downloading local model Qwen3 Embedding 0.6B Q8_0",
     }, 1_000)).toBe(true);
     expect(limiter.shouldPublish({
-      role: "embedding-worker",
+      role: "local-inference-worker",
       level: "info",
       source: "setup",
-      message: "downloading reranker model Xenova/ms-marco-MiniLM-L-6-v2",
+      message: "downloading local model Qwen3 Reranker 0.6B Q8_0",
     }, 1_250)).toBe(true);
   });
 

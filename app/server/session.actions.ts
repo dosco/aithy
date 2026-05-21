@@ -3,6 +3,7 @@ import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
 import { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import { assertLoopbackRequest } from "../../src/settings/localhost";
+import { HOME_SESSION_ID } from "../../src/session/home-session";
 import { conversationIdInput, confirmationInput, renameInput } from "./action-schemas";
 import { webStateDto, sessionDto } from "./dto";
 
@@ -31,6 +32,9 @@ export const deleteSession = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
+    if (data.conversationId === HOME_SESSION_ID) {
+      return { deletedIds: [], sessions: runtime.sessions.listSessions().map(sessionDto) };
+    }
     await runtime.dispatcher.cancelByConversation(data.conversationId);
     const deletedIds = await runtime.sessions.deleteSession(data.conversationId);
     await runtime.sessionState.flush();

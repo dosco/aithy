@@ -1,6 +1,9 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "@tanstack/react-router";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, LogIn, RefreshCw } from "lucide-react";
+import { AsciiSplash } from "@/components/ascii-splash";
+import { LocalInferenceSplash } from "@/components/local-inference-splash";
+import { useLiveEvent } from "@/components/live-events";
 import {
   ApiKeyInput,
   Field,
@@ -10,9 +13,18 @@ import {
 import { ThemeSync } from "@/components/theme-sync";
 import { Button } from "@/components/ui/button";
 import { saveSettingsWithSetupGateRefresh, setCachedSetupGateState } from "@/lib/setup-gate";
+import {
+  pollGrokSubscriptionSignIn,
+  startGrokSubscriptionSignIn,
+} from "@/server/actions.functions";
 import { saveProfile } from "@/server/profile.functions";
-import type { SetupPageStateDto } from "@/server/dto";
-import { defaultModelForProvider, isCustomOpenAIProvider } from "../../src/agent/ai-providers";
+import { getSetupGateState } from "@/server/state.functions";
+import type { GrokSubscriptionStatusDto, SetupPageStateDto } from "@/server/dto";
+import {
+  defaultModelForProvider,
+  isCustomOpenAIProvider,
+  isXaiGrokSubscriptionProvider,
+} from "../../src/agent/ai-providers";
 import { providerRequiresApiKey } from "../../src/config/validate";
 
 const SETUP_SAVE_TIMEOUT_MS = 45_000;
@@ -44,10 +56,18 @@ export function SetupPage({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saveStatus, setSaveStatus] = useState<string | null>(null);
+  const [setupStatuses, setSetupStatuses] = useState(initialState.setupStatuses);
+  const [setupGate, setSetupGate] = useState(initialState.setupGate);
+  const [grokSubscription, setGrokSubscription] = useState<GrokSubscriptionStatusDto>(
+    initialState.grokSubscription,
+  );
+  const [grokBusy, setGrokBusy] = useState(false);
 
   const needsModel = !initialState.aiConfigured;
+  const needsGrokSignIn = isXaiGrokSubscriptionProvider(provider);
   const needsKey = providerRequiresApiKey(provider);
   const needsApiUrl = isCustomOpenAIProvider(provider);
+  const localOnly = setupGate.localInferenceRequired && !setupGate.localInferenceReady;
   const canSubmit =
     !busy
     && userName.trim().length > 0
@@ -55,6 +75,7 @@ export function SetupPage({
       model.trim().length > 0
       && (!needsApiUrl || apiUrl.trim().length > 0)
       && (!needsKey || apiKey.trim().length > 0)
+      && (!needsGrokSignIn || grokSubscription.connected)
     ));
 
   async function startChatting() {
@@ -73,6 +94,7 @@ export function SetupPage({
         "Saving profile",
       );
       let aiConfigured = initialState.aiConfigured;
+      let nextSetupGate = setupGate;
       if (needsModel) {
         setSaveStatus("Checking model settings...");
         const result = await withSetupTimeout(
@@ -82,6 +104,7 @@ export function SetupPage({
                 aiProvider: provider,
                 aiApiUrl: needsApiUrl ? apiUrl.trim() : null,
                 aiModel: model.trim(),
+                localAgentModel: model.trim(),
               },
               apiKey: needsKey ? apiKey.trim() : undefined,
             },
@@ -89,12 +112,14 @@ export function SetupPage({
           "Saving AI settings",
         );
         aiConfigured = result.aiConfigured;
+        nextSetupGate = { ...result.setupGate, profileConfigured: true };
         if (!aiConfigured) {
           setError("Saved profile, but Aithy still needs complete model settings.");
           return;
         }
       }
-      setCachedSetupGateState({ aiConfigured, profileConfigured: true });
+      setSetupGate(nextSetupGate);
+      setCachedSetupGateState({ ...nextSetupGate, aiConfigured, profileConfigured: true });
       setSaveStatus("Opening chat...");
       await withSetupTimeout(
         router.navigate({ href: "/chat", replace: true }),
@@ -115,6 +140,71 @@ export function SetupPage({
     if (!initialState.config.aiModel) {
       setModel(defaultModelForProvider(nextProvider));
     }
+  }
+
+  async function signInWithGrok() {
+    setGrokBusy(true);
+    setError(null);
+    try {
+      const started = await startGrokSubscriptionSignIn();
+      setGrokSubscription(started.status);
+      const opened = window.open(started.authorizeUrl, "_blank", "noopener,noreferrer");
+      if (!opened) {
+        throw new Error("Could not open the Grok sign-in window. Allow popups for Aithy and try again.");
+      }
+      for (let attempt = 0; attempt < 120; attempt += 1) {
+        await delay(1500);
+        const next = await pollGrokSubscriptionSignIn({ data: { loginId: started.loginId } });
+        setGrokSubscription(next.status);
+        if (next.state !== "signing_in") {
+          if (next.state !== "connected") setError(next.message);
+          return;
+        }
+      }
+      setError("Grok sign-in is still waiting. Retry when you are ready.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Grok sign-in failed");
+    } finally {
+      setGrokBusy(false);
+    }
+  }
+
+  useLiveEvent((event) => {
+    if (event.type !== "setup-status" || !event.key.startsWith("local.")) return;
+    setSetupStatuses((current) => {
+      const next = current.filter((status) => status.key !== event.key);
+      if (event.active || event.tone === "danger") next.unshift(event);
+      return next;
+    });
+  });
+
+  useEffect(() => {
+    if (!localOnly) return;
+    let cancelled = false;
+    const timer = setInterval(() => {
+      void getSetupGateState().then((state) => {
+        if (cancelled) return;
+        setSetupGate(state);
+        if (state.localInferenceRequired && !state.localInferenceReady) return;
+        setCachedSetupGateState(state);
+        if (state.aiConfigured && state.profileConfigured) {
+          void router.navigate({ href: "/chat", replace: true });
+        }
+      });
+    }, 1500);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [localOnly, router]);
+
+  if (localOnly) {
+    return (
+      <>
+        <ThemeSync ui={initialState.settings.ui} />
+        <LocalInferenceSplash statuses={setupStatuses} />
+      </>
+    );
   }
 
   return (
@@ -194,15 +284,41 @@ export function SetupPage({
                 </div>
               ) : null}
             </div>
-            <Field label={needsKey ? "API key" : "API key (not required)"}>
-              <ApiKeyInput
-                value={apiKey}
-                onChange={setApiKey}
-                secret={null}
-                disabled={!needsKey}
-                fallback={needsKey ? "Stored in the encrypted secrets store" : "Local provider — no key needed"}
-              />
-            </Field>
+            {needsGrokSignIn ? (
+              <div className="grid gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] p-3.5">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-medium">
+                      {grokSubscription.connected ? "Grok subscription connected" : "Sign in with Grok"}
+                    </p>
+                    <p className="text-xs text-[rgb(var(--muted-foreground))]">
+                      Requires SuperGrok or X Premium+. No API key required.
+                    </p>
+                  </div>
+                  <Button type="button" size="sm" disabled={grokBusy} onClick={() => void signInWithGrok()}>
+                    {grokSubscription.state === "error" || grokSubscription.state === "needs_reauth" ? (
+                      <RefreshCw className="h-4 w-4" />
+                    ) : (
+                      <LogIn className="h-4 w-4" />
+                    )}
+                    {grokBusy ? "Opening..." : grokSubscription.connected ? "Retry" : "Sign in"}
+                  </Button>
+                </div>
+                {grokSubscription.message ? (
+                  <p className="text-xs text-[rgb(var(--muted-foreground))]">{grokSubscription.message}</p>
+                ) : null}
+              </div>
+            ) : (
+              <Field label={needsKey ? "API key" : "API key (not required)"}>
+                <ApiKeyInput
+                  value={apiKey}
+                  onChange={setApiKey}
+                  secret={null}
+                  disabled={!needsKey}
+                  fallback={needsKey ? "Stored in the encrypted secrets store" : "Local provider - no key needed"}
+                />
+              </Field>
+            )}
           </>
         ) : null}
 
@@ -231,6 +347,10 @@ export function SetupPage({
       </p>
     </section>
   );
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 function initials(value: string, fallback: string): string {

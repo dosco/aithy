@@ -1,8 +1,9 @@
 import { motion } from "framer-motion";
-import { CalendarDays, Quote, Repeat2 } from "lucide-react";
+import { CalendarDays, Repeat2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MemoryDto } from "@/server/dto";
 import type { MemoryKind } from "../../../src/memory/types";
+import { MemoryEvidencePill } from "./memory-evidence";
 import { KIND_TINT_BORDER, KindGlyph } from "./kind-glyph";
 
 export interface MemoryForm {
@@ -62,24 +63,28 @@ export function MemoryTile({
 
   return (
     <motion.li layout transition={{ type: "spring", stiffness: 360, damping: 32 }}>
-      <button
-        type="button"
-        onClick={onOpen}
+      <article
         className={cn(
           "group relative flex h-full min-h-[164px] w-full flex-col overflow-hidden rounded-lg border bg-[rgb(var(--panel))] p-3 text-left shadow-sm shadow-black/5 transition sm:p-4",
-          "hover:-translate-y-0.5 hover:border-[rgb(var(--foreground))]/30 hover:shadow-md motion-reduce:hover:translate-y-0",
+          "hover:-translate-y-0.5 hover:border-[rgb(var(--foreground))]/30 hover:shadow-md focus-within:border-[rgb(var(--foreground))]/35 motion-reduce:hover:translate-y-0",
           KIND_TINT_BORDER[entry.kind],
           stale && "opacity-85",
         )}
       >
+        <button
+          type="button"
+          className="absolute inset-0 z-0 cursor-pointer"
+          aria-label={`Open memory ${entry.title}`}
+          onClick={onOpen}
+        />
         {fresh ? <span aria-hidden className={cn("absolute right-3 top-3 h-2.5 w-2.5 rounded-full bg-[rgb(var(--foreground))]", breathing && "mind-breath")} /> : null}
-        <div className="min-w-0 pr-5">
+        <div className="pointer-events-none relative z-10 min-w-0 pr-5">
           <KindGlyph kind={entry.kind} className="rounded-full bg-[rgb(var(--muted))]/60 px-2 py-0.5" />
           <h3 className="mt-3 truncate text-base font-medium leading-snug sm:text-lg">{entry.title}</h3>
         </div>
 
-        {metadata.length > 0 ? (
-          <div className="mt-3 flex min-w-0 flex-wrap gap-1.5">
+        {metadata.length > 0 || entry.evidence ? (
+          <div className="pointer-events-none relative z-10 mt-3 flex min-w-0 flex-wrap gap-1.5">
             {metadata.slice(0, 2).map((item) => (
               <span
                 key={item.key}
@@ -90,14 +95,15 @@ export function MemoryTile({
                 <span className="truncate">{item.text}</span>
               </span>
             ))}
+            <MemoryEvidencePill evidence={entry.evidence} />
           </div>
         ) : null}
 
-        <p className="mt-3 line-clamp-2 whitespace-pre-wrap text-sm leading-5 text-[rgb(var(--muted-foreground))]">
+        <p className="pointer-events-none relative z-10 mt-3 line-clamp-2 whitespace-pre-wrap text-sm leading-5 text-[rgb(var(--muted-foreground))]">
           {entry.body}
         </p>
 
-        <div className="mt-auto flex flex-wrap gap-x-3 gap-y-1 pt-3 text-[11px] text-[rgb(var(--muted-foreground))]">
+        <div className="pointer-events-none relative z-10 mt-auto flex flex-wrap gap-x-3 gap-y-1 pt-3 text-[11px] text-[rgb(var(--muted-foreground))]">
           <span>
             {entry.lastRecalledAt
               ? `last recalled ${relativeTime(entry.lastRecalledAt)}`
@@ -105,7 +111,7 @@ export function MemoryTile({
           </span>
           <span>{recallLabel}</span>
         </div>
-      </button>
+      </article>
     </motion.li>
   );
 }
@@ -132,9 +138,6 @@ function memoryMetadata(entry: MemoryDto): Array<{
   }
   if (entry.frequency) {
     items.push({ key: "frequency", text: entry.frequency, title: `frequency: ${entry.frequency}`, icon: Repeat2 });
-  }
-  if (entry.evidence) {
-    items.push({ key: "evidence", text: entry.evidence, title: `evidence: ${entry.evidence}`, icon: Quote });
   }
   return items;
 }

@@ -5,8 +5,13 @@ import { homedir } from "node:os";
 import path from "node:path";
 import { isCustomOpenAIProvider } from "../../src/agent/ai-providers";
 import { isAiConfigured } from "../../src/config/validate";
+import {
+  logoutGrokSubscription,
+  pollGrokSubscriptionLogin,
+  startGrokSubscriptionLogin,
+} from "../../src/grok-subscription/login";
 import { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
-import { parallelWebSearch } from "../../src/search/parallel-search-client";
+import { webSearch } from "../../src/search/web-search-provider";
 import { assertLoopbackRequest } from "../../src/settings/localhost";
 import {
   deleteParallelApiKey,
@@ -16,14 +21,21 @@ import {
   writeProviderApiKey,
 } from "../../src/settings/secrets";
 import type { RuntimeSettings } from "../../src/settings/types";
-import { parallelSearchTestInput, settingsInput } from "./action-schemas";
+import {
+  grokSubscriptionLoginPollInput,
+  localInferenceSettingsInput,
+  parallelSearchTestInput,
+  settingsInput,
+} from "./action-schemas";
 import { assertAiSettings } from "./ai-settings-test";
 import {
   configDto,
+  grokSubscriptionStatusDto,
   parallelSearchStatus,
   secretStatus,
   secretStatusForProvider,
 } from "./dto";
+import { setupGateStateDto } from "./web-state.dto";
 
 export const saveSettings = createServerFn({ method: "POST" })
   .inputValidator(settingsInput)
@@ -98,8 +110,10 @@ export const saveSettings = createServerFn({ method: "POST" })
           ? await secretStatus(runtime.config, settings)
           : await secretStatusForProvider(runtime.config.fastAiProvider, runtime.config.botId)
         : null,
+      grokSubscription: await grokSubscriptionStatusDto(runtime.config),
       parallelSearch: await parallelSearchStatus(runtime.config, settings),
       aiConfigured: isAiConfigured(runtime.config),
+      setupGate: setupGateStateDto(runtime),
       skippedPaths,
     };
   });
@@ -111,18 +125,73 @@ export const testParallelSearch = createServerFn({ method: "POST" })
     const runtime = await getAithyRuntime();
     const apiKey = normalizePostedSecret(data.apiKey) ?? runtime.config.parallelApiKey;
     const url = normalizeParallelSearchMcpUrl(data.url ?? runtime.config.parallelSearchMcpUrl);
-    const result = await parallelWebSearch(
+    const result = await webSearch(
       {
         query: data.query,
         task: "Verify Aithy public web search settings.",
       },
-      { url, apiKey },
+      { ...runtime.config, parallelSearchMcpUrl: url, parallelApiKey: apiKey },
     );
     return {
       provider: result.provider,
-      mode: apiKey ? "api-key" : "anonymous",
+      mode: result.provider === "grok-subscription" ? "grok-subscription" : apiKey ? "api-key" : "anonymous",
       url,
       answer: result.answer,
+    };
+  });
+
+export const startGrokSubscriptionSignIn = createServerFn({ method: "POST" })
+  .handler(async () => {
+    assertLoopbackRequest(getRequest());
+    const runtime = await getAithyRuntime();
+    return startGrokSubscriptionLogin({
+      botId: runtime.config.botId,
+      stateDbPath: runtime.config.stateDbPath,
+    });
+  });
+
+export const pollGrokSubscriptionSignIn = createServerFn({ method: "POST" })
+  .inputValidator(grokSubscriptionLoginPollInput)
+  .handler(async ({ data }) => {
+    assertLoopbackRequest(getRequest());
+    const runtime = await getAithyRuntime();
+    const result = await pollGrokSubscriptionLogin(data.loginId);
+    if (result.state !== "signing_in") {
+      await runtime.updateSettings({});
+    }
+    return grokSubscriptionActionState(runtime, result.loginId, result.state, result.message);
+  });
+
+export const logoutGrokSubscriptionSignIn = createServerFn({ method: "POST" })
+  .handler(async () => {
+    assertLoopbackRequest(getRequest());
+    const runtime = await getAithyRuntime();
+    const status = await logoutGrokSubscription({
+      botId: runtime.config.botId,
+      stateDbPath: runtime.config.stateDbPath,
+    });
+    await runtime.updateSettings({});
+    return {
+      ...(await grokSubscriptionActionState(runtime, "", status.state, status.message ?? "Signed out of Grok.")),
+      status,
+    };
+  });
+
+export const saveLocalInferenceSettings = createServerFn({ method: "POST" })
+  .inputValidator(localInferenceSettingsInput)
+  .handler(async ({ data }) => {
+    assertLoopbackRequest(getRequest());
+    const runtime = await getAithyRuntime();
+    const settings = await runtime.updateSettings({
+      runtime: {
+        localAgentModel: data.localAgentModel,
+        ...(data.localInference ? { localInference: data.localInference } : {}),
+      },
+    });
+    return {
+      settings,
+      config: configDto(runtime.config),
+      setupGate: setupGateStateDto(runtime),
     };
   });
 
@@ -197,4 +266,30 @@ function normalizeOpenAiApiUrl(value: string | null | undefined): string {
     throw new Error("Custom OpenAI base URL must not include embedded credentials.");
   }
   return url.href;
+}
+
+async function grokSubscriptionActionState(
+  runtime: Awaited<ReturnType<typeof getAithyRuntime>>,
+  loginId: string,
+  state: Awaited<ReturnType<typeof grokSubscriptionStatusDto>>["state"],
+  message: string,
+) {
+  const settings = runtime.settings.load();
+  return {
+    loginId,
+    state,
+    message,
+    status: await grokSubscriptionStatusDto(runtime.config),
+    settings,
+    config: configDto(runtime.config),
+    secret: await secretStatus(runtime.config, settings),
+    fastSecret: runtime.config.fastAiProvider
+      ? runtime.config.fastAiProvider === runtime.config.aiProvider
+        ? await secretStatus(runtime.config, settings)
+        : await secretStatusForProvider(runtime.config.fastAiProvider, runtime.config.botId)
+      : null,
+    parallelSearch: await parallelSearchStatus(runtime.config, settings),
+    aiConfigured: isAiConfigured(runtime.config),
+    setupGate: setupGateStateDto(runtime),
+  };
 }

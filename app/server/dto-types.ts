@@ -1,4 +1,5 @@
 import type { StoredSettings } from "../../src/settings/types";
+import type { LocalInferenceSettings } from "../../src/local-inference/settings";
 import type { MemoryKind } from "../../src/memory/types";
 import type { MemoryRunStatus, MemoryRunTrigger } from "../../src/memory/memory-runs";
 import type { NotificationKind } from "../../src/notifications/types";
@@ -17,6 +18,7 @@ import type {
   SerializableBotMessage,
   SerializableSessionSummary,
   SerializableSystemPermissionRequest,
+  WebLiveEvent,
 } from "../../src/web/live-events";
 
 export type SessionSummaryDto = SerializableSessionSummary;
@@ -29,6 +31,8 @@ export interface ConfigDto {
   aiProvider: string;
   aiApiUrl: string;
   aiModel: string;
+  localAgentModel: string;
+  localInference: LocalInferenceSettings;
   fastAiProvider: string;
   fastAiApiUrl: string;
   fastAiModel: string;
@@ -40,6 +44,7 @@ export interface ConfigDto {
   sessionTtlMs: number;
   parallelAgents: number;
   parallelSearchMcpUrl: string;
+  grokSubscriptionConnected?: boolean;
   systemBashEnabled: boolean;
   traceEnabled: boolean;
   botId: string;
@@ -51,20 +56,49 @@ export interface ConfigDto {
 export interface SecretStatusDto {
   provider: string;
   configured: boolean;
-  source: "bun.secrets" | "environment" | null;
+  source: "bun.secrets" | null;
 }
 
 export interface ParallelSearchStatusDto extends SecretStatusDto {
-  provider: "parallel";
-  mode: "anonymous" | "api-key";
+  provider: "parallel" | "grok-subscription";
+  mode: "anonymous" | "api-key" | "grok-subscription";
   url: string;
 }
 
 export interface ParallelSearchTestDto {
-  provider: "parallel";
-  mode: "anonymous" | "api-key";
+  provider: "parallel" | "grok-subscription";
+  mode: "anonymous" | "api-key" | "grok-subscription";
   url: string;
   answer: string;
+}
+
+export interface GrokSubscriptionStatusDto {
+  connected: boolean;
+  state: "disconnected" | "connected" | "signing_in" | "needs_reauth" | "tier_denied" | "error";
+  message: string | null;
+  updatedAt: string | null;
+  lastConnectedAt: string | null;
+  expiresAt: string | null;
+}
+
+export interface GrokSubscriptionLoginStartDto {
+  loginId: string;
+  authorizeUrl: string;
+  redirectUri: string;
+  status: GrokSubscriptionStatusDto;
+}
+
+export interface GrokSubscriptionLoginPollDto {
+  loginId: string;
+  state: GrokSubscriptionStatusDto["state"];
+  message: string;
+  status: GrokSubscriptionStatusDto;
+  config: ConfigDto;
+  secret: SecretStatusDto;
+  fastSecret: SecretStatusDto | null;
+  parallelSearch: ParallelSearchStatusDto;
+  aiConfigured: boolean;
+  setupGate: SetupGateStateDto;
 }
 
 export interface SoulDto {
@@ -96,6 +130,37 @@ export interface ProfileDto {
 
 export interface RuntimeCapabilitiesDto {
   bunVersion: string;
+}
+
+export interface LocalModelDto {
+  id: string;
+  repoId: string;
+  filename: string;
+  displayName: string;
+  alias?: string;
+  role?: string;
+  path: string;
+  sizeBytes: number;
+  managed: boolean;
+  cached: boolean;
+}
+
+export interface LocalInferenceStatusDto {
+  required: boolean;
+  routerRequired: boolean;
+  routerReady: boolean;
+  routerActive: boolean;
+  chatRequired: boolean;
+  chatReady: boolean;
+  ready: boolean;
+  active: boolean;
+  error: string | null;
+  modelId: string;
+  baseUrl: string | null;
+  cacheDir: string;
+  binaryPath: string | null;
+  binarySource: string | null;
+  modelsIniPath: string | null;
 }
 
 export type PermissionRuleDto = CapabilityPolicyRule;
@@ -268,6 +333,7 @@ export interface WebStateDto {
   config: ConfigDto;
   secret: SecretStatusDto;
   fastSecret: SecretStatusDto | null;
+  grokSubscription: GrokSubscriptionStatusDto;
   parallelSearch: ParallelSearchStatusDto;
   soul: SoulDto;
   profile: ProfileDto;
@@ -291,6 +357,10 @@ export interface WebStateDto {
 export interface SetupGateStateDto {
   aiConfigured: boolean;
   profileConfigured: boolean;
+  localInferenceRequired: boolean;
+  localInferenceReady: boolean;
+  localInferenceActive: boolean;
+  localInferenceError: string | null;
 }
 
 export type MemoryPageStateDto = Pick<
@@ -306,19 +376,35 @@ export type SkillsPageStateDto = Pick<
 export type SettingsPageStateDto = Pick<
   WebStateDto,
   "settings" | "config" | "secret" | "fastSecret" | "parallelSearch" | "soul" | "profile" | "runtimeCapabilities"
-  | "permissionRules"
->;
+  | "permissionRules" | "grokSubscription"
+> & { localModels: LocalModelDto[] };
 
 export type SetupPageStateDto = Pick<
   WebStateDto,
-  "settings" | "config" | "profile" | "aiConfigured" | "runtimeCapabilities"
->;
+  "settings" | "config" | "profile" | "aiConfigured" | "runtimeCapabilities" | "grokSubscription"
+> & {
+  setupGate: SetupGateStateDto;
+  setupStatuses: Array<Extract<WebLiveEvent, { type: "setup-status" }>>;
+};
 
 export type ThemesPageStateDto = Pick<WebStateDto, "settings">;
 export type UsagePageStateDto = Pick<WebStateDto, "settings">;
 export type NotificationsPageStateDto = Pick<WebStateDto, "notifications" | "unreadNotifications">;
 
 export type TasksPageStateDto = Pick<WebStateDto, "tasks" | "settings">;
+
+export interface LocalInferencePageStateDto {
+  settings: StoredSettings;
+  config: ConfigDto;
+  status: LocalInferenceStatusDto;
+  localModels: LocalModelDto[];
+  selectedLocalAgentModel: string;
+  defaultLocalAgentModel: LocalModelDto;
+  coreModels: LocalModelDto[];
+  embeddingModel: string;
+  rankingModel: string;
+  setupStatuses: Array<Extract<WebLiveEvent, { type: "setup-status" }>>;
+}
 
 export interface AutomationsPageStateDto {
   settings: StoredSettings;

@@ -18,7 +18,7 @@ describe("artifact chat messages", () => {
     const sessions = sessionsFor(root, dbPath);
 
     await runMessage(textMessage("publish report"), {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: { ...loadConfig(), sandboxProvider: "disabled" },
       events: new EventBus(),
       sandbox: new MockSandboxProvider(),
       sessions,
@@ -61,7 +61,7 @@ describe("artifact chat messages", () => {
     const sessions = sessionsFor(root, path.join(root, "state.db"));
 
     await runMessage(textMessage("write cat.txt"), {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: { ...loadConfig(), sandboxProvider: "disabled" },
       events: new EventBus(),
       sandbox: new MockSandboxProvider(),
       sessions,
@@ -95,7 +95,7 @@ describe("artifact chat messages", () => {
     const artifacts = new SqliteArtifactStore(dbPath, path.join(root, "workspace"), path.join(root, "outbox"));
 
     await runMessage(textMessage("write dog.txt"), {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: { ...loadConfig(), sandboxProvider: "disabled" },
       events: new EventBus(),
       sandbox: new MockSandboxProvider(),
       sessions,
@@ -141,7 +141,7 @@ describe("artifact chat messages", () => {
     const artifacts = new SqliteArtifactStore(dbPath, path.join(root, "workspace"), path.join(root, "outbox"));
 
     await runMessage(textMessage("write shell.txt"), {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: { ...loadConfig(), sandboxProvider: "disabled" },
       events: new EventBus(),
       sandbox: new MockSandboxProvider(),
       sessions,
@@ -180,7 +180,7 @@ describe("artifact chat messages", () => {
     const seenInputs: any[] = [];
 
     await runMessage(textMessage("write compact.txt"), {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: { ...loadConfig(), sandboxProvider: "disabled" },
       events: new EventBus(),
       sandbox: new MockSandboxProvider(),
       sessions,
@@ -205,7 +205,7 @@ describe("artifact chat messages", () => {
     });
 
     await runMessage(textMessage("do you still have the file"), {
-      config: loadConfig({ AITHY_SANDBOX_PROVIDER: "disabled" }),
+      config: { ...loadConfig(), sandboxProvider: "disabled" },
       events: new EventBus(),
       sandbox: new MockSandboxProvider(),
       sessions,

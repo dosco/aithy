@@ -22,8 +22,8 @@ export async function smartScrape(
   if (!startUrl) throw new Error("web.fetch url must be http:// or https://");
 
   const renderPage = deps.renderPage ?? renderPageWithWebView;
-  const chooseLinks = deps.chooseLinks ?? createAxLinkChooser(requiredConfig(deps));
-  const synthesize = deps.synthesize ?? createAxSynthesizer(requiredConfig(deps));
+  const chooseLinks = deps.chooseLinks ?? createAxLinkChooser(requiredAiInput(deps));
+  const synthesize = deps.synthesize ?? createAxSynthesizer(requiredAiInput(deps));
   const queue = [startUrl];
   const queued = new Set(queue);
   const visited = new Set<string>();
@@ -106,7 +106,7 @@ export async function smartScrape(
   return { answer, pagesVisited, sources, linksConsidered, errors };
 }
 
-function requiredConfig(deps: SmartScraperDeps) {
+function requiredAiInput(deps: SmartScraperDeps) {
   if (!deps.config) throw new Error("smart scraper requires AppConfig when Ax callbacks are not provided");
-  return deps.config;
+  return { config: deps.config, runtimeStore: deps.runtimeStore };
 }
