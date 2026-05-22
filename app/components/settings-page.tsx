@@ -6,13 +6,15 @@ import {
   AgentSettingsSection,
   UserProfileSection,
 } from "@/components/settings-identity-sections";
-import { SandboxSettingsTab } from "@/components/settings-runtime-tabs";
+import { SandboxSettingsTab } from "@/components/settings-sandbox-tab";
 import { SearchSettingsTab } from "@/components/settings-search-tab";
 import { PermissionsSettingsTab } from "@/components/settings-permissions-tab";
 import { ThemeSync } from "@/components/theme-sync";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { saveSettingsWithSetupGateRefresh } from "@/lib/setup-gate";
+import { getMeshFamilyCatalogs } from "@/server/actions.functions";
 import type {
+  MeshLiveCatalogPeerDto,
   ProfileDto,
   SettingsPageStateDto,
   SoulDto,
@@ -30,8 +32,10 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
   const [profile, setProfile] = useState<ProfileDto>(initialState.profile);
   const [ui, setUi] = useState(initialState.settings.ui);
   const [permissionRules, setPermissionRules] = useState(initialState.permissionRules);
+  const [meshCatalogs, setMeshCatalogs] = useState<MeshLiveCatalogPeerDto[]>(initialState.meshCatalogs);
 
   async function save(options?: {
+    section?: "search" | "sandbox";
     clearParallelApiKey?: boolean;
   }) {
     setSaveBusy(true);
@@ -50,7 +54,12 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
             sandboxNetwork: networkValue(config.sandboxNetwork),
             sessionTtlMs: Number(config.sessionTtlMs),
             parallelAgents: Number(config.parallelAgents),
-            parallelSearchMcpUrl: config.parallelSearchMcpUrl.trim() || null,
+            ...(options?.section === "search"
+              ? {
+                searchProvider: config.searchProvider,
+                parallelSearchMcpUrl: config.parallelSearchMcpUrl.trim() || null,
+              }
+              : {}),
             systemBashEnabled: config.systemBashEnabled,
             traceEnabled: config.traceEnabled,
             globalMounts: config.globalMounts
@@ -60,8 +69,8 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
           ui: {
             detailsDefault: ui.detailsDefault,
           },
-          parallelApiKey: options?.clearParallelApiKey ? undefined : parallelApiKey || undefined,
-          clearParallelApiKey: options?.clearParallelApiKey,
+          parallelApiKey: options?.section === "search" && !options?.clearParallelApiKey ? parallelApiKey || undefined : undefined,
+          clearParallelApiKey: options?.section === "search" ? options?.clearParallelApiKey : undefined,
         },
       });
       setConfig(result.config);
@@ -114,8 +123,12 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
             setParallelApiKey={setParallelApiKey}
             saved={saved}
             saveBusy={saveBusy}
-            onSave={() => void save()}
-            onClearApiKey={() => void save({ clearParallelApiKey: true })}
+            onSave={() => void save({ section: "search" })}
+            onClearApiKey={() => void save({ section: "search", clearParallelApiKey: true })}
+            meshCatalogs={meshCatalogs}
+            onRefreshMeshCatalogs={() => {
+              void getMeshFamilyCatalogs({ data: { kind: "search" } }).then(setMeshCatalogs);
+            }}
           />
         </TabsContent>
 
@@ -126,7 +139,7 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
             skippedPaths={skippedPaths}
             saved={saved}
             saveBusy={saveBusy}
-            onSave={() => void save()}
+            onSave={() => void save({ section: "sandbox" })}
           />
         </TabsContent>
 

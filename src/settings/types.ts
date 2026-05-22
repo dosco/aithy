@@ -25,6 +25,37 @@ export interface UiPreferences {
   lastActiveSessionId: string | null;
 }
 
+export type ValidationStatus = "unknown" | "valid" | "invalid" | "not-required";
+
+export interface ProviderValidationState {
+  status: ValidationStatus;
+  fingerprint?: string;
+  validatedAt?: string;
+  message?: string | null;
+}
+
+export interface AiProviderProfile {
+  apiUrl?: string | null;
+  model?: string | null;
+  fastApiUrl?: string | null;
+  fastModel?: string | null;
+  secretVersion?: number;
+  validation?: ProviderValidationState;
+  fastValidation?: ProviderValidationState;
+}
+
+export type BuiltInSearchProviderId = "parallel" | "grok-subscription";
+export type MeshSearchProviderId = `mesh:${string}:search:${string}`;
+export type SearchProviderId = BuiltInSearchProviderId | MeshSearchProviderId;
+export type SearchProviderMode = "anonymous" | "api-key" | "grok-subscription";
+
+export interface SearchProviderProfile {
+  url?: string | null;
+  mode?: SearchProviderMode;
+  secretVersion?: number;
+  validation?: ProviderValidationState;
+}
+
 export interface RuntimeSettings {
   aiProvider?: string;
   aiApiUrl?: string | null;
@@ -35,6 +66,9 @@ export interface RuntimeSettings {
   fastAiProvider?: string;
   fastAiApiUrl?: string | null;
   fastAiModel?: string;
+  aiProviderProfiles?: Record<string, AiProviderProfile>;
+  searchProvider?: SearchProviderId;
+  searchProviderProfiles?: Record<string, SearchProviderProfile>;
   sandboxProvider?: SandboxProviderKind;
   sandboxImage?: string;
   sandboxCpus?: number;

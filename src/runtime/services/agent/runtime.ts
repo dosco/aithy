@@ -42,6 +42,7 @@ import { processUserChatJob } from "../../process-user-chat-job";
 import { postToSubSessionAndFlush } from "../../post-sub-session";
 import { publishUserChatFailure, publishUserChatReply } from "../../user-chat-live-events";
 import { RemoteEmbedder, RemoteReranker } from "../embedding/client";
+import { createTargetedIndexQueue } from "../embedding/targeted-index";
 import { SandboxCommandClient } from "../sandbox/client";
 import { QueueServiceClient } from "../queue/client";
 import { RemoteSessionStateStore } from "../queue/session-state-client";
@@ -117,23 +118,30 @@ export class AgentWorkerRuntime {
     };
     const embedder = new RemoteEmbedder(queue);
     const reranker = new RemoteReranker(queue);
+    const queueTargetedIndex = createTargetedIndexQueue(queue, "agent-worker");
     const memory = new SqliteMemoryStore(config.stateDbPath, {
       embedder,
       reranker,
       inlineEmbeds: false,
       log: logMemory,
+      onDirtyIndex: queueTargetedIndex,
     });
     const episodes = new SqliteEpisodeStore(config.stateDbPath, {
       embedder,
       reranker,
       inlineEmbeds: false,
       log: logMemory,
-    });
-    const memoryRuns = new SqliteMemoryRunsStore(config.stateDbPath);
+      onDirtyIndex: queueTargetedIndex,
+    }); const memoryRuns = new SqliteMemoryRunsStore(config.stateDbPath);
     const notifications = new SqliteNotificationStore(config.stateDbPath);
     const artifacts = new SqliteArtifactStore(config.stateDbPath, config.workspaceRoot, config.outboxRoot);
     const usage = new SqliteUsageStore(config.stateDbPath);
-    const skills = new SqliteSkillsStore(config.stateDbPath);
+    const skills = new SqliteSkillsStore(config.stateDbPath, {
+      embedder,
+      reranker,
+      log: logMemory,
+      onDirtyIndex: queueTargetedIndex,
+    });
     seedSkillsIfEmpty(skills);
     const skillPromotions = new SqliteSkillPromotionStore(config.stateDbPath);
     const skillCandidates = new SqliteSkillCandidateStore(config.stateDbPath);
@@ -347,14 +355,11 @@ export class AgentWorkerRuntime {
 
   notify(input: NotificationCreate): NotificationEntry {
     const entry = this.notifications.push(input);
-    this.live.publish({
-      type: "notification",
-      id: crypto.randomUUID(),
-      createdAt: entry.createdAt,
-      notification: { ...entry },
-    });
+    this.live.publish({ type: "notification", id: crypto.randomUUID(), createdAt: entry.createdAt, notification: { ...entry } });
     return entry;
   }
+
+  logRetrieval(message: string, detail?: unknown): void { void this.queue.appendLog({ role: "agent-worker", level: "info", source: "retrieval", message, detail }); }
 
   start(): void {
     this.dispatcher.resume();
@@ -482,10 +487,6 @@ export class AgentWorkerRuntime {
       } catch {}
     }
     this.queue.close();
-  }
-
-  private appendLog(input: Parameters<RuntimeStore["appendLog"]>[0]): void {
-    void this.queue.appendLog(input);
   }
 
   private heartbeat(state: Parameters<QueueServiceClient["heartbeat"]>[1], detail?: unknown): void {

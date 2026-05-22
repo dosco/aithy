@@ -32,7 +32,13 @@ import {
   skillDto,
   soulDto,
 } from "./dto-mappers";
-import { grokSubscriptionStatusDto, parallelSearchStatus, secretStatus, secretStatusForProvider } from "./secret.dto";
+import {
+  grokSubscriptionStatusDto,
+  parallelSearchStatus,
+  providerSecretStatuses,
+  secretStatus,
+  secretStatusForProvider,
+} from "./secret.dto";
 import { preloadExistingSessionMessagePage } from "./session-message-loading";
 import { coreLocalModelDtos, defaultLocalModelDto, localModelDtos } from "./local-model-dtos";
 import {
@@ -41,6 +47,7 @@ import {
   type AutomationsPageStateDto,
   type LocalInferencePageStateDto,
   type LocalInferenceStatusDto,
+  type MeshPageStateDto,
   type MemoryPageStateDto,
   SKILLS_PAGE_SIZE,
   type NotificationsPageStateDto,
@@ -79,9 +86,10 @@ export async function webStateDto(
     pendingPermissions: activeSessionId ? pendingPermissionRequests(runtime, activeSessionId) : [],
     sessions: runtime.sessions.listSessions().map(sessionDto),
     settings,
-    config: configDto(runtime.config),
+    config: configDto(runtime.config, settings),
     secret: await secretStatus(runtime.config, settings),
     fastSecret: await fastSecretStatus(runtime, settings),
+    providerSecrets: await providerSecretStatuses(runtime.config, settings),
     grokSubscription: await grokSubscriptionStatusDto(runtime.config),
     parallelSearch: await parallelSearchStatus(runtime.config, settings),
     soul: soulDto(runtime.soul),
@@ -199,6 +207,7 @@ function localInferenceStatusDto(runtime: AithyRuntime): LocalInferenceStatusDto
     binaryPath: detail?.binaryPath ?? null,
     binarySource: detail?.binarySource ?? null,
     modelsIniPath: detail?.modelsIniPath ?? null,
+    embeddingHealth: detail?.embeddingHealth ?? null,
   };
 }
 
@@ -224,10 +233,12 @@ function localInferenceServiceError(
 }
 
 export async function setupPageStateDto(runtime: AithyRuntime): Promise<SetupPageStateDto> {
+  const settings = runtime.settings.load();
   return {
-    settings: runtime.settings.load(),
-    config: configDto(runtime.config),
+    settings,
+    config: configDto(runtime.config, settings),
     profile: profileDto(runtime.profile),
+    providerSecrets: await providerSecretStatuses(runtime.config, settings),
     grokSubscription: await grokSubscriptionStatusDto(runtime.config),
     aiConfigured: isAiConfigured(runtime.config),
     runtimeCapabilities: runtimeCapabilitiesDto(),
@@ -279,9 +290,10 @@ export async function settingsPageStateDto(runtime: AithyRuntime): Promise<Setti
   const settings = runtime.settings.load();
   return {
     settings,
-    config: configDto(runtime.config),
+    config: configDto(runtime.config, settings),
     secret: await secretStatus(runtime.config, settings),
     fastSecret: await fastSecretStatus(runtime, settings),
+    providerSecrets: await providerSecretStatuses(runtime.config, settings),
     grokSubscription: await grokSubscriptionStatusDto(runtime.config),
     parallelSearch: await parallelSearchStatus(runtime.config, settings),
     soul: soulDto(runtime.soul),
@@ -289,6 +301,16 @@ export async function settingsPageStateDto(runtime: AithyRuntime): Promise<Setti
     runtimeCapabilities: runtimeCapabilitiesDto(),
     permissionRules: runtime.runtimeStore.listCapabilityPolicyRules(),
     localModels: await localModelDtos(),
+    mesh: runtime.mesh.snapshot(),
+    meshInferenceProviders: runtime.mesh.snapshot().inferenceProviders,
+    meshCatalogs: await runtime.mesh.liveCatalogs("all"),
+  };
+}
+
+export function meshPageStateDto(runtime: AithyRuntime): MeshPageStateDto {
+  return {
+    settings: runtime.settings.load(),
+    mesh: runtime.mesh.snapshot(),
   };
 }
 
@@ -300,7 +322,7 @@ export async function localInferencePageStateDto(
   const selectedLocalAgentModel = selectedLocalAgentModelId(runtime.config.localAgentModel ?? runtime.config.aiModel);
   return {
     settings,
-    config: configDto(runtime.config),
+    config: configDto(runtime.config, settings),
     status: localInferenceStatusDto(runtime),
     localModels,
     selectedLocalAgentModel,
@@ -356,7 +378,7 @@ async function fastSecretStatus(runtime: AithyRuntime, settings: ReturnType<Aith
   if (!runtime.config.fastAiProvider) return null;
   return runtime.config.fastAiProvider === runtime.config.aiProvider
     ? secretStatus(runtime.config, settings)
-    : secretStatusForProvider(runtime.config.fastAiProvider, runtime.config.botId);
+    : secretStatusForProvider(runtime.config.fastAiProvider, runtime.config.botId, settings);
 }
 
 function recentSetupStatuses(runtime: AithyRuntime): Array<Extract<WebLiveEvent, { type: "setup-status" }>> {

@@ -23,6 +23,7 @@ import type { SqliteUsageStore } from "../usage/usage-store";
 import type { RuntimeStore } from "./runtime-store";
 import type { SqliteTaskStore } from "../tasks/task-store";
 import type { AutomationToolActions } from "../automations/tool-actions";
+import { retrievalDiagnostics } from "../retrieval/diagnostics";
 
 interface RuntimeForUserChat {
   config: AppConfig;
@@ -44,6 +45,7 @@ interface RuntimeForUserChat {
   runtimeStore?: RuntimeStore;
   tasks?: SqliteTaskStore;
   automationActions?: AutomationToolActions;
+  logRetrieval?(message: string, detail?: unknown): void;
   notify(input: NotificationCreate): NotificationEntry;
   flushSessionState?(): Promise<void>;
 }
@@ -91,6 +93,7 @@ export async function processUserChatJob(
     skillsSearch: trackedSkills.skillsSearch,
     onLoadedSkills: trackedSkills.onLoadedSkills,
     onUsedSkills: trackedSkills.onUsedSkills,
+    logRetrieval: runtime.logRetrieval ? (message, detail) => runtime.logRetrieval?.(message, detail) : undefined,
   });
   await runtime.flushSessionState?.();
   await enqueuePostTurnBackgroundTasks(runtime, data.conversationId);
@@ -185,9 +188,18 @@ export function createTrackedSkills(
     loadedSkillIds,
     skills: selectedSkills.map((skill) => ({ id: skill.id, name: skill.name, content: formatSkillContent(skill) })),
     skillsSearch: (queries: readonly string[]) => {
-      const matches = store.resolveSearchQueries(queries);
-      recordLoaded(matches);
-      return matches.map(({ skill }) => ({ id: skill.id, name: skill.name, content: formatSkillContent(skill) }));
+      if (!store.isHybridReady()) {
+        const startedAt = performance.now();
+        const matches = store.resolveSearchQueries(queries);
+        recordLoaded(matches);
+        const results = matches.map(({ skill }) => ({ id: skill.id, name: skill.name, content: formatSkillContent(skill) }));
+        return Object.assign(results, { diagnostics: [retrievalDiagnostics({ source: "skills", mode: "fts-only", queryCount: queries.length, startedAt, sources: [] })] });
+      }
+      return store.resolveSearchQueriesSemantic(queries).then((matches) => {
+        recordLoaded(matches);
+        const results = matches.map(({ skill }) => ({ id: skill.id, name: skill.name, content: formatSkillContent(skill) }));
+        return Object.assign(results, (matches as { diagnostics?: unknown }).diagnostics ? { diagnostics: (matches as { diagnostics?: unknown }).diagnostics } : {});
+      });
     },
     onLoadedSkills: (results: readonly AxAgentSkillResult[]) => {
       const matches = results.flatMap((result): SkillResolvedMatch[] => {

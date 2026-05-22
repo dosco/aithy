@@ -1,9 +1,10 @@
 import type { AppConfig } from "../config/env";
 import { MAX_PARALLEL_AGENTS } from "../config/limits";
-import { isCustomOpenAIProvider, isLocalAiProvider } from "../agent/ai-providers";
+import { isLocalAiProvider } from "../agent/ai-providers";
 import { selectedLocalAgentModelId } from "../local-inference/manifest";
 import { normalizeLocalInferenceSettings } from "../local-inference/settings";
 import type { RuntimeSettings } from "./types";
+import { activeSearchProvider, aiProfileFor, providerUsesApiUrl, searchProfileFor } from "./provider-profiles";
 
 export function applyRuntimeSettings(
   config: AppConfig,
@@ -14,6 +15,10 @@ export function applyRuntimeSettings(
 ): AppConfig {
   const fastProvider = cleanString(settings.fastAiProvider);
   const aiProvider = cleanString(settings.aiProvider) ?? config.aiProvider;
+  const aiProfile = aiProfileFor(settings, aiProvider);
+  const fastProfile = fastProvider ? aiProfileFor(settings, fastProvider) : {};
+  const searchProvider = activeSearchProvider(settings);
+  const searchProfile = searchProfileFor(settings, searchProvider);
   const localAgentModel = selectedLocalAgentModelId(
     settings.localAgentModel === null
       ? undefined
@@ -21,14 +26,14 @@ export function applyRuntimeSettings(
   );
   const aiModel = settings.aiModel === null
     ? undefined
-    : cleanString(settings.aiModel) ?? config.aiModel;
+    : cleanString(aiProfile.model ?? undefined) ?? cleanString(settings.aiModel) ?? config.aiModel;
   return {
     ...config,
     aiProvider,
-    aiApiUrl: isCustomOpenAIProvider(aiProvider)
-      ? settings.aiApiUrl === null
+    aiApiUrl: providerUsesApiUrl(aiProvider)
+      ? (aiProfile.apiUrl ?? settings.aiApiUrl) === null
         ? undefined
-        : cleanString(settings.aiApiUrl) ?? config.aiApiUrl
+        : cleanString(aiProfile.apiUrl ?? undefined) ?? cleanString(settings.aiApiUrl ?? undefined) ?? config.aiApiUrl
       : undefined,
     aiApiKey: apiKey === null ? undefined : config.aiApiKey ?? apiKey,
     aiModel: isLocalAiProvider(aiProvider) ? localAgentModel : aiModel,
@@ -38,15 +43,18 @@ export function applyRuntimeSettings(
       ...settings.localInference,
     }),
     fastAiProvider: fastProvider,
-    fastAiApiUrl: fastProvider && isCustomOpenAIProvider(fastProvider)
-      ? settings.fastAiApiUrl === null
+    fastAiApiUrl: fastProvider && providerUsesApiUrl(fastProvider)
+      ? (fastProfile.fastApiUrl ?? fastProfile.apiUrl ?? settings.fastAiApiUrl) === null
         ? undefined
-        : cleanString(settings.fastAiApiUrl) ?? config.fastAiApiUrl
+        : cleanString(fastProfile.fastApiUrl ?? undefined)
+          ?? cleanString(fastProfile.apiUrl ?? undefined)
+          ?? cleanString(settings.fastAiApiUrl ?? undefined)
+          ?? config.fastAiApiUrl
       : undefined,
     fastAiModel: fastProvider
       ? isLocalAiProvider(fastProvider)
         ? localAgentModel
-        : cleanString(settings.fastAiModel)
+        : cleanString(fastProfile.fastModel ?? undefined) ?? cleanString(settings.fastAiModel)
       : undefined,
     fastAiApiKey: fastProvider ? (fastApiKey === null ? undefined : fastApiKey) : undefined,
     sandboxProvider: normalizeSandboxProvider(settings.sandboxProvider) ?? config.sandboxProvider,
@@ -56,9 +64,10 @@ export function applyRuntimeSettings(
     sandboxNetwork: settings.sandboxNetwork ?? config.sandboxNetwork,
     sessionTtlMs: settings.sessionTtlMs ?? config.sessionTtlMs,
     parallelAgents: clampParallelAgents(settings.parallelAgents) ?? config.parallelAgents,
-    parallelSearchMcpUrl: settings.parallelSearchMcpUrl === null
+    searchProvider,
+    parallelSearchMcpUrl: (searchProfile.url ?? settings.parallelSearchMcpUrl) === null
       ? config.parallelSearchMcpUrl
-      : cleanString(settings.parallelSearchMcpUrl) ?? config.parallelSearchMcpUrl,
+      : cleanString(searchProfile.url ?? undefined) ?? cleanString(settings.parallelSearchMcpUrl ?? undefined) ?? config.parallelSearchMcpUrl,
     parallelApiKey: parallelApiKey === null
       ? undefined
       : parallelApiKey ?? config.parallelApiKey,

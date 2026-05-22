@@ -4,6 +4,7 @@ import { Database } from "bun:sqlite";
 import {
   BunSecretStore,
   aithySecretService,
+  oauthTokensSecretName,
   type SecretStore,
 } from "../settings/secrets";
 import type {
@@ -12,8 +13,10 @@ import type {
   GrokSubscriptionTokens,
 } from "./types";
 
-const metadataKey = "grok.subscription.status";
-const tokenSecretName = "grok.subscription.tokens";
+const metadataKey = "aithy.oauth.xai-grok-subscription.status";
+const legacyMetadataKey = "grok.subscription.status";
+const tokenSecretName = oauthTokensSecretName("xai-grok-subscription");
+const legacyTokenSecretName = "grok.subscription.tokens";
 
 interface MetadataRow {
   value: string;
@@ -26,6 +29,9 @@ export async function readGrokSubscriptionTokens(
   const raw = await safeSecretGet(secrets, {
     service: aithySecretService(botId),
     name: tokenSecretName,
+  }) ?? await safeSecretGet(secrets, {
+    service: aithySecretService(botId),
+    name: legacyTokenSecretName,
   });
   if (!raw) return null;
   try {
@@ -64,6 +70,10 @@ export async function deleteGrokSubscriptionTokens(
     service: aithySecretService(botId),
     name: tokenSecretName,
   });
+  await secrets.delete({
+    service: aithySecretService(botId),
+    name: legacyTokenSecretName,
+  });
 }
 
 export async function hasGrokSubscriptionTokens(
@@ -78,8 +88,10 @@ export function readGrokSubscriptionMetadata(dbPath: string): GrokSubscriptionMe
   try {
     const row = db.query("SELECT value FROM metadata WHERE key = $key")
       .get({ $key: metadataKey }) as MetadataRow | undefined;
-    if (!row) return null;
-    return JSON.parse(row.value) as GrokSubscriptionMetadata;
+    const legacyRow = row ?? db.query("SELECT value FROM metadata WHERE key = $key")
+      .get({ $key: legacyMetadataKey }) as MetadataRow | undefined;
+    if (!legacyRow) return null;
+    return JSON.parse(legacyRow.value) as GrokSubscriptionMetadata;
   } catch {
     return null;
   } finally {

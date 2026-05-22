@@ -1,10 +1,12 @@
 import { describe, expect, test } from "bun:test";
 import { assertAiSettings, assertPrimaryAiSettings } from "../app/server/ai-settings-test";
+import type { AppConfig } from "../src/config/env";
 import { loadConfig } from "../src/config/env";
 import {
   XAI_GROK_SUBSCRIPTION_DEFAULT_MODEL,
   XAI_GROK_SUBSCRIPTION_PROVIDER,
 } from "../src/agent/ai-providers";
+import { meshInferenceProviderId } from "../src/mesh/types";
 import { DEFAULT_LOCAL_AGENT_MODEL_ID, LOCAL_AI_PROVIDER } from "../src/local-inference/manifest";
 
 describe("AI settings validation", () => {
@@ -49,6 +51,21 @@ describe("AI settings validation", () => {
     })).resolves.toBeUndefined();
   });
 
+  test("accepts family Aithy inference settings without a cloud API key", async () => {
+    await expect(assertPrimaryAiSettings({
+      ...loadConfig({}),
+      aiProvider: "openai",
+      aiModel: "gpt-test",
+      aiApiKey: "sk-test",
+    }, {
+      runtime: {
+        aiProvider: meshInferenceProviderId("gpu-1"),
+        aiApiUrl: "http://127.0.0.1:49321/mesh/proxy/gpu-1/inference/default/v1",
+        aiModel: "aithy-local-chat",
+      },
+    })).resolves.toBeUndefined();
+  });
+
   test("accepts connected Grok subscription settings without an API key", async () => {
     await expect(assertPrimaryAiSettings({
       ...loadConfig({}),
@@ -89,6 +106,7 @@ describe("AI settings validation", () => {
   });
 
   test("allows the fast model to reuse the primary provider key", async () => {
+    const testedModels: string[] = [];
     await expect(assertAiSettings({
       ...loadConfig({}),
       aiProvider: "openai",
@@ -101,6 +119,11 @@ describe("AI settings validation", () => {
         fastAiProvider: "openai",
         fastAiModel: "gpt-fast",
       },
+    }, {
+      testAiChat: async (config: AppConfig) => {
+        testedModels.push(config.aiModel ?? "");
+      },
     })).resolves.toBeUndefined();
+    expect(testedModels).toEqual(["gpt-fast"]);
   });
 });

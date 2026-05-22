@@ -121,6 +121,27 @@ describe("hybrid memory retrieval", () => {
     expect(second.indexed).toEqual([]);
   });
 
+  test("targeted indexing embeds requested memory ids", async () => {
+    const embedder = new MockEmbedder();
+    const dirtied: string[] = [];
+    const store = new SqliteMemoryStore(await tempDbPath(), {
+      embedder,
+      inlineEmbeds: false,
+      onDirtyIndex: ({ memories }) => dirtied.push(...memories),
+    });
+    if (!store.isHybridReady()) return;
+    const entry = store.upsert({ kind: "fact", title: "local retrieval", body: "Index immediately." });
+    expect(dirtied).toEqual([entry.id]);
+    expect(store.embeddingStats()).toMatchObject({ total: 1, embedded: 0, stale: 1 });
+    expect(await store.indexEmbeddings([entry.id, "missing"])).toEqual({
+      indexed: 1,
+      skipped: 0,
+      missing: 1,
+      failed: 0,
+    });
+    expect(store.embeddingStats()).toMatchObject({ total: 1, embedded: 1, stale: 0 });
+  });
+
   test("vec leg failure degrades to FTS-only without throwing", async () => {
     const embedder = new MockEmbedder();
     const store = new SqliteMemoryStore(await tempDbPath(), { embedder });

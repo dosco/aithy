@@ -3,6 +3,7 @@ import type { Embedder } from "../memory/embed";
 import { vecToBlob } from "../memory/embed-text";
 import { score } from "../memory/ranking";
 import type { Reranker } from "../memory/rerank";
+import { sourceStats, type RetrievalSourceStats } from "../retrieval/diagnostics";
 import { episodeEmbedText } from "./embed-text";
 import type { AgentEpisodeEntry, EpisodeOutcome, EpisodeSearchOptions } from "./types";
 
@@ -59,7 +60,7 @@ export interface EpisodeHybridSearchDeps {
 
 export async function episodeHybridSearch(
   deps: EpisodeHybridSearchDeps,
-): Promise<{ entries: AgentEpisodeEntry[]; recallIds: string[] }> {
+): Promise<{ entries: AgentEpisodeEntry[]; recallIds: string[]; stats: RetrievalSourceStats; reranked: boolean }> {
   const { db, embedder, reranker, rawQueries, ftsExpressions, opts, perQueryLimit } = deps;
   const excludeFilter = buildExcludeFilter(opts.excludeIds);
 
@@ -76,6 +77,8 @@ export async function episodeHybridSearch(
       return { ftsHits, vecHits };
     }),
   );
+  const ftsCandidates = perQuery.reduce((sum, item) => sum + item.ftsHits.length, 0);
+  const vectorCandidates = perQuery.reduce((sum, item) => sum + item.vecHits.length, 0);
 
   const fused = new Map<number, { row: EpisodeRow & { rowid: number }; rrf: number }>();
   for (const { ftsHits, vecHits } of perQuery) {
@@ -89,7 +92,18 @@ export async function episodeHybridSearch(
     const reranked = await tryRerank(reranker, rawQueries, candidates);
     if (reranked) {
       const entries = reranked.slice(0, finalLimit).map((r) => rowToEpisode(r.row));
-      return { entries, recallIds: entries.map((entry) => entry.id) };
+      return {
+        entries,
+        recallIds: entries.map((entry) => entry.id),
+        reranked: true,
+        stats: sourceStats({
+          source: "episodes",
+          ftsCandidates,
+          vectorCandidates,
+          fusedCandidates: candidates.length,
+          finalMatches: entries.length,
+        }),
+      };
     }
   }
 
@@ -108,7 +122,18 @@ export async function episodeHybridSearch(
     .slice(0, finalLimit);
 
   const entries = ranked.map((r) => rowToEpisode(r.row));
-  return { entries, recallIds: entries.map((entry) => entry.id) };
+  return {
+    entries,
+    recallIds: entries.map((entry) => entry.id),
+    reranked: false,
+    stats: sourceStats({
+      source: "episodes",
+      ftsCandidates,
+      vectorCandidates,
+      fusedCandidates: candidates.length,
+      finalMatches: entries.length,
+    }),
+  };
 }
 
 async function tryRerank(

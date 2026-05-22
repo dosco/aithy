@@ -1,19 +1,23 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
-import { Check, Search } from "lucide-react";
+import { Search } from "lucide-react";
+import { FamilySearchSelector } from "@/components/family-mesh-selectors";
 import {
   ApiKeyInput,
   Field,
   Section,
   fieldClass,
+  selectClass,
 } from "@/components/settings-form-bits";
+import { SettingsSaveBar } from "@/components/settings-save-bar";
 import { Button } from "@/components/ui/button";
 import { testParallelSearch } from "@/server/actions.functions";
 import type {
   ConfigDto,
+  MeshLiveCatalogPeerDto,
   ParallelSearchStatusDto,
   ParallelSearchTestDto,
 } from "@/server/dto";
-import { saveButtonLabel } from "./settings-page-helpers";
+import { isMeshSearchProvider } from "../../src/mesh/types";
 
 interface SearchSettingsTabProps {
   config: ConfigDto;
@@ -25,6 +29,8 @@ interface SearchSettingsTabProps {
   saveBusy: boolean;
   onSave: () => void;
   onClearApiKey: () => void;
+  meshCatalogs: MeshLiveCatalogPeerDto[];
+  onRefreshMeshCatalogs?: () => void;
 }
 
 export function SearchSettingsTab({
@@ -37,19 +43,23 @@ export function SearchSettingsTab({
   saveBusy,
   onSave,
   onClearApiKey,
+  meshCatalogs,
+  onRefreshMeshCatalogs,
 }: SearchSettingsTabProps) {
   const [testQuery, setTestQuery] = useState("Aithy Parallel Search MCP");
   const [testBusy, setTestBusy] = useState(false);
   const [testResult, setTestResult] = useState<ParallelSearchTestDto | null>(null);
   const [testError, setTestError] = useState<string | null>(null);
-  const urlError = validateSearchUrl(config.parallelSearchMcpUrl);
+  const familySearch = isMeshSearchProvider(config.searchProvider);
+  const urlError = config.searchProvider === "parallel" ? validateSearchUrl(config.parallelSearchMcpUrl) : null;
+  const selectedProfile = config.searchProviderProfiles?.[config.searchProvider];
   const mode = parallelSearch.mode === "grok-subscription"
     ? "grok-subscription"
     : parallelApiKey.trim() ? "api-key" : parallelSearch.mode;
   const parallelSecret = parallelSearch.provider === "parallel"
     ? parallelSearch
     : { provider: "parallel", configured: false, source: null };
-  const canTest = !testBusy && !urlError && testQuery.trim().length >= 2;
+  const canTest = !familySearch && !testBusy && !urlError && testQuery.trim().length >= 2;
 
   async function runTest() {
     if (!canTest) return;
@@ -60,6 +70,7 @@ export function SearchSettingsTab({
       const result = await testParallelSearch({
         data: {
           query: testQuery.trim(),
+          provider: config.searchProvider,
           url: config.parallelSearchMcpUrl.trim(),
           apiKey: parallelApiKey || undefined,
         },
@@ -74,10 +85,54 @@ export function SearchSettingsTab({
 
   return (
     <div className="grid gap-5">
+      <SettingsSaveBar saved={saved} saveBusy={saveBusy} onSave={onSave} disabled={Boolean(urlError)} />
       <Section
         title="Web search"
-        subtitle="A connected Grok subscription upgrades web.search automatically. Parallel remains the fallback."
+        subtitle="Choose this Aithy's search backend or route searches through a live family service."
       >
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Source">
+            <select className={selectClass} value={familySearch ? "family" : "local"} onChange={(event) => {
+              if (event.target.value === "family") selectFirstFamilySearch(meshCatalogs, setConfig);
+              else setConfig((current) => ({ ...current, searchProvider: "parallel" }));
+            }}>
+              <option value="local">This Aithy</option>
+              <option value="family">Family Aithy</option>
+            </select>
+          </Field>
+          {familySearch ? null : (
+          <Field label="Provider">
+            <select
+              className={selectClass}
+              value={config.searchProvider}
+              onChange={(event) => {
+                const provider = event.target.value as ConfigDto["searchProvider"];
+                setConfig((current) => {
+                  const profile = current.searchProviderProfiles?.[provider];
+                  return {
+                    ...current,
+                    searchProvider: provider,
+                    parallelSearchMcpUrl: provider === "parallel"
+                      ? profile?.url ?? current.parallelSearchMcpUrl
+                      : current.parallelSearchMcpUrl,
+                  };
+                });
+              }}
+            >
+              <option value="parallel">Parallel</option>
+              <option value="grok-subscription">Grok subscription</option>
+            </select>
+          </Field>
+          )}
+        </div>
+        {familySearch ? (
+          <FamilySearchSelector
+            catalogs={meshCatalogs}
+            config={config}
+            setConfig={setConfig}
+            onRefresh={onRefreshMeshCatalogs}
+          />
+        ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="MCP endpoint">
             <input
@@ -85,6 +140,7 @@ export function SearchSettingsTab({
               value={config.parallelSearchMcpUrl}
               onChange={(event) => setConfigValue(setConfig, "parallelSearchMcpUrl", event.target.value)}
               placeholder="https://search.parallel.ai/mcp"
+              disabled={config.searchProvider !== "parallel"}
             />
           </Field>
           <Field label="Mode">
@@ -93,27 +149,30 @@ export function SearchSettingsTab({
             </div>
           </Field>
         </div>
+        )}
         {urlError ? (
           <p className="text-sm text-red-500" role="alert">
             {urlError}
           </p>
         ) : null}
-        <Field label="Parallel fallback API key">
+        <ValidationBadge validation={selectedProfile?.validation} />
+        {!familySearch ? <Field label="Parallel API key">
           <ApiKeyInput
             value={parallelApiKey}
             onChange={setParallelApiKey}
             secret={parallelSecret}
             fallback="Anonymous mode: no key required"
+            disabled={config.searchProvider !== "parallel"}
             clearLabel={parallelApiKey ? "Clear pending Parallel API key" : "Use anonymous search"}
             onClear={() => {
               if (parallelApiKey) setParallelApiKey("");
               else onClearApiKey();
             }}
           />
-        </Field>
+        </Field> : null}
       </Section>
 
-      <Section title="Test search" subtitle="Runs the same web.search route that the agent uses.">
+      {!familySearch ? <Section title="Test search" subtitle="Runs the same web.search route that the agent uses.">
         <div className="grid gap-3 sm:grid-cols-[1fr_auto] sm:items-end">
           <Field label="Query">
             <input
@@ -149,14 +208,7 @@ export function SearchSettingsTab({
             </pre>
           </div>
         ) : null}
-      </Section>
-
-      <div className="flex justify-end pt-1">
-        <Button onClick={onSave} disabled={saveBusy || Boolean(urlError)} className="sm:min-w-[140px]">
-          {saved ? <Check className="h-4 w-4" /> : null}
-          {saveButtonLabel(saveBusy, saved)}
-        </Button>
-      </div>
+      </Section> : null}
     </div>
   );
 }
@@ -165,6 +217,35 @@ function searchModeLabel(mode: ParallelSearchStatusDto["mode"]): string {
   if (mode === "grok-subscription") return "Grok subscription";
   if (mode === "api-key") return "Parallel API key";
   return "Parallel anonymous";
+}
+
+function selectFirstFamilySearch(
+  catalogs: MeshLiveCatalogPeerDto[],
+  setConfig: Dispatch<SetStateAction<ConfigDto>>,
+): void {
+  const peer = catalogs.find((item) => item.search.length > 0);
+  const service = peer?.search[0];
+  if (!peer || !service) return;
+  const provider = `mesh:${peer.peerId}:search:${service.id}` as ConfigDto["searchProvider"];
+  setConfig((current) => ({ ...current, searchProvider: provider, searchApiUrl: "" }));
+}
+
+function ValidationBadge({ validation }: { validation?: NonNullable<ConfigDto["searchProviderProfiles"]>[string]["validation"] }) {
+  if (!validation) return null;
+  const label = validation.status === "valid"
+    ? "Validated"
+    : validation.status === "not-required"
+      ? "Validation not required"
+      : validation.status === "invalid"
+        ? "Validation failed"
+        : "Needs validation";
+  return (
+    <div className="flex">
+      <span className="rounded-full border border-[rgb(var(--border))] px-2.5 py-1 text-xs text-[rgb(var(--muted-foreground))]">
+        {label}
+      </span>
+    </div>
+  );
 }
 
 function setConfigValue<K extends keyof ConfigDto>(

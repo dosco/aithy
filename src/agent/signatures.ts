@@ -3,6 +3,7 @@ import { f } from "@ax-llm/ax";
 export const aithySignature = f()
   .input("userProfile", f.json().cache().optional())
   .input("userRequest", f.string("The user's latest message or task"))
+  .input("memoryContext", f.string("Deterministically preloaded durable memories and episodes for this turn").optional())
   .input("urlContext", f.string("Automatically fetched URL content for the latest request").optional())
   .input("searchContext", f.string("Automatically fetched web search results for the latest request").optional())
   .input("artifactContext", f.string("Current run artifact output directory and publishing rules").optional())

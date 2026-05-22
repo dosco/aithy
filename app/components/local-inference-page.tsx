@@ -98,6 +98,8 @@ export function LocalInferencePanel({
 
       <LocalInferenceTuningFields value={localInference} onChange={setLocalInference} />
 
+      <RetrievalHealth state={state} />
+
       <div className="flex flex-wrap items-center gap-3">
         <Button onClick={() => void save()} disabled={busy || selectedModel.trim().length === 0}>
           {saved ? "Saved" : busy ? "Saving..." : "Save local inference"}
@@ -124,6 +126,44 @@ export function LocalInferencePanel({
       </Section>
     </div>
   );
+}
+
+function RetrievalHealth({ state }: { state: LocalInferencePageStateDto }) {
+  const health = state.status.embeddingHealth;
+  if (!health) return null;
+  return (
+    <Section title="Retrieval health" muted>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <HealthCell label="Memories" value={embeddedLabel(health.memories)} stale={health.memories.stale} />
+        <HealthCell label="Episodes" value={embeddedLabel(health.episodes)} stale={health.episodes.stale} />
+        <HealthCell label="Skills" value={embeddedLabel(health.skills)} stale={health.skills.stale} />
+      </div>
+      <div className="mt-3 grid gap-1 text-xs text-[rgb(var(--muted-foreground))]">
+        <p>Reranker: {health.rerankerReady ? "active" : "inactive"}</p>
+        {health.lastTargetedIndexAt ? <p>Last targeted index: {formatDate(health.lastTargetedIndexAt)}</p> : null}
+        {health.lastBackfillAt ? <p>Last backfill: {formatDate(health.lastBackfillAt)}</p> : null}
+        {health.lastIndexError ? <p className="text-red-500">Indexing error: {health.lastIndexError}</p> : null}
+      </div>
+    </Section>
+  );
+}
+
+function HealthCell({ label, value, stale }: { label: string; value: string; stale: number }) {
+  return (
+    <div className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3 py-2">
+      <p className="text-xs text-[rgb(var(--muted-foreground))]">{label}</p>
+      <p className="font-mono text-sm">{value}</p>
+      {stale > 0 ? <p className="text-xs text-amber-500">{stale} stale</p> : null}
+    </div>
+  );
+}
+
+function embeddedLabel(stats: NonNullable<LocalInferencePageStateDto["status"]["embeddingHealth"]>["memories"]): string {
+  return `${stats.embedded}/${stats.total}`;
+}
+
+function formatDate(value: string): string {
+  return new Date(value).toLocaleString();
 }
 
 function ModelSummary({

@@ -40,11 +40,13 @@ import { loadBaseConfig, resolveEffectiveConfig, type RuntimeSecretOverrides } f
 import { RuntimeServiceSupervisor } from "./supervisor/service-supervisor";
 import { startQueueService, type QueueServiceHandle } from "./supervisor/queue-supervisor";
 import { QueueServiceClient } from "./services/queue/client";
+import { createTargetedIndexQueue } from "./services/embedding/targeted-index";
 import { RemoteSessionStateStore } from "./services/queue/session-state-client";
 import { RuntimeStore, type SystemPermissionRequest } from "./runtime-store";
 import { permissionRequestEvent } from "../web/live-events";
 import { ruleOptionForRequest } from "../security/permission-gate";
 import type { CapabilityMatchKind } from "../security/capability-policy";
+import { MeshRuntime } from "../mesh/runtime";
 export interface AithyRuntime {
   config: AppConfig;
   events: EventBus;
@@ -73,11 +75,8 @@ export interface AithyRuntime {
   runtimeStore: RuntimeStore;
   tasks: SqliteTaskStore;
   automations: SqliteAutomationStore;
-  respondSystemPermission(
-    requestId: string,
-    decision: "allowed" | "denied",
-    persist?: CapabilityMatchKind,
-  ): SystemPermissionRequest;
+  mesh: MeshRuntime;
+  respondSystemPermission(requestId: string, decision: "allowed" | "denied", persist?: CapabilityMatchKind): SystemPermissionRequest;
   assertReady(): void;
   updateSettings(patch: SettingsPatch, secrets?: RuntimeSecretOverrides): Promise<StoredSettings>;
   updateSoul(fields: SoulFields): SoulProfile;
@@ -94,13 +93,9 @@ interface RuntimeGlobalState {
   resetPromise?: Promise<AithyRuntime>;
 }
 
-type ViteHotContext = {
-  dispose(callback: () => void): void;
-};
+type ViteHotContext = { dispose(callback: () => void): void };
 
-const runtimeGlobal = globalThis as typeof globalThis & {
-  __aithyRuntimeState?: RuntimeGlobalState;
-};
+const runtimeGlobal = globalThis as typeof globalThis & { __aithyRuntimeState?: RuntimeGlobalState };
 
 function runtimeState(): RuntimeGlobalState {
   runtimeGlobal.__aithyRuntimeState ??= {};
@@ -169,6 +164,7 @@ class RuntimeImpl implements AithyRuntime {
     public readonly runtimeStore: RuntimeStore,
     public readonly tasks: SqliteTaskStore,
     public readonly automations: SqliteAutomationStore,
+    public readonly mesh: MeshRuntime,
   ) {}
 
   notify(input: NotificationCreate): NotificationEntry {
@@ -191,14 +187,8 @@ class RuntimeImpl implements AithyRuntime {
   static async create(): Promise<RuntimeImpl> {
     assertSupportedBunVersion();
     const baseConfig = loadBaseConfig();
-
     const settings = new SqliteSettingsStore(baseConfig.stateDbPath);
     const config = await resolveEffectiveConfig(baseConfig, settings.load());
-
-    const skills = new SqliteSkillsStore(config.stateDbPath);
-    seedSkillsIfEmpty(skills);
-    const skillPromotions = new SqliteSkillPromotionStore(config.stateDbPath);
-    const skillCandidates = new SqliteSkillCandidateStore(config.stateDbPath);
 
     const events = new EventBus();
     const live = new LiveEventHub();
@@ -206,8 +196,13 @@ class RuntimeImpl implements AithyRuntime {
     const queueHandle = await startQueueService();
     const queue = queueHandle.client;
     queue.subscribe((event) => live.publish(event));
-    const memory = new SqliteMemoryStore(config.stateDbPath);
-    const episodes = new SqliteEpisodeStore(config.stateDbPath);
+    const queueTargetedIndex = createTargetedIndexQueue(queue, "web");
+    const skills = new SqliteSkillsStore(config.stateDbPath, { onDirtyIndex: queueTargetedIndex });
+    seedSkillsIfEmpty(skills);
+    const skillPromotions = new SqliteSkillPromotionStore(config.stateDbPath);
+    const skillCandidates = new SqliteSkillCandidateStore(config.stateDbPath);
+    const memory = new SqliteMemoryStore(config.stateDbPath, { onDirtyIndex: queueTargetedIndex });
+    const episodes = new SqliteEpisodeStore(config.stateDbPath, { onDirtyIndex: queueTargetedIndex });
     const artifacts = new SqliteArtifactStore(config.stateDbPath, config.workspaceRoot, config.outboxRoot);
     const memoryRuns = new SqliteMemoryRunsStore(config.stateDbPath);
     const notifications = new SqliteNotificationStore(config.stateDbPath);
@@ -215,11 +210,15 @@ class RuntimeImpl implements AithyRuntime {
     const runtimeStore = new RuntimeStore(config.stateDbPath);
     const tasks = new SqliteTaskStore(config.stateDbPath);
     const automations = new SqliteAutomationStore(config.stateDbPath);
-
     const soulStore = new SqliteSoulStore(config.stateDbPath);
     const soul = loadOrSeedSoul(soulStore);
     const profileStore = new SqliteProfileStore(config.stateDbPath);
     const profile = profileStore.loadProfile();
+    let runtimeRef: RuntimeImpl | null = null;
+    const mesh = new MeshRuntime({ botId: config.botId, stateDbPath: config.stateDbPath,
+      displayName: () => runtimeRef?.soul?.name || soul.name || "Aithy",
+      config: () => runtimeRef?.config ?? config, runtimeStore: () => runtimeRef?.runtimeStore ?? runtimeStore,
+      settings: () => runtimeRef?.settings.load() ?? settings.load(), usage: () => runtimeRef?.usage ?? usage });
 
     const sandbox = new UnavailableSandboxProvider();
     await mkdir(config.workspaceRoot, { recursive: true });
@@ -227,7 +226,6 @@ class RuntimeImpl implements AithyRuntime {
     const activeRuns = new ActiveRunRegistry();
     const sessionState = new RemoteSessionStateStore(queue);
     await sessionState.preloadAll();
-    let runtimeRef: RuntimeImpl | null = null;
     const sessions = new SessionManager({
       sandbox,
       botId: config.botId,
@@ -279,9 +277,11 @@ class RuntimeImpl implements AithyRuntime {
       runtimeStore,
       tasks,
       automations,
+      mesh,
     );
     runtimeRef = runtime;
     runtime.queueHandle = queueHandle;
+    await runtime.mesh.start();
     await runtime.queue.heartbeat("web", "ready", { pid: process.pid });
     runtime.workerSupervisor = new RuntimeServiceSupervisor({
       queue,
@@ -350,7 +350,7 @@ class RuntimeImpl implements AithyRuntime {
 
   updateSoul(fields: SoulFields): SoulProfile {
     this.soul = saveSoul(this.soulStore, fields);
-    return this.soul;
+    this.mesh.refreshDisplayName(); return this.soul;
   }
 
   updateProfile(fields: UserProfileFields): UserProfile {
@@ -384,6 +384,7 @@ class RuntimeImpl implements AithyRuntime {
     }
     this.activeRuns.stopAll();
     await this.workerSupervisor?.close();
+    await this.mesh.close();
     await this.closeQueues();
     try {
       shutdownManager();
@@ -416,6 +417,7 @@ class RuntimeImpl implements AithyRuntime {
       this.events.emit({ type: "error", message: `[shutdown] stopped ${stopped} active run(s)` });
     }
     await this.workerSupervisor?.close();
+    await this.mesh.close();
 
     await this.closeQueues();
     await this.sessionState.flush();

@@ -12,6 +12,7 @@ import {
   markGrokEntitlementDenied,
   resolveGrokSubscriptionCredentials,
 } from "../grok-subscription/credentials";
+import { isMeshInferenceProvider, MESH_PROXY_AUTH_TOKEN } from "../mesh/types";
 import { resolveLocalInferenceConfig } from "../runtime/local-inference-config";
 import type { RuntimeStore } from "../runtime/runtime-store";
 import {
@@ -36,12 +37,13 @@ export function createAiService(input: AiServiceConfigInput): AiService {
     return createGrokSubscriptionAiService(config, config.aiModel);
   }
   const local = isLocalAiProvider(config.aiProvider);
+  const remote = isMeshInferenceProvider(config.aiProvider);
   return ai({
     name: aiServiceProviderName(config.aiProvider),
     apiURL: config.aiApiUrl,
-    apiKey: local ? "local" : config.aiApiKey,
+    apiKey: local ? "local" : remote ? MESH_PROXY_AUTH_TOKEN : config.aiApiKey,
     config: config.aiModel
-      ? local ? { model: config.aiModel, stream: false } : { model: config.aiModel }
+      ? local || remote ? { model: config.aiModel, stream: false } : { model: config.aiModel }
       : undefined,
   } as never) as AiService;
 }
@@ -60,12 +62,13 @@ export function createFastAiService(input: AiServiceConfigInput): AiService | un
     ? config.fastAiApiKey ?? config.aiApiKey
     : config.fastAiApiKey;
   const local = isLocalAiProvider(fastProvider);
+  const remote = isMeshInferenceProvider(fastProvider);
   return ai({
     name: aiServiceProviderName(fastProvider),
     apiURL: config.fastAiApiUrl,
-    apiKey: local ? "local" : apiKey,
+    apiKey: local ? "local" : remote ? MESH_PROXY_AUTH_TOKEN : apiKey,
     config: config.fastAiModel
-      ? local ? { model: config.fastAiModel, stream: false } : { model: config.fastAiModel }
+      ? local || remote ? { model: config.fastAiModel, stream: false } : { model: config.fastAiModel }
       : undefined,
   } as never) as AiService;
 }
@@ -89,7 +92,9 @@ function resolveFastAiServiceConfig(input: AiServiceConfigInput): AppConfig {
 }
 
 function aiServiceProviderName(provider: string): string {
-  return isCustomOpenAIProvider(provider) || isLocalAiProvider(provider) ? "openai" : provider;
+  return isCustomOpenAIProvider(provider) || isLocalAiProvider(provider) || isMeshInferenceProvider(provider)
+    ? "openai"
+    : provider;
 }
 
 function createGrokSubscriptionAiService(

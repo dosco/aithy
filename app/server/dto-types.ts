@@ -1,4 +1,4 @@
-import type { StoredSettings } from "../../src/settings/types";
+import type { AiProviderProfile, SearchProviderId, SearchProviderProfile, StoredSettings } from "../../src/settings/types";
 import type { LocalInferenceSettings } from "../../src/local-inference/settings";
 import type { MemoryKind } from "../../src/memory/types";
 import type { MemoryRunStatus, MemoryRunTrigger } from "../../src/memory/memory-runs";
@@ -6,6 +6,7 @@ import type { NotificationKind } from "../../src/notifications/types";
 import type { UsagePurpose } from "../../src/usage/types";
 import type { CapabilityPolicyRule } from "../../src/security/capability-policy";
 import type { TaskSummary } from "../../src/tasks/types";
+import type { MeshInferenceProvider, MeshLiveCatalogPeer, MeshSearchProvider, MeshSnapshot } from "../../src/mesh/types";
 import type {
   AutomationAttentionType,
   AutomationCreatedSource,
@@ -43,6 +44,8 @@ export interface ConfigDto {
   sandboxNetwork: string;
   sessionTtlMs: number;
   parallelAgents: number;
+  searchProvider: SearchProviderId;
+  searchApiUrl: string;
   parallelSearchMcpUrl: string;
   grokSubscriptionConnected?: boolean;
   systemBashEnabled: boolean;
@@ -51,12 +54,19 @@ export interface ConfigDto {
   stateDbPath: string;
   workspaceRoot: string;
   globalMounts: GlobalMountDto[];
+  aiProviderProfiles?: Record<string, AiProviderProfile>;
+  searchProviderProfiles?: Record<string, SearchProviderProfile>;
 }
 
 export interface SecretStatusDto {
   provider: string;
   configured: boolean;
   source: "bun.secrets" | null;
+  validation?: {
+    status: "unknown" | "valid" | "invalid" | "not-required";
+    message?: string | null;
+    validatedAt?: string;
+  };
 }
 
 export interface ParallelSearchStatusDto extends SecretStatusDto {
@@ -66,7 +76,7 @@ export interface ParallelSearchStatusDto extends SecretStatusDto {
 }
 
 export interface ParallelSearchTestDto {
-  provider: "parallel" | "grok-subscription";
+  provider: SearchProviderId;
   mode: "anonymous" | "api-key" | "grok-subscription";
   url: string;
   answer: string;
@@ -96,6 +106,7 @@ export interface GrokSubscriptionLoginPollDto {
   config: ConfigDto;
   secret: SecretStatusDto;
   fastSecret: SecretStatusDto | null;
+  providerSecrets: Record<string, SecretStatusDto>;
   parallelSearch: ParallelSearchStatusDto;
   aiConfigured: boolean;
   setupGate: SetupGateStateDto;
@@ -161,7 +172,29 @@ export interface LocalInferenceStatusDto {
   binaryPath: string | null;
   binarySource: string | null;
   modelsIniPath: string | null;
+  embeddingHealth: LocalEmbeddingHealthDto | null;
 }
+
+export interface LocalEmbeddingStatsDto {
+  total: number;
+  embedded: number;
+  stale: number;
+}
+
+export interface LocalEmbeddingHealthDto {
+  memories: LocalEmbeddingStatsDto;
+  episodes: LocalEmbeddingStatsDto;
+  skills: LocalEmbeddingStatsDto;
+  lastTargetedIndexAt: string | null;
+  lastBackfillAt: string | null;
+  lastIndexError: string | null;
+  rerankerReady: boolean;
+}
+
+export type MeshStateDto = MeshSnapshot;
+export type MeshInferenceProviderDto = MeshInferenceProvider;
+export type MeshSearchProviderDto = MeshSearchProvider;
+export type MeshLiveCatalogPeerDto = MeshLiveCatalogPeer;
 
 export type PermissionRuleDto = CapabilityPolicyRule;
 
@@ -333,6 +366,7 @@ export interface WebStateDto {
   config: ConfigDto;
   secret: SecretStatusDto;
   fastSecret: SecretStatusDto | null;
+  providerSecrets: Record<string, SecretStatusDto>;
   grokSubscription: GrokSubscriptionStatusDto;
   parallelSearch: ParallelSearchStatusDto;
   soul: SoulDto;
@@ -375,13 +409,23 @@ export type SkillsPageStateDto = Pick<
 
 export type SettingsPageStateDto = Pick<
   WebStateDto,
-  "settings" | "config" | "secret" | "fastSecret" | "parallelSearch" | "soul" | "profile" | "runtimeCapabilities"
-  | "permissionRules" | "grokSubscription"
-> & { localModels: LocalModelDto[] };
+  "settings" | "config" | "secret" | "fastSecret" | "providerSecrets" | "parallelSearch" | "soul" | "profile"
+  | "runtimeCapabilities" | "permissionRules" | "grokSubscription"
+> & {
+  localModels: LocalModelDto[];
+  mesh: MeshStateDto;
+  meshInferenceProviders: MeshInferenceProviderDto[];
+  meshCatalogs: MeshLiveCatalogPeerDto[];
+};
+
+export interface MeshPageStateDto {
+  settings: StoredSettings;
+  mesh: MeshStateDto;
+}
 
 export type SetupPageStateDto = Pick<
   WebStateDto,
-  "settings" | "config" | "profile" | "aiConfigured" | "runtimeCapabilities" | "grokSubscription"
+  "settings" | "config" | "profile" | "aiConfigured" | "runtimeCapabilities" | "grokSubscription" | "providerSecrets"
 > & {
   setupGate: SetupGateStateDto;
   setupStatuses: Array<Extract<WebLiveEvent, { type: "setup-status" }>>;

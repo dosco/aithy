@@ -41,8 +41,9 @@ export async function coreLocalModelDtos(
   selectedChatModelId: string,
   localModels: readonly LocalModelDto[],
 ): Promise<LocalModelDto[]> {
-  const chatModel = localModels.find((model) => model.id === selectedChatModelId)
+  const selected = localModels.find((model) => model.id === selectedChatModelId)
     ?? await localModelDtoForId(selectedChatModelId);
+  const chatModel = { ...selected, role: "chat" };
   const core = await Promise.all(REQUIRED_LOCAL_MODELS.map(async (model) => {
     const cachedPath = await resolveCachedLocalModelPath(model.id).catch(() => null);
     return managedLocalModelDto(model, Boolean(cachedPath), cachedPath ?? "");

@@ -3,6 +3,12 @@ import path from "node:path";
 import { Database } from "bun:sqlite";
 import { sessionMigrations, type SkillRow } from "../session/sqlite-session-schema";
 import { applySqliteMigrations } from "../sqlite/migrations";
+import type { Embedder } from "../memory/embed";
+import type { Reranker } from "../memory/rerank";
+import { tryLoadVecExtension } from "../memory/vec-extension";
+import { backfillSkillEmbeddings, indexSkillEmbeddings, skillEmbeddingStats } from "./embed-write";
+import type { EmbeddingHealthStats, TargetIndexCounts } from "../retrieval/indexing";
+import { hybridSkillSearch } from "./hybrid-search";
 import {
   extractSkillLinks,
   normalizeSkillFiles,
@@ -34,25 +40,41 @@ import {
   addResolved,
   buildSkillsWhere,
   byteLength,
+  eventRowToEntry,
+  fileRowToEntry,
   hashText,
   normalizeName,
   parseStringArray,
   quoteForFts5,
   selectSkillColumns,
   shiftHeadingsToAtLeastH4,
+  type SkillEventRow,
+  type SkillFileRow,
 } from "./skills-store-helpers";
 
 export class SqliteSkillsStore {
   private readonly db: Database;
+  private readonly embedder: Embedder | null;
+  private readonly reranker: Reranker | null;
+  private readonly vecEnabled: boolean;
+  private readonly onDirtyIndex?: (input: { skills: string[] }) => void;
 
-  constructor(dbPath: string) {
+  constructor(
+    dbPath: string,
+    options: { embedder?: Embedder; reranker?: Reranker; log?: (msg: string) => void; onDirtyIndex?: (input: { skills: string[] }) => void } = {},
+  ) {
     mkdirSync(path.dirname(dbPath), { recursive: true });
     this.db = new Database(dbPath, { create: true });
     this.db.exec("PRAGMA busy_timeout = 10000;");
     this.db.exec("PRAGMA foreign_keys = ON;");
     this.db.exec("PRAGMA journal_mode = WAL;");
     this.db.exec("PRAGMA synchronous = NORMAL;");
+    this.embedder = options.embedder ?? null;
+    this.reranker = options.reranker ?? null;
+    this.onDirtyIndex = options.onDirtyIndex;
+    const vecLoad = this.embedder ? tryLoadVecExtension(this.db, options.log ?? (() => {})) : { ok: false as const };
     applySqliteMigrations(this.db, "session", sessionMigrations);
+    this.vecEnabled = vecLoad.ok && this.tableExists("skills_vec");
   }
 
   upsert(skill: SkillUpsert): SkillEntry {
@@ -99,16 +121,33 @@ export class SqliteSkillsStore {
       this.replaceFiles(skill.id, files, updatedAt);
       this.replaceLinks(skill.id, links);
       this.db.exec("COMMIT;");
-    } catch (error) {
-      this.db.exec("ROLLBACK;");
-      throw error;
-    }
-    return this.get(skill.id)!;
+	    } catch (error) {
+	      this.db.exec("ROLLBACK;");
+	      throw error;
+	    }
+    const entry = this.get(skill.id)!;
+    this.onDirtyIndex?.({ skills: [entry.id] });
+    return entry;
   }
 
   delete(id: string): boolean {
+    const chunkIds = this.vecEnabled ? this.db
+      .query("SELECT id FROM skill_embedding_chunks WHERE skill_id = $id")
+      .all({ $id: id }) as Array<{ id: number }> : [];
     const res = this.db.query("DELETE FROM skills WHERE id = $id").run({ $id: id });
+    if (res.changes > 0 && chunkIds.length > 0) {
+      const stmt = this.db.query("DELETE FROM skills_vec WHERE rowid = $id");
+      for (const chunk of chunkIds) stmt.run({ $id: chunk.id } as never);
+    }
     return res.changes > 0;
+  }
+
+  isHybridReady(): boolean {
+    return this.vecEnabled && (this.embedder?.available() ?? false);
+  }
+
+  isRerankReady(): boolean {
+    return this.isHybridReady() && (this.reranker?.available() ?? false);
   }
 
   count(opts: { query?: string } = {}): number {
@@ -283,6 +322,49 @@ export class SqliteSkillsStore {
     return matches;
   }
 
+  async resolveSearchQueriesSemantic(queries: readonly string[], perQueryLimit = 3): Promise<SkillResolvedMatch[]> {
+    const matches: SkillResolvedMatch[] = [];
+    const diagnostics: unknown[] = [];
+    const seen = new Set<string>();
+    for (const raw of queries) {
+      const query = raw.trim();
+      if (!query) continue;
+      const byId = this.get(query) ?? this.get(slugify(query));
+      if (byId) {
+        addResolved(matches, seen, byId, query, "id");
+        continue;
+      }
+      const byName = this.getByName(query);
+      if (byName) {
+        addResolved(matches, seen, byName, query, "name");
+        continue;
+      }
+      const quoted = quoteForFts5(query);
+      const result = quoted && this.isHybridReady() && this.embedder ? await hybridSkillSearch({
+        db: this.db, embedder: this.embedder, reranker: this.reranker?.available() ? this.reranker : null,
+        rawQueries: [query], ftsExpressions: [quoted], perQueryLimit,
+      }) : null;
+      if (result) diagnostics.push(result.diagnostics);
+      const skills = result ? result.ids.flatMap((id) => this.get(id) ?? []) : this.search([query], perQueryLimit);
+      for (const skill of skills) addResolved(matches, seen, skill, query, "search");
+    }
+    return Object.assign(matches, diagnostics.length > 0 ? { diagnostics } : {});
+  }
+
+  async indexEmbeddings(ids: readonly string[]): Promise<TargetIndexCounts> {
+    if (!this.isHybridReady() || !this.embedder) return { indexed: 0, skipped: 0, missing: 0, failed: ids.length };
+    return indexSkillEmbeddings(this.db, this.embedder, ids, (id) => this.get(id));
+  }
+
+  async backfillEmbeddings(): Promise<{ done: number; skipped: number; indexed: Array<{ id: string; name: string }> }> {
+    if (!this.isHybridReady() || !this.embedder) return { done: 0, skipped: 0, indexed: [] };
+    return backfillSkillEmbeddings(this.db, this.embedder, this.getAll());
+  }
+
+  embeddingStats(): EmbeddingHealthStats {
+    return skillEmbeddingStats(this.db, this.embedder, this.getAll());
+  }
+
   recordEvent(input: SkillEventInput): void {
     if (!this.get(input.skillId)) return;
     const now = new Date().toISOString();
@@ -403,55 +485,10 @@ export class SqliteSkillsStore {
     for (const link of links) insert.run({ $skillId: skillId, $targetSkillId: link });
   }
 
-  close(): void {
-    this.db.close();
+  private tableExists(name: string): boolean {
+    const row = this.db.query("SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name = $name")
+      .get({ $name: name }) as { name: string } | undefined;
+    return row !== undefined;
   }
-}
-
-interface SkillFileRow {
-  path: string;
-  content: string;
-  content_hash: string;
-  bytes: number;
-  updated_at: string;
-}
-
-interface SkillEventRow {
-  id: number;
-  event_type: SkillEventType;
-  skill_id: string;
-  session_id: string | null;
-  task_id: string | null;
-  stage: string | null;
-  reason: string | null;
-  query: string | null;
-  match_kind: string | null;
-  queries_json: string | null;
-  created_at: string;
-}
-
-function fileRowToEntry(row: SkillFileRow): SkillFileEntry {
-  return {
-    path: row.path,
-    content: row.content,
-    content_hash: row.content_hash,
-    bytes: row.bytes,
-    updated_at: row.updated_at,
-  };
-}
-
-function eventRowToEntry(row: SkillEventRow): SkillUsageEvent {
-  return {
-    id: row.id,
-    event_type: row.event_type,
-    skill_id: row.skill_id,
-    session_id: row.session_id,
-    task_id: row.task_id,
-    stage: row.stage,
-    reason: row.reason,
-    query: row.query,
-    match_kind: row.match_kind,
-    queries: parseStringArray(row.queries_json),
-    created_at: row.created_at,
-  };
+  close(): void { this.db.close(); }
 }

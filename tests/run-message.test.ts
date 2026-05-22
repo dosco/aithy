@@ -259,6 +259,7 @@ describe("runMessage", () => {
     const emitted: unknown[] = [];
     events.subscribe((event) => emitted.push(event));
     const sessions = sessionsFor(root, path.join(root, "state.db"));
+    let forwardInput: any;
 
     await runMessage(textMessage("m1", "look it up"), {
       config: disabledConfig(),
@@ -293,7 +294,8 @@ describe("runMessage", () => {
       agentFactory: (options: any) => ({
         llm: {},
         program: {
-          forward: async () => {
+          forward: async (_llm: any, input: any) => {
+            forwardInput = input;
             await options.onSkillsSearch(["coffee"]);
             await options.onMemoriesSearch(["Vancouver"], []);
             return { agentResponse: "done" };
@@ -308,13 +310,13 @@ describe("runMessage", () => {
         message: expect.objectContaining({
           toolName: "skills.search",
           toolArgs: { queries: ["coffee"] },
-          toolResult: {
-            matches: [{
+          toolResult: expect.objectContaining({
+            matches: [expect.objectContaining({
               name: "coffee-finder",
               contentBytes: 19,
               contentPreview: "Use maps for coffee",
-            }],
-          },
+            })],
+          }),
         }),
       }),
     );
@@ -323,18 +325,20 @@ describe("runMessage", () => {
         type: "agent.tool_call",
         message: expect.objectContaining({
           toolName: "memory.recall",
-          toolArgs: { queries: ["Vancouver"], excludeIds: [] },
-          toolResult: {
+          toolArgs: expect.objectContaining({ source: "recall", queries: ["Vancouver"] }),
+          toolResult: expect.objectContaining({
             matches: [expect.objectContaining({
               id: "memory:mem-1",
               contentPreview: expect.stringContaining("Favorite city"),
             })],
-          },
+          }),
         }),
       }),
     );
+    expect(forwardInput.memoryContext).toContain("Favorite city");
     expect(sessions.getTranscript("conversation")).toMatchObject([
       { role: "user", content: "look it up" },
+      { role: "assistant", kind: "tool_call", toolName: "memory.recall" },
       { role: "assistant", kind: "tool_call", toolName: "skills.search" },
       { role: "assistant", kind: "tool_call", toolName: "memory.recall" },
       { role: "assistant", kind: "text", content: "done" },

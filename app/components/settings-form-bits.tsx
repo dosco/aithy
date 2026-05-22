@@ -4,9 +4,12 @@ import { Check, ChevronDown, KeyRound, X } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import type { SecretStatusDto } from "@/server/dto";
+import type { MeshInferenceProviderDto, SecretStatusDto } from "@/server/dto";
 import {
   AX_AI_PROVIDERS,
+  CUSTOM_OPENAI_PROVIDER,
+  LOCAL_AI_PROVIDER,
+  XAI_GROK_SUBSCRIPTION_PROVIDER,
   modelsForProvider,
   providerDisplayName,
 } from "../../src/agent/ai-providers";
@@ -21,6 +24,17 @@ export interface ModelOption {
   value: string;
   label: string;
   detail?: string;
+}
+
+export interface ProviderOption {
+  value: string;
+  label: string;
+  disabled?: boolean;
+}
+
+export interface ProviderGroup {
+  label: string;
+  options: ProviderOption[];
 }
 
 export function Section({
@@ -267,21 +281,71 @@ export function ProviderSelect({
   value,
   onChange,
   allowEmpty = false,
+  meshInferenceProviders = [],
+  providerSecrets = {},
 }: {
   value: string;
   onChange: (value: string) => void;
   allowEmpty?: boolean;
+  meshInferenceProviders?: readonly MeshInferenceProviderDto[];
+  providerSecrets?: Record<string, SecretStatusDto>;
 }) {
+  const groups = providerGroups(meshInferenceProviders);
+  const knownValues = new Set(groups.flatMap((group) => group.options.map((option) => option.value)));
+  const optionLabel = (option: ProviderOption) =>
+    providerSecrets[option.value]?.configured ? `${option.label} 🔑` : option.label;
   return (
     <select value={value} onChange={(event) => onChange(event.target.value)} className={selectClass}>
       {allowEmpty ? <option value="">- none -</option> : null}
-      {AX_AI_PROVIDERS.map((name) => (
-        <option key={name} value={name}>
-          {providerDisplayName(name)}
-        </option>
+      {!knownValues.has(value) && value ? (
+        <optgroup label="Current">
+          <option value={value}>
+            {providerSecrets[value]?.configured ? `${providerDisplayName(value)} 🔑` : providerDisplayName(value)}
+          </option>
+        </optgroup>
+      ) : null}
+      {groups.map((group) => (
+        <optgroup key={group.label} label={group.label}>
+          {group.options.map((option) => (
+            <option key={option.value} value={option.value} disabled={option.disabled && option.value !== value}>
+              {optionLabel(option)}
+            </option>
+          ))}
+        </optgroup>
       ))}
     </select>
   );
+}
+
+function providerGroups(meshInferenceProviders: readonly MeshInferenceProviderDto[]): ProviderGroup[] {
+  const localOptions: ProviderOption[] = [
+    { value: LOCAL_AI_PROVIDER, label: providerDisplayName(LOCAL_AI_PROVIDER) },
+  ];
+  const familyOptions: ProviderOption[] = meshInferenceProviders.map((provider) => ({
+    value: provider.providerId,
+    label: provider.online ? provider.name : `${provider.name} (offline)`,
+    disabled: !provider.online,
+  }));
+  const hostedOptions = AX_AI_PROVIDERS
+    .filter((provider) =>
+      provider !== LOCAL_AI_PROVIDER
+      && provider !== XAI_GROK_SUBSCRIPTION_PROVIDER
+      && provider !== CUSTOM_OPENAI_PROVIDER
+    )
+    .map((provider) => ({ value: provider, label: providerDisplayName(provider) }));
+  return [
+    { label: "Local", options: localOptions },
+    { label: "Family Aithys", options: familyOptions },
+    { label: "Hosted providers", options: hostedOptions },
+    {
+      label: "Sign-in providers",
+      options: [{ value: XAI_GROK_SUBSCRIPTION_PROVIDER, label: providerDisplayName(XAI_GROK_SUBSCRIPTION_PROVIDER) }],
+    },
+    {
+      label: "Custom endpoints",
+      options: [{ value: CUSTOM_OPENAI_PROVIDER, label: providerDisplayName(CUSTOM_OPENAI_PROVIDER) }],
+    },
+  ].filter((group) => group.options.length > 0);
 }
 
 export function FormTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {

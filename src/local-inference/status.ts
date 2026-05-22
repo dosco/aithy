@@ -1,4 +1,5 @@
 import type { AppConfig } from "../config/env";
+import type { EmbeddingHealthStats } from "../retrieval/indexing";
 import type { RuntimeServiceStatus } from "../runtime/protocol/types";
 import { isLocalAiProvider, selectedLocalAgentModelId } from "./manifest";
 
@@ -21,6 +22,17 @@ export interface LocalInferenceServiceDetail {
   modelsIniPath?: string;
   error?: string;
   downloading?: boolean;
+  embeddingHealth?: LocalEmbeddingHealth;
+}
+
+export interface LocalEmbeddingHealth {
+  memories: EmbeddingHealthStats;
+  episodes: EmbeddingHealthStats;
+  skills: EmbeddingHealthStats;
+  lastTargetedIndexAt: string | null;
+  lastBackfillAt: string | null;
+  lastIndexError: string | null;
+  rerankerReady: boolean;
 }
 
 export function localInferenceRequired(_config: AppConfig): boolean {
@@ -55,6 +67,7 @@ export function localInferenceDetail(
     modelsIniPath: stringValue(detail.modelsIniPath),
     error: stringValue(detail.error),
     downloading: detail.downloading === true,
+    embeddingHealth: embeddingHealth(detail.embeddingHealth),
   };
 }
 
@@ -81,4 +94,37 @@ function stringValue(value: unknown): string | undefined {
 
 function numberValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+function embeddingHealth(value: unknown): LocalEmbeddingHealth | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const detail = value as Record<string, unknown>;
+  const memories = embeddingStats(detail.memories);
+  const episodes = embeddingStats(detail.episodes);
+  const skills = embeddingStats(detail.skills);
+  if (!memories || !episodes || !skills) return undefined;
+  return {
+    memories,
+    episodes,
+    skills,
+    lastTargetedIndexAt: stringOrNull(detail.lastTargetedIndexAt),
+    lastBackfillAt: stringOrNull(detail.lastBackfillAt),
+    lastIndexError: stringOrNull(detail.lastIndexError),
+    rerankerReady: detail.rerankerReady === true,
+  };
+}
+
+function embeddingStats(value: unknown): EmbeddingHealthStats | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const record = value as Record<string, unknown>;
+  const total = numberValue(record.total);
+  const embedded = numberValue(record.embedded);
+  const stale = numberValue(record.stale);
+  return total === undefined || embedded === undefined || stale === undefined
+    ? undefined
+    : { total, embedded, stale };
+}
+
+function stringOrNull(value: unknown): string | null {
+  return typeof value === "string" && value.length > 0 ? value : null;
 }

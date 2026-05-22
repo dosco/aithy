@@ -2,7 +2,7 @@ import { mkdir, mkdtemp, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
-import { localModelDtos } from "../app/server/local-model-dtos";
+import { coreLocalModelDtos, localModelDtos } from "../app/server/local-model-dtos";
 import {
   hfRepoFolderName,
   listCachedGgufModels,
@@ -51,6 +51,24 @@ describe("local inference Hugging Face cache", () => {
       { displayName: "Qwen3.5 4B Q5_K_M", cached: false, managed: true },
       { displayName: "Qwen3.5 9B Q5_K_M", cached: false, managed: true },
     ]);
+  });
+
+  test("core model DTOs treat the selected unmanaged GGUF as chat", async () => {
+    const cacheDir = await mkdtemp(path.join(tmpdir(), "aithy-hf-cache-"));
+    const repoId = "example/custom-chat";
+    const filename = "custom-chat.gguf";
+    const selectedChatId = localModelId(repoId, filename);
+    await writeCachedModel(cacheDir, repoId, filename, "chat");
+
+    const localModels = await localModelDtos(cacheDir);
+    const coreModels = await coreLocalModelDtos(selectedChatId, localModels);
+
+    expect(coreModels[0]).toMatchObject({
+      id: selectedChatId,
+      role: "chat",
+      managed: false,
+      cached: true,
+    });
   });
 
   test("lists cached GGUF models from snapshot folders", async () => {

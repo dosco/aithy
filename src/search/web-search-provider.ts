@@ -1,4 +1,6 @@
 import type { AppConfig } from "../config/env";
+import { isMeshSearchProvider, MESH_PROXY_AUTH_TOKEN } from "../mesh/types";
+import type { SearchProviderId } from "../settings/types";
 import { grokSubscriptionWebSearch } from "./grok-subscription-search-client";
 import {
   parallelWebSearch,
@@ -6,7 +8,7 @@ import {
   type ParallelSearchInput,
 } from "./parallel-search-client";
 
-export type WebSearchProviderId = "parallel" | "grok-subscription";
+export type WebSearchProviderId = SearchProviderId;
 
 export type WebSearchInput = ParallelSearchInput;
 
@@ -27,13 +29,12 @@ export async function webSearch(
   config: AppConfig,
   deps: WebSearchDeps = {},
 ): Promise<WebSearchResult> {
-  if (config.grokSubscriptionConnected) {
-    try {
-      return await (deps.grokSearch ?? grokSubscriptionWebSearch)(input, config);
-    } catch {
-      // Auto mode treats Grok subscription search as an upgrade. Parallel stays
-      // the stable fallback when sign-in is missing, expired, or not entitled.
-    }
+  const provider = config.searchProvider ?? "parallel";
+  if (isMeshSearchProvider(provider)) {
+    return meshWebSearch(input, config);
+  }
+  if (provider === "grok-subscription") {
+    return await (deps.grokSearch ?? grokSubscriptionWebSearch)(input, config);
   }
   return (deps.parallelSearch ?? parallelWebSearch)(
     input,
@@ -46,11 +47,31 @@ export function activeWebSearchBackend(config: AppConfig): {
   provider: WebSearchProviderId;
   mode: "grok-subscription" | "api-key" | "anonymous";
 } {
-  if (config.grokSubscriptionConnected) {
+  const provider = config.searchProvider ?? "parallel";
+  if (isMeshSearchProvider(provider)) {
+    return { provider, mode: "api-key" };
+  }
+  if (provider === "grok-subscription") {
     return { provider: "grok-subscription", mode: "grok-subscription" };
   }
   return {
     provider: "parallel",
     mode: config.parallelApiKey ? "api-key" : "anonymous",
   };
+}
+
+async function meshWebSearch(input: WebSearchInput, config: AppConfig): Promise<WebSearchResult> {
+  if (!config.searchApiUrl) throw new Error("Family search proxy is not available.");
+  const response = await fetch(config.searchApiUrl, {
+    method: "POST",
+    headers: {
+      "authorization": `Bearer ${MESH_PROXY_AUTH_TOKEN}`,
+      "content-type": "application/json",
+    },
+    body: JSON.stringify(input),
+  });
+  const body = await response.json().catch(() => null) as { error?: string; answer?: string; rawContent?: string } | null;
+  if (!response.ok) throw new Error(body?.error ?? `Family search failed with HTTP ${response.status}.`);
+  const rawContent = body?.rawContent ?? body?.answer ?? "";
+  return { answer: body?.answer ?? rawContent, provider: config.searchProvider ?? "parallel", rawContent };
 }

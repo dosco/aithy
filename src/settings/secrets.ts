@@ -17,11 +17,19 @@ export const BunSecretStore: SecretStore = {
 };
 
 export function apiKeySecretName(provider: string): string {
-  return `ai.${provider}.api-key`;
+  return `aithy.llm.${provider}.api-key`;
 }
 
 export function parallelApiKeySecretName(): string {
-  return "parallel.search-api-key";
+  return searchApiKeySecretName("parallel");
+}
+
+export function searchApiKeySecretName(provider: string): string {
+  return `aithy.search.${provider}.api-key`;
+}
+
+export function oauthTokensSecretName(provider: string): string {
+  return `aithy.oauth.${provider}.tokens`;
 }
 
 export function aithySecretService(botId: string): string {
@@ -45,6 +53,12 @@ export async function readProviderApiKey(
   return (await safeSecretGet(secrets, {
     service: aithySecretService(botId),
     name,
+  })) ?? (await safeSecretGet(secrets, {
+    service: aithySecretService(botId),
+    name: legacyApiKeySecretName(provider),
+  })) ?? (await safeSecretGet(secrets, {
+    service: legacyAithySecretService,
+    name: legacyApiKeySecretName(provider),
   })) ?? (await safeSecretGet(secrets, {
     service: legacyAithySecretService,
     name,
@@ -80,10 +94,64 @@ export async function deleteProviderApiKey(
     service: aithySecretService(botId),
     name,
   });
+  const scopedLegacy = await secrets.delete({
+    service: aithySecretService(botId),
+    name: legacyApiKeySecretName(provider),
+  });
   const legacy = await secrets.delete({
     service: legacyAithySecretService,
-    name,
+    name: legacyApiKeySecretName(provider),
   });
+  return next || scopedLegacy || legacy;
+}
+
+export async function readSearchApiKey(
+  provider: string,
+  botId: string,
+  secrets: SecretStore = BunSecretStore,
+): Promise<string | undefined> {
+  const scoped = await safeSecretGet(secrets, {
+    service: aithySecretService(botId),
+    name: searchApiKeySecretName(provider),
+  });
+  if (scoped) return scoped;
+  if (provider !== "parallel") return undefined;
+  return (await safeSecretGet(secrets, {
+    service: aithySecretService(botId),
+    name: legacyParallelApiKeySecretName(),
+  })) ?? undefined;
+}
+
+export async function writeSearchApiKey(
+  provider: string,
+  value: string,
+  botId: string,
+  secrets: SecretStore = BunSecretStore,
+): Promise<void> {
+  const service = aithySecretService(botId);
+  const name = searchApiKeySecretName(provider);
+  await secrets.set({ service, name, value });
+  const saved = await secrets.get({ service, name });
+  if (saved !== value) {
+    throw new Error("Could not read back the saved search API key from Bun.secrets.");
+  }
+}
+
+export async function deleteSearchApiKey(
+  provider: string,
+  botId: string,
+  secrets: SecretStore = BunSecretStore,
+): Promise<boolean> {
+  const next = await secrets.delete({
+    service: aithySecretService(botId),
+    name: searchApiKeySecretName(provider),
+  });
+  const legacy = provider === "parallel"
+    ? await secrets.delete({
+      service: aithySecretService(botId),
+      name: legacyParallelApiKeySecretName(),
+    })
+    : false;
   return next || legacy;
 }
 
@@ -91,10 +159,7 @@ export async function readParallelApiKey(
   botId: string,
   secrets: SecretStore = BunSecretStore,
 ): Promise<string | undefined> {
-  return (await safeSecretGet(secrets, {
-    service: aithySecretService(botId),
-    name: parallelApiKeySecretName(),
-  })) ?? undefined;
+  return readSearchApiKey("parallel", botId, secrets);
 }
 
 export async function writeParallelApiKey(
@@ -102,23 +167,22 @@ export async function writeParallelApiKey(
   botId: string,
   secrets: SecretStore = BunSecretStore,
 ): Promise<void> {
-  const service = aithySecretService(botId);
-  const name = parallelApiKeySecretName();
-  await secrets.set({ service, name, value });
-  const saved = await secrets.get({ service, name });
-  if (saved !== value) {
-    throw new Error("Could not read back the saved Parallel API key from Bun.secrets.");
-  }
+  return writeSearchApiKey("parallel", value, botId, secrets);
 }
 
 export async function deleteParallelApiKey(
   botId: string,
   secrets: SecretStore = BunSecretStore,
 ): Promise<boolean> {
-  return secrets.delete({
-    service: aithySecretService(botId),
-    name: parallelApiKeySecretName(),
-  });
+  return deleteSearchApiKey("parallel", botId, secrets);
+}
+
+function legacyApiKeySecretName(provider: string): string {
+  return `ai.${provider}.api-key`;
+}
+
+function legacyParallelApiKeySecretName(): string {
+  return "parallel.search-api-key";
 }
 
 function isQuoted(value: string): boolean {

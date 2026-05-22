@@ -18,11 +18,18 @@ export {
   soulDto,
   usageBucketDto,
 } from "./dto-mappers";
-export { grokSubscriptionStatusDto, parallelSearchStatus, secretStatus, secretStatusForProvider } from "./secret.dto";
+export {
+  grokSubscriptionStatusDto,
+  parallelSearchStatus,
+  providerSecretStatuses,
+  secretStatus,
+  secretStatusForProvider,
+} from "./secret.dto";
 export {
   memoryPageStateDto,
   localInferencePageStateDto,
   automationsPageStateDto,
+  meshPageStateDto,
   notificationsPageStateDto,
   sessionMessagePageDto,
   sessionsPageStateDto,

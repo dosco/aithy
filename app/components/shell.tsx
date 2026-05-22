@@ -11,6 +11,7 @@ import {
   House,
   ListChecks,
   Menu,
+  Network,
   Palette,
   Settings,
   SquarePen,
@@ -35,10 +36,11 @@ const navItems = [
   { to: "/memory", label: "Memory", icon: Brain },
   { to: "/attentions", label: "Attentions", icon: Eye },
   { to: "/tasks", label: "Tasks", icon: ListChecks },
+  { to: "/mesh", label: "Mesh", icon: Network },
+  { to: "/inference", label: "Inference", icon: Cpu },
   { to: "/usage", label: "Usage", icon: BarChart3 },
   { to: "/themes", label: "Themes", icon: Palette },
   { to: "/settings", label: "Settings", icon: Settings },
-  { to: "/inference", label: "Inference", icon: Cpu },
 ] as const;
 
 export function AppShell({ children }: { children: ReactNode }) {

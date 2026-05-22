@@ -3,6 +3,7 @@ import type { Embedder } from "../memory/embed";
 import { vecToBlob } from "../memory/embed-text";
 import { episodeEmbedText, episodeHash } from "./embed-text";
 import type { AgentEpisodeEntry } from "./types";
+import type { EmbeddingHealthStats, TargetIndexStatus } from "../retrieval/indexing";
 
 interface EpisodeRow {
   id: string;
@@ -27,26 +28,27 @@ export async function embedAndStoreEpisode(
   db: Database,
   embedder: Embedder,
   entry: AgentEpisodeEntry,
-): Promise<void> {
+): Promise<TargetIndexStatus> {
   const text = episodeEmbedText(entry);
   const hash = episodeHash(text);
   const meta = db
     .query(
-      `SELECT body_hash AS bh, model_id AS mid FROM agent_episode_embed_meta WHERE episode_id = $id`,
+      `SELECT body_hash AS bh, model_id AS mid, dim FROM agent_episode_embed_meta WHERE episode_id = $id`,
     )
-    .get({ $id: entry.id }) as { bh: string; mid: string } | undefined;
-  if (meta && meta.bh === hash && meta.mid === embedder.modelId) return;
+    .get({ $id: entry.id }) as { bh: string; mid: string; dim: number } | undefined;
+  if (meta && meta.bh === hash && meta.mid === embedder.modelId && meta.dim === embedder.dim) return "skipped";
 
   const vector = await embedder.embed(text);
   const rowidRow = db
     .query("SELECT rowid FROM agent_episodes WHERE id = $id")
     .get({ $id: entry.id }) as { rowid: number } | undefined;
-  if (!rowidRow) return;
+  if (!rowidRow) return "missing";
 
   const now = new Date().toISOString();
   db.transaction(() => {
     writeEpisodeEmbedding(db, embedder, entry.id, rowidRow.rowid, hash, vector, now);
   })();
+  return "indexed";
 }
 
 export async function backfillEpisodeEmbeddings(
@@ -101,6 +103,32 @@ export async function backfillEpisodeEmbeddings(
 
   if (done > 0) log(`episodes: backfill done=${done} skipped=${skipped}`);
   return { done, skipped, indexed };
+}
+
+export function episodeEmbeddingStats(
+  db: Database,
+  embedder: Embedder | null,
+): EmbeddingHealthStats {
+  const rows = db
+    .query(
+      `SELECT e.id, e.task, e.approach, e.outcome, e.notes, e.tool_names,
+              e.error, meta.body_hash AS bodyHash, meta.model_id AS modelId,
+              meta.dim AS dim
+         FROM agent_episodes e
+         LEFT JOIN agent_episode_embed_meta meta ON meta.episode_id = e.id`,
+    )
+    .all() as Array<EpisodeRow & { bodyHash: string | null; modelId: string | null; dim: number | null }>;
+  if (!embedder) return { total: rows.length, embedded: 0, stale: rows.length };
+  let embedded = 0;
+  for (const row of rows) {
+    const text = episodeEmbedText({ ...row, toolNames: parseJsonStringArray(row.tool_names) });
+    if (
+      row.bodyHash === episodeHash(text)
+      && row.modelId === embedder.modelId
+      && row.dim === embedder.dim
+    ) embedded += 1;
+  }
+  return { total: rows.length, embedded, stale: rows.length - embedded };
 }
 
 function writeEpisodeEmbedding(

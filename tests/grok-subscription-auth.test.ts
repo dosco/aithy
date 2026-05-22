@@ -1,6 +1,7 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
+import { Database } from "bun:sqlite";
 import { describe, expect, test } from "bun:test";
 import {
   buildGrokSubscriptionAuthorizeUrl,
@@ -10,6 +11,7 @@ import {
 } from "../src/grok-subscription/protocol";
 import {
   GrokSubscriptionAuthError,
+  markGrokSubscriptionConnected,
   resolveGrokSubscriptionCredentials,
 } from "../src/grok-subscription/credentials";
 import {
@@ -22,7 +24,7 @@ import {
   writeGrokSubscriptionTokens,
 } from "../src/grok-subscription/store";
 import type { GrokSubscriptionTokens } from "../src/grok-subscription/types";
-import type { SecretStore } from "../src/settings/secrets";
+import { oauthTokensSecretName, type SecretStore } from "../src/settings/secrets";
 
 describe("Grok subscription auth", () => {
   test("builds a PKCE sign-in URL with public subscription copy elsewhere", () => {
@@ -50,13 +52,17 @@ describe("Grok subscription auth", () => {
 
   test("stores tokens in the bot secret namespace and reports connected status", async () => {
     const fx = await fixture();
-    await writeGrokSubscriptionTokens(fx.botId, tokens(), fx.secrets);
+    const issued = tokens();
+    await writeGrokSubscriptionTokens(fx.botId, issued, fx.secrets);
+    markGrokSubscriptionConnected(fx.dbPath, issued);
 
     expect(await readGrokSubscriptionTokens(fx.botId, fx.secrets)).toMatchObject({
       accessToken: "access",
       refreshToken: "refresh",
     });
+    expect(fx.secrets.values.has(`aithy.${fx.botId}:${oauthTokensSecretName("xai-grok-subscription")}`)).toBe(true);
     expect((await grokSubscriptionStatus(fx.botId, fx.dbPath, fx.secrets)).connected).toBe(true);
+    expect(readMetadataKeys(fx.dbPath)).toContain("aithy.oauth.xai-grok-subscription.status");
   });
 
   test("refreshes once when concurrent callers share an expired token", async () => {
@@ -177,6 +183,15 @@ function json(value: unknown, status = 200): Response {
     status,
     headers: { "content-type": "application/json" },
   });
+}
+
+function readMetadataKeys(dbPath: string): string[] {
+  const db = new Database(dbPath);
+  try {
+    return (db.query("SELECT key FROM metadata").all() as Array<{ key: string }>).map((row) => row.key);
+  } finally {
+    db.close();
+  }
 }
 
 class MemorySecretStore implements SecretStore {

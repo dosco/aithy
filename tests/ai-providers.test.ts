@@ -20,6 +20,7 @@ import {
   LOCAL_CHAT_MODEL_ALIAS,
   MANAGED_LOCAL_CHAT_MODELS,
 } from "../src/local-inference/manifest";
+import { meshInferenceProviderId, MESH_PROXY_AUTH_TOKEN } from "../src/mesh/types";
 import { createAiService, createFastAiService, resolveAiServiceConfig } from "../src/agent/ai-service";
 import { loadConfig } from "../src/config/env";
 import type { RuntimeStore } from "../src/runtime/runtime-store";
@@ -64,6 +65,23 @@ describe("AI provider metadata", () => {
     expect(providerDisplayName(LOCAL_AI_PROVIDER)).toBe("Local");
     expect(modelsForProvider(LOCAL_AI_PROVIDER)).toEqual(MANAGED_LOCAL_CHAT_MODELS.map((model) => model.id));
     expect(defaultModelForProvider(LOCAL_AI_PROVIDER)).toBe(DEFAULT_LOCAL_AGENT_MODEL_ID);
+  });
+
+  test("maps family Aithy inference providers to OpenAI-compatible service settings", () => {
+    const provider = meshInferenceProviderId("gpu-1");
+    expect(providerDisplayName(provider)).toBe("Family Aithy");
+    expect(modelsForProvider(provider)).toEqual([]);
+
+    const service = createAiService({
+      ...loadConfig({}),
+      aiProvider: provider,
+      aiApiUrl: "http://192.168.1.20:49321/v1",
+      aiApiKey: "sk-should-not-cross-mesh",
+      aiModel: "aithy-local-chat",
+    });
+
+    expect(service.getName()).toBe("OpenAI");
+    expect((service as unknown as { ai: { aiImpl: { apiKey: string } } }).ai.aiImpl.apiKey).toBe(MESH_PROXY_AUTH_TOKEN);
   });
 
   test("adds xAI Grok Subscription as a no-key public provider", () => {

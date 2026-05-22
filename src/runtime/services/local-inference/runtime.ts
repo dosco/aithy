@@ -26,6 +26,7 @@ import { localChatRequired, localInferenceRequired } from "../../../local-infere
 import { assertVecExtensionReady, probeAndConfigureSqlite } from "../../../memory/vec-extension";
 import { SqliteEpisodeStore } from "../../../episodes/episode-store";
 import { SqliteMemoryStore } from "../../../memory/memory-store";
+import { SqliteSkillsStore } from "../../../skills/skills-store";
 import { activeStatus, failedStatus, readyStatus, type SetupStatusInput } from "../../../setup/status";
 import { SqliteSettingsStore } from "../../../settings/store";
 import { LiveEventHub } from "../../../web/live-events";
@@ -35,6 +36,8 @@ import type { RuntimeCommandRow } from "../../runtime-store";
 import type { EmbeddingCommand, LocalInferenceCommand, RuntimeServiceState } from "../../protocol/types";
 import type { QueueServiceClient } from "../queue/client";
 import { resolveLlamaServerBinary, type LlamaServerBinary } from "../../../local-inference/binary";
+import { emptyIndexCounts, type EmbeddingHealthStats, type TargetIndexCounts } from "../../../retrieval/indexing";
+import { captureLines, delay, streamOrNull } from "./log-streams";
 
 const BACKFILL_INTERVAL_MS = 15_000;
 const SHUTDOWN_GRACE_MS = 10_000;
@@ -64,6 +67,10 @@ export class LocalInferenceWorkerRuntime {
   private readonly reranker = new LocalLlamaReranker(() => this.baseUrl);
   private memory!: SqliteMemoryStore;
   private episodes!: SqliteEpisodeStore;
+  private skills!: SqliteSkillsStore;
+  private lastTargetedIndexAt: string | null = null;
+  private lastBackfillAt: string | null = null;
+  private lastIndexError: string | null = null;
 
   private constructor(
     private readonly settings: SqliteSettingsStore,
@@ -105,6 +112,11 @@ export class LocalInferenceWorkerRuntime {
       log,
     });
     runtime.episodes = new SqliteEpisodeStore(runtime.config.stateDbPath, {
+      embedder: runtime.embedder,
+      reranker: runtime.reranker,
+      log,
+    });
+    runtime.skills = new SqliteSkillsStore(runtime.config.stateDbPath, {
       embedder: runtime.embedder,
       reranker: runtime.reranker,
       log,
@@ -271,6 +283,7 @@ export class LocalInferenceWorkerRuntime {
       return { scores };
     }
     if (command.kind === "embedding.backfill_now") return this.runBackfill("command");
+    if (command.kind === "embedding.indexTargets") return this.indexTargets(objectPayload(command.payload));
     throw new Error(`Unknown local inference command: ${command.kind}`);
   }
 
@@ -285,20 +298,53 @@ export class LocalInferenceWorkerRuntime {
     try {
       const result = await this.memory.backfillEmbeddings();
       const episodeResult = await this.episodes.backfillEmbeddings();
-      const done = result.done + episodeResult.done;
-      const skipped = result.skipped + episodeResult.skipped;
+      const skillResult = await this.skills.backfillEmbeddings();
+      const done = result.done + episodeResult.done + skillResult.done;
+      const skipped = result.skipped + episodeResult.skipped + skillResult.skipped;
+      this.lastBackfillAt = new Date().toISOString();
+      this.lastIndexError = null;
       if (done > 0 || source !== "timer") {
         void this.queue.appendLog({
           role: "local-inference-worker",
           level: "info",
           source: "backfill",
-          message: `embedding backfill ${source}: memories ${result.done} indexed, episodes ${episodeResult.done} indexed`,
-          detail: { memoryDone: result.done, episodeDone: episodeResult.done, skipped },
+          message: `embedding backfill ${source}: memories ${result.done}, episodes ${episodeResult.done}, skills ${skillResult.done}`,
+          detail: { memoryDone: result.done, episodeDone: episodeResult.done, skillDone: skillResult.done, skipped },
         });
       }
       return { done, skipped };
+    } catch (error) {
+      this.lastIndexError = error instanceof Error ? error.message : String(error);
+      throw error;
     } finally {
       this.backfilling = false;
+    }
+  }
+
+  private async indexTargets(payload: Record<string, unknown>): Promise<{ memories: TargetIndexCounts; episodes: TargetIndexCounts; skills: TargetIndexCounts }> {
+    this.assertReady();
+    const memories = optionalStringArray(payload, "memories");
+    const episodes = optionalStringArray(payload, "episodes");
+    const skills = optionalStringArray(payload, "skills");
+    try {
+      const [memoryResult, episodeResult, skillResult] = await Promise.all([
+        memories.length ? this.memory.indexEmbeddings(memories) : emptyIndexCounts(),
+        episodes.length ? this.episodes.indexEmbeddings(episodes) : emptyIndexCounts(),
+        skills.length ? this.skills.indexEmbeddings(skills) : emptyIndexCounts(),
+      ]);
+      this.lastTargetedIndexAt = new Date().toISOString();
+      this.lastIndexError = null;
+      void this.queue.appendLog({
+        role: "local-inference-worker",
+        level: "info",
+        source: "retrieval",
+        message: "targeted embedding index",
+        detail: { memories: memoryResult, episodes: episodeResult, skills: skillResult },
+      });
+      return { memories: memoryResult, episodes: episodeResult, skills: skillResult };
+    } catch (error) {
+      this.lastIndexError = error instanceof Error ? error.message : String(error);
+      throw error;
     }
   }
 
@@ -324,6 +370,7 @@ export class LocalInferenceWorkerRuntime {
     await this.unload();
     this.memory.close();
     this.episodes.close();
+    this.skills.close();
     this.settings.close();
     this.queue.close();
   }
@@ -354,8 +401,29 @@ export class LocalInferenceWorkerRuntime {
       binaryVersion: this.binary?.version ?? null,
       modelsIniPath: this.modelsIniPath,
       error: this.error,
+      embeddingHealth: this.embeddingHealth(),
       settings: this.config.localInference,
       ...extra,
+    };
+  }
+
+  private embeddingHealth(): {
+    memories: EmbeddingHealthStats;
+    episodes: EmbeddingHealthStats;
+    skills: EmbeddingHealthStats;
+    lastTargetedIndexAt: string | null;
+    lastBackfillAt: string | null;
+    lastIndexError: string | null;
+    rerankerReady: boolean;
+  } {
+    return {
+      memories: this.memory.embeddingStats(),
+      episodes: this.episodes.embeddingStats(),
+      skills: this.skills.embeddingStats(),
+      lastTargetedIndexAt: this.lastTargetedIndexAt,
+      lastBackfillAt: this.lastBackfillAt,
+      lastIndexError: this.lastIndexError,
+      rerankerReady: this.reranker.available(),
     };
   }
 }
@@ -407,46 +475,11 @@ function stringArrayField(value: Record<string, unknown>, key: string): string[]
   return field;
 }
 
-async function captureLines(
-  queue: QueueServiceClient,
-  stream: ReadableStream<Uint8Array> | null,
-  source: "stdout" | "stderr",
-): Promise<void> {
-  if (!stream) return;
-  const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let pending = "";
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      pending += decoder.decode(value, { stream: true });
-      const lines = pending.split(/\r?\n/);
-      pending = lines.pop() ?? "";
-      for (const line of lines) recordLine(queue, source, line);
-    }
-    pending += decoder.decode();
-    if (pending.trim()) recordLine(queue, source, pending);
-  } catch {}
-}
-
-function recordLine(queue: QueueServiceClient, source: "stdout" | "stderr", line: string): void {
-  const message = line.trimEnd();
-  if (!message) return;
-  void queue.appendLog({
-    role: "local-inference-worker",
-    level: source === "stderr" ? "error" : "info",
-    source: `llama-${source}`,
-    message,
-  });
-}
-
-function streamOrNull(value: unknown): ReadableStream<Uint8Array> | null {
-  return value && typeof value === "object" && "getReader" in value
-    ? value as ReadableStream<Uint8Array>
-    : null;
-}
-
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
+function optionalStringArray(value: Record<string, unknown>, key: string): string[] {
+  const field = value[key];
+  if (field === undefined) return [];
+  if (!Array.isArray(field) || !field.every((item) => typeof item === "string")) {
+    throw new Error(`Invalid local inference command field: ${key}`);
+  }
+  return [...new Set(field.map((item) => item.trim()).filter(Boolean))];
 }

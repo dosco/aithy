@@ -25,12 +25,13 @@ import type {
   AutomationDto,
   AutomationRunDto,
 } from "./dto-types";
+import type { StoredSettings } from "../../src/settings/types";
 
 export function sessionDto(session: BotSessionSummary): SessionSummaryDto {
   return serializableSession(session);
 }
 
-export function configDto(config: AppConfig): ConfigDto {
+export function configDto(config: AppConfig, settings?: StoredSettings): ConfigDto {
   return {
     aiProvider: config.aiProvider,
     aiApiUrl: config.aiApiUrl ?? "",
@@ -47,6 +48,8 @@ export function configDto(config: AppConfig): ConfigDto {
     sandboxNetwork: config.sandboxNetwork,
     sessionTtlMs: config.sessionTtlMs,
     parallelAgents: config.parallelAgents,
+    searchProvider: config.searchProvider ?? "parallel",
+    searchApiUrl: config.searchApiUrl ?? "",
     parallelSearchMcpUrl: config.parallelSearchMcpUrl,
     grokSubscriptionConnected: config.grokSubscriptionConnected ?? false,
     systemBashEnabled: config.systemBashEnabled,
@@ -55,6 +58,8 @@ export function configDto(config: AppConfig): ConfigDto {
     stateDbPath: config.stateDbPath,
     workspaceRoot: config.workspaceRoot,
     globalMounts: (config.globalMounts ?? []).map((m) => ({ hostPath: m.hostPath })),
+    aiProviderProfiles: settings?.runtime.aiProviderProfiles ?? {},
+    searchProviderProfiles: settings?.runtime.searchProviderProfiles ?? {},
   };
 }
 

@@ -81,6 +81,7 @@ export function wrapSkillsSearch(
   if (!inner) return undefined;
   return async (queries) => {
     const results = await inner(queries);
+    const diagnostics = (results as { diagnostics?: unknown }).diagnostics;
     const message: AssistantToolCallMessage = {
       role: "assistant",
       kind: "tool_call",
@@ -93,6 +94,7 @@ export function wrapSkillsSearch(
           contentBytes: r.content.length,
           contentPreview: compactPreview(r.content),
         })),
+        ...(diagnostics ? { diagnostics } : {}),
       },
       createdAt: new Date().toISOString(),
     };

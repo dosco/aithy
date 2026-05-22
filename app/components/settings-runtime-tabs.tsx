@@ -1,7 +1,8 @@
 import type { Dispatch, SetStateAction } from "react";
-import { Check, LogIn, LogOut, RefreshCw, UserCircle } from "lucide-react";
+import { LogIn, LogOut, RefreshCw, UserCircle } from "lucide-react";
+import { FamilyInferenceSelector } from "@/components/family-mesh-selectors";
 import type { PrimaryClearAction } from "@/components/settings-page-helpers";
-import { saveButtonLabel } from "@/components/settings-page-helpers";
+import { SettingsSaveBar } from "@/components/settings-save-bar";
 import {
   ApiKeyInput,
   Field,
@@ -12,10 +13,14 @@ import {
   fieldClass,
   selectClass,
 } from "@/components/settings-form-bits";
-import { GlobalMountsSection } from "@/components/settings-global-mounts";
 import { Button } from "@/components/ui/button";
-import { Switch } from "@/components/ui/switch";
-import type { ConfigDto, GrokSubscriptionStatusDto, LocalModelDto, SecretStatusDto } from "@/server/dto";
+import type {
+  ConfigDto,
+  GrokSubscriptionStatusDto,
+  LocalModelDto,
+  MeshLiveCatalogPeerDto,
+  SecretStatusDto,
+} from "@/server/dto";
 import {
   defaultModelForProvider,
   isCustomOpenAIProvider,
@@ -23,6 +28,7 @@ import {
   isXaiGrokSubscriptionProvider,
 } from "../../src/agent/ai-providers";
 import { providerRequiresApiKey } from "../../src/config/validate";
+import { isMeshInferenceProvider } from "../../src/mesh/types";
 
 interface RuntimeTabProps {
   config: ConfigDto;
@@ -35,10 +41,13 @@ interface RuntimeTabProps {
 interface ModelTabProps extends RuntimeTabProps {
   secret: SecretStatusDto;
   fastSecret: SecretStatusDto | null;
+  providerSecrets: Record<string, SecretStatusDto>;
   grokSubscription: GrokSubscriptionStatusDto;
   grokBusy: boolean;
   grokError: string | null;
   localModels: LocalModelDto[];
+  meshCatalogs: MeshLiveCatalogPeerDto[];
+  onRefreshMeshCatalogs?: () => void;
   apiKey: string;
   fastApiKey: string;
   setApiKey: (value: string) => void;
@@ -48,25 +57,25 @@ interface ModelTabProps extends RuntimeTabProps {
   onGrokLogout: () => void;
 }
 
-interface SandboxTabProps extends RuntimeTabProps {
-  skippedPaths: string[];
-}
-
 export function ModelSettingsTab(props: ModelTabProps) {
   const { config, setConfig, secret, fastSecret, apiKey, fastApiKey } = props;
   const localModelOptions = props.localModels
     .filter((model) => !model.role || model.role === "chat")
     .map(localModelOption);
   const localModelValues = localModelOptions.map((model) => model.value);
+  const primaryFamily = isMeshInferenceProvider(config.aiProvider);
+  const fastFamily = isMeshInferenceProvider(config.fastAiProvider);
   const primaryIsGrok = isXaiGrokSubscriptionProvider(config.aiProvider);
   const fastIsGrok = isXaiGrokSubscriptionProvider(config.fastAiProvider);
   const primaryNeedsKey = providerRequiresApiKey(config.aiProvider);
   const changePrimaryProvider = (value: string) => {
     setConfig((current) => {
-      const aiModel = nextModelValue(value, current.aiProvider, current.aiModel, current.localAgentModel, localModelValues);
+      const profile = current.aiProviderProfiles?.[value];
+      const aiModel = profile?.model ?? nextModelValue(value, current.aiProvider, current.aiModel, current.localAgentModel, localModelValues);
       return {
         ...current,
         aiProvider: value,
+        aiApiUrl: profile?.apiUrl ?? (isCustomOpenAIProvider(value) ? "" : current.aiApiUrl),
         aiModel,
         localAgentModel: isLocalAiProvider(value) ? aiModel : current.localAgentModel,
       };
@@ -74,12 +83,14 @@ export function ModelSettingsTab(props: ModelTabProps) {
   };
   const changeFastProvider = (value: string) => {
     setConfig((current) => {
+      const profile = value ? current.aiProviderProfiles?.[value] : undefined;
       const fastAiModel = value
-        ? nextModelValue(value, current.fastAiProvider, current.fastAiModel, current.localAgentModel, localModelValues)
+        ? profile?.fastModel ?? nextModelValue(value, current.fastAiProvider, current.fastAiModel, current.localAgentModel, localModelValues)
         : "";
       return {
         ...current,
         fastAiProvider: value,
+        fastAiApiUrl: profile?.fastApiUrl ?? profile?.apiUrl ?? (isCustomOpenAIProvider(value) ? "" : current.fastAiApiUrl),
         fastAiModel,
         localAgentModel: isLocalAiProvider(value) ? fastAiModel : current.localAgentModel,
       };
@@ -101,21 +112,49 @@ export function ModelSettingsTab(props: ModelTabProps) {
   };
   return (
     <div className="grid gap-5">
+      <SettingsSaveBar saved={props.saved} saveBusy={props.saveBusy} onSave={props.onSave} />
       <Section title="Primary" subtitle="Drives the executor, context, and final responder by default.">
         {primaryIsGrok ? (
           <div className="rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--muted))]/30 px-3.5 py-2 text-sm text-[rgb(var(--muted-foreground))]">
             Use Grok with a SuperGrok or X Premium+ subscription. No API key required.
           </div>
         ) : null}
+        <ValidationBadge validation={secret.validation} />
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Provider">
-            <ProviderSelect value={config.aiProvider} onChange={changePrimaryProvider} />
+          <Field label="Source">
+            <select className={selectClass} value={primaryFamily ? "family" : "local"} onChange={(event) => {
+              if (event.target.value === "family") selectFirstFamilyInference(props.meshCatalogs, setConfig, "primary");
+              else changePrimaryProvider("openai");
+            }}>
+              <option value="local">This Aithy</option>
+              <option value="family">Family Aithy</option>
+            </select>
           </Field>
+          {primaryFamily ? null : (
+          <Field label="Provider">
+            <ProviderSelect
+              value={config.aiProvider}
+              onChange={changePrimaryProvider}
+              providerSecrets={props.providerSecrets}
+            />
+          </Field>
+          )}
+        </div>
+        {primaryFamily ? (
+          <FamilyInferenceSelector
+            catalogs={props.meshCatalogs}
+            config={config}
+            setConfig={setConfig}
+            purpose="primary"
+            onRefresh={props.onRefreshMeshCatalogs}
+          />
+        ) : (
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Model">
             <ModelCombobox
               provider={config.aiProvider}
               value={config.aiModel}
-              modelOptions={isLocalAiProvider(config.aiProvider) ? localModelOptions : undefined}
+              modelOptions={modelOptionsForProvider(config.aiProvider, localModelOptions)}
               onChange={changePrimaryModel}
               onClear={() => props.setPrimaryClearAction("model")}
             />
@@ -133,6 +172,7 @@ export function ModelSettingsTab(props: ModelTabProps) {
             </div>
           ) : null}
         </div>
+        )}
         {primaryIsGrok ? (
           <GrokSubscriptionCard
             status={props.grokSubscription}
@@ -148,7 +188,7 @@ export function ModelSettingsTab(props: ModelTabProps) {
               onChange={props.setApiKey}
               secret={secret}
               disabled={!primaryNeedsKey}
-              fallback={primaryNeedsKey ? "Stored in the encrypted secrets store" : "Local provider - no key needed"}
+              fallback={primaryNeedsKey ? "Stored in the encrypted secrets store" : "No API key needed"}
               onClear={() => props.setPrimaryClearAction("key")}
             />
           </Field>
@@ -156,19 +196,45 @@ export function ModelSettingsTab(props: ModelTabProps) {
       </Section>
 
       <Section title="Fast model" subtitle="Optional. Used for responder + recursion calls; falls back to primary when empty." muted>
+        <ValidationBadge validation={fastSecret?.validation} />
         <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Source">
+            <select className={selectClass} value={!config.fastAiProvider ? "none" : fastFamily ? "family" : "local"} onChange={(event) => {
+              if (event.target.value === "none") changeFastProvider("");
+              else if (event.target.value === "family") selectFirstFamilyInference(props.meshCatalogs, setConfig, "fast");
+              else changeFastProvider("openai");
+            }}>
+              <option value="none">None</option>
+              <option value="local">This Aithy</option>
+              <option value="family">Family Aithy</option>
+            </select>
+          </Field>
+          {fastFamily ? null : (
           <Field label="Provider">
             <ProviderSelect
               value={config.fastAiProvider}
               allowEmpty
               onChange={changeFastProvider}
+              providerSecrets={props.providerSecrets}
             />
           </Field>
+          )}
+        </div>
+        {fastFamily ? (
+          <FamilyInferenceSelector
+            catalogs={props.meshCatalogs}
+            config={config}
+            setConfig={setConfig}
+            purpose="fast"
+            onRefresh={props.onRefreshMeshCatalogs}
+          />
+        ) : (
+        <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Model">
             <ModelCombobox
               provider={config.fastAiProvider}
               value={config.fastAiModel}
-              modelOptions={isLocalAiProvider(config.fastAiProvider) ? localModelOptions : undefined}
+              modelOptions={modelOptionsForProvider(config.fastAiProvider, localModelOptions)}
               disabled={!config.fastAiProvider}
               placeholder={config.fastAiProvider ? "e.g. gpt-4o-mini" : "set provider first"}
               onChange={changeFastModel}
@@ -187,6 +253,7 @@ export function ModelSettingsTab(props: ModelTabProps) {
             </div>
           ) : null}
         </div>
+        )}
         {fastIsGrok ? (
           <GrokSubscriptionCard
             compact
@@ -208,8 +275,6 @@ export function ModelSettingsTab(props: ModelTabProps) {
           </Field>
         )}
       </Section>
-
-      <SaveRow saved={props.saved} saveBusy={props.saveBusy} onSave={props.onSave} />
     </div>
   );
 }
@@ -278,115 +343,30 @@ function statusCopy(status: GrokSubscriptionStatusDto, compact: boolean): string
   return "Requires SuperGrok or X Premium+.";
 }
 
-export function SandboxSettingsTab({ config, setConfig, skippedPaths, saved, saveBusy, onSave }: SandboxTabProps) {
+function ValidationBadge({
+  validation,
+}: {
+  validation?: NonNullable<ConfigDto["aiProviderProfiles"]>[string]["validation"];
+}) {
+  if (!validation) return null;
+  if (validation.status === "valid") return null;
+  const label = validation.status === "not-required"
+      ? "Validation not required"
+      : validation.status === "invalid"
+        ? "Validation failed"
+        : "Needs validation";
   return (
-    <div className="grid gap-5">
-      <Section title="Sandbox" subtitle="Where tool calls execute. Disabled mode runs local Bun Shell commands without isolation.">
-        <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Provider">
-            <select
-              value={config.sandboxProvider}
-              onChange={(event) => setConfigValue(setConfig, "sandboxProvider", event.target.value)}
-              className={selectClass}
-            >
-              <option value="microsandbox">microsandbox</option>
-              <option value="disabled">disabled</option>
-            </select>
-          </Field>
-          {config.sandboxProvider === "microsandbox" ? (
-            <MicrosandboxFields config={config} setConfig={setConfig} />
-          ) : (
-            <Field label="Execution"><input className={fieldClass} value="Local host via Bun Shell" readOnly /></Field>
-          )}
-        </div>
-      </Section>
-      <RuntimeFields config={config} setConfig={setConfig} />
-      {config.sandboxProvider === "microsandbox" ? (
-        <GlobalMountsSection
-          mounts={config.globalMounts}
-          skippedPaths={skippedPaths}
-          onChange={(next) => setConfigValue(setConfig, "globalMounts", next)}
-        />
-      ) : null}
-      <SaveRow saved={saved} saveBusy={saveBusy} onSave={onSave} />
-    </div>
-  );
-}
-
-function MicrosandboxFields({ config, setConfig }: Pick<RuntimeTabProps, "config" | "setConfig">) {
-  return (
-    <>
-      <Field label="Image">
-        <input className={fieldClass} value={config.sandboxImage} onChange={(event) => setConfigValue(setConfig, "sandboxImage", event.target.value)} />
-      </Field>
-      <Field label="Network">
-        <select value={config.sandboxNetwork} onChange={(event) => setConfigValue(setConfig, "sandboxNetwork", event.target.value)} className={selectClass}>
-          <option value="none">none</option>
-          <option value="public">public</option>
-          <option value="allow-all">allow-all</option>
-        </select>
-      </Field>
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="CPUs">
-          <input className={fieldClass} type="number" value={config.sandboxCpus} onChange={(event) => setConfigValue(setConfig, "sandboxCpus", Number(event.target.value))} />
-        </Field>
-        <Field label="Memory (MB)">
-          <input className={fieldClass} type="number" value={config.sandboxMemoryMb} onChange={(event) => setConfigValue(setConfig, "sandboxMemoryMb", Number(event.target.value))} />
-        </Field>
-      </div>
-    </>
-  );
-}
-
-function RuntimeFields({ config, setConfig }: Pick<RuntimeTabProps, "config" | "setConfig">) {
-  return (
-    <Section title="Javascript Runtime" subtitle="Session lifecycle and tracing.">
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Host shell">
-          <div className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5">
-            <span className="text-sm text-[rgb(var(--muted-foreground))]">
-              {config.systemBashEnabled ? "system.bash available with approval" : "system.bash disabled"}
-            </span>
-            <Switch
-              checked={config.systemBashEnabled}
-              onCheckedChange={(value) => setConfigValue(setConfig, "systemBashEnabled", value)}
-            />
-          </div>
-        </Field>
-        <Field label="Session TTL (ms)">
-          <input className={fieldClass} type="number" value={config.sessionTtlMs} onChange={(event) => setConfigValue(setConfig, "sessionTtlMs", Number(event.target.value))} />
-        </Field>
-        <Field label="Tracing">
-          <div className="flex h-11 items-center gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5">
-            <Switch checked={config.traceEnabled} onCheckedChange={(value) => setConfigValue(setConfig, "traceEnabled", value)} />
-            <span className="text-sm text-[rgb(var(--muted-foreground))]">{config.traceEnabled ? "Enabled" : "Disabled"}</span>
-          </div>
-        </Field>
-        <Field label={`Parallel agents (${config.parallelAgents})`}>
-          <div className="flex h-11 items-center gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5">
-            <input type="range" min={1} max={8} step={1} value={config.parallelAgents} onChange={(event) => setConfigValue(setConfig, "parallelAgents", Number(event.target.value))} className="flex-1" aria-label="Parallel agents" />
-            <span className="w-6 text-right tabular-nums text-sm text-[rgb(var(--muted-foreground))]">{config.parallelAgents}</span>
-          </div>
-        </Field>
-      </div>
-    </Section>
-  );
-}
-
-function SaveRow({ saved, saveBusy, onSave }: { saved: boolean; saveBusy: boolean; onSave: () => void }) {
-  return (
-    <div className="flex justify-end pt-1">
-      <Button onClick={onSave} disabled={saveBusy} className="sm:min-w-[140px]">
-        {saved ? <Check className="h-4 w-4" /> : null}
-        {saveButtonLabel(saveBusy, saved)}
-      </Button>
+    <div className="flex">
+      <span className="rounded-full border border-[rgb(var(--border))] px-2.5 py-1 text-xs text-[rgb(var(--muted-foreground))]">
+        {label}
+      </span>
     </div>
   );
 }
 
 function fastApiKeyFallback(config: ConfigDto, secret: SecretStatusDto): string {
   if (!config.fastAiProvider) return "Set provider first";
-  if (!providerRequiresApiKey(config.fastAiProvider)) return "Local provider - no key needed";
+  if (!providerRequiresApiKey(config.fastAiProvider)) return "No API key needed";
   if (config.fastAiProvider !== config.aiProvider) return "Stored in the encrypted secrets store";
   return secret.configured ? "Reuses primary key" : "Set primary key first";
 }
@@ -399,6 +379,26 @@ function localModelOption(model: LocalModelDto): ModelOption {
   };
 }
 
+function modelOptionsForProvider(provider: string, localModelOptions: readonly ModelOption[]): readonly ModelOption[] | undefined {
+  if (isLocalAiProvider(provider)) return localModelOptions;
+  return undefined;
+}
+
+function selectFirstFamilyInference(
+  catalogs: MeshLiveCatalogPeerDto[],
+  setConfig: Dispatch<SetStateAction<ConfigDto>>,
+  purpose: "primary" | "fast",
+): void {
+  const peer = catalogs.find((item) => item.inference.length > 0);
+  const service = peer?.inference[0];
+  const model = service?.models[0]?.id ?? "";
+  if (!peer || !service) return;
+  const provider = `mesh:${peer.peerId}:inference:${service.id}`;
+  setConfig((current) => purpose === "primary"
+    ? { ...current, aiProvider: provider, aiApiUrl: "", aiModel: model }
+    : { ...current, fastAiProvider: provider, fastAiApiUrl: "", fastAiModel: model });
+}
+
 function nextModelValue(
   nextProvider: string,
   currentProvider: string,
@@ -409,7 +409,12 @@ function nextModelValue(
   if (isLocalAiProvider(nextProvider)) {
     return localAgentModel || localModelOptions[0] || defaultModelForProvider(nextProvider);
   }
-  if (!currentModel || isLocalAiProvider(currentProvider)) {
+  if (
+    nextProvider !== currentProvider
+    || !currentModel
+    || isLocalAiProvider(currentProvider)
+    || isMeshInferenceProvider(currentProvider)
+  ) {
     return defaultModelForProvider(nextProvider);
   }
   return currentModel;

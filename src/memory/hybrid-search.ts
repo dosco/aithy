@@ -4,6 +4,7 @@ import { embedText, vecToBlob } from "./embed-text";
 import { score } from "./ranking";
 import type { Reranker } from "./rerank";
 import type { MemoryEntry, MemoryKind, MemorySearchOptions } from "./types";
+import { sourceStats, type RetrievalSourceStats } from "../retrieval/diagnostics";
 
 interface MemoryRow {
   id: string;
@@ -56,7 +57,7 @@ export interface HybridSearchDeps {
 
 export async function hybridSearch(
   deps: HybridSearchDeps,
-): Promise<{ entries: MemoryEntry[]; recallIds: string[] }> {
+): Promise<{ entries: MemoryEntry[]; recallIds: string[]; stats: RetrievalSourceStats; reranked: boolean }> {
   const { db, embedder, reranker, rawQueries, ftsExpressions, opts, perQueryLimit } = deps;
   const kindFilter = buildKindFilter(opts.kinds);
   const excludeFilter = buildExcludeFilter(opts.excludeIds);
@@ -75,6 +76,8 @@ export async function hybridSearch(
       return { ftsHits, vecHits };
     }),
   );
+  const ftsCandidates = perQuery.reduce((sum, item) => sum + item.ftsHits.length, 0);
+  const vectorCandidates = perQuery.reduce((sum, item) => sum + item.vecHits.length, 0);
 
   // Stage 2: RRF fusion across all rankers and queries.
   const fused = new Map<number, { row: MemoryRow & { rowid: number }; rrf: number }>();
@@ -95,7 +98,18 @@ export async function hybridSearch(
     if (reranked) {
       const trimmed = reranked.slice(0, finalLimit);
       const entries = trimmed.map((r) => rowToEntry(r.row));
-      return { entries, recallIds: entries.map((e) => e.id) };
+      return {
+        entries,
+        recallIds: entries.map((e) => e.id),
+        reranked: true,
+        stats: sourceStats({
+          source: "memories",
+          ftsCandidates,
+          vectorCandidates,
+          fusedCandidates: candidates.length,
+          finalMatches: entries.length,
+        }),
+      };
     }
   }
 
@@ -115,7 +129,18 @@ export async function hybridSearch(
     .slice(0, finalLimit);
 
   const entries = ranked.map((r) => rowToEntry(r.row));
-  return { entries, recallIds: entries.map((e) => e.id) };
+  return {
+    entries,
+    recallIds: entries.map((e) => e.id),
+    reranked: false,
+    stats: sourceStats({
+      source: "memories",
+      ftsCandidates,
+      vectorCandidates,
+      fusedCandidates: candidates.length,
+      finalMatches: entries.length,
+    }),
+  };
 }
 
 /**

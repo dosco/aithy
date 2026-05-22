@@ -7,6 +7,7 @@
 - Avoid mixed-responsibility modules. Startup wiring belongs in `src/main.ts`; behavior belongs in subsystem files.
 - Keep files short. The repo enforces a 500-line hard limit with `bun run check:lines`; prefer smaller files before getting near that limit.
 - Follow existing patterns before adding abstractions. Add an abstraction only when it removes real duplication or isolates a clear subsystem boundary.
+- When adding or materially changing user-facing features, update `README.md` in the same change so setup, security boundaries, and product capabilities stay accurate.
 
 ## State And Sessions
 

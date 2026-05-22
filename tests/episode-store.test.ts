@@ -134,6 +134,33 @@ describe("SqliteEpisodeStore", () => {
     store.close();
   });
 
+  test("targeted indexing embeds requested episode ids", async () => {
+    const embedder = new MockEmbedder();
+    const dirtied: string[] = [];
+    const store = new SqliteEpisodeStore(await tempDbPath(), {
+      embedder,
+      inlineEmbeds: false,
+      onDirtyIndex: ({ episodes }) => dirtied.push(...episodes),
+    });
+    if (!store.isHybridReady()) return;
+    const entry = store.upsert({
+      task: "Recall local route",
+      approach: "Index this episode after write.",
+      outcome: "success",
+      sourceSessionId: "s1",
+      evidenceStartMessageId: 1,
+      evidenceEndMessageId: 2,
+    });
+    expect(dirtied).toEqual([entry.id]);
+    expect(await store.indexEmbeddings([entry.id, "missing"])).toEqual({
+      indexed: 1,
+      skipped: 0,
+      missing: 1,
+      failed: 0,
+    });
+    expect(store.embeddingStats()).toMatchObject({ total: 1, embedded: 1, stale: 0 });
+  });
+
   test("resetAll clears stale episode vectors even from a non-embedding store", async () => {
     const dbPath = await tempDbPath();
     const embedder = new MockEmbedder([

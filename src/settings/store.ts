@@ -9,6 +9,7 @@ import {
   type StoredSettings,
 } from "./types";
 import { normalizeLocalInferenceSettings } from "../local-inference/settings";
+import { activeSearchProvider, normalizeAiProfiles, normalizeSearchProfiles } from "./provider-profiles";
 
 interface MetadataRow {
   value: string;
@@ -96,6 +97,13 @@ function normalizeSettings(value: Partial<StoredSettings>): StoredSettings {
 
 function normalizeRuntimeSettings(runtime: StoredSettings["runtime"]): StoredSettings["runtime"] {
   const next = { ...runtime };
+  const aiProfiles = normalizeAiProfiles(next);
+  if (aiProfiles) next.aiProviderProfiles = aiProfiles;
+  else delete next.aiProviderProfiles;
+  const searchProfiles = normalizeSearchProfiles(next);
+  if (searchProfiles) next.searchProviderProfiles = searchProfiles;
+  else delete next.searchProviderProfiles;
+  next.searchProvider = activeSearchProvider(next);
   const sandboxProvider = normalizeSandboxProvider(next.sandboxProvider);
   if (sandboxProvider) next.sandboxProvider = sandboxProvider;
   else delete next.sandboxProvider;

@@ -1,4 +1,3 @@
-import { Check } from "lucide-react";
 import { useState } from "react";
 import {
   Field,
@@ -6,7 +5,7 @@ import {
   Section,
   fieldClass,
 } from "@/components/settings-form-bits";
-import { Button } from "@/components/ui/button";
+import { SettingsSaveBar } from "@/components/settings-save-bar";
 import { saveSoul } from "@/server/actions.functions";
 import { saveProfile } from "@/server/profile.functions";
 import type { ProfileDto, SoulDto } from "@/server/dto";
@@ -31,7 +30,15 @@ export function UserProfileSection({
     setTimeout(() => setSaved(false), 1400);
   }
   return (
-    <Section title="User profile" subtitle="Basic context the responder can use when talking with you.">
+    <div className="grid gap-5">
+      <SettingsSaveBar
+        saved={saved}
+        saveBusy={false}
+        onSave={() => void saveFields()}
+        disabled={!profile.userName.trim()}
+        label="Save profile"
+      />
+      <Section title="User profile" subtitle="Basic context the responder can use when talking with you.">
       <div className="grid gap-4">
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Your name">
@@ -51,14 +58,9 @@ export function UserProfileSection({
             onClear={async () => onChange(await clearProfileImage({ data: { kind: "user" } }))}
           />
         */}
-        <div className="flex justify-end">
-          <Button onClick={() => void saveFields()} disabled={!profile.userName.trim()}>
-            {saved ? <Check className="h-4 w-4" /> : null}
-            Save profile
-          </Button>
-        </div>
       </div>
-    </Section>
+      </Section>
+    </div>
   );
 }
 
@@ -90,7 +92,14 @@ export function AgentSettingsSection({
     setTimeout(() => setSaved(false), 1400);
   }
   return (
-    <Section title="Agent" subtitle="Identity, photo, and the soul of the agent passed to the responder.">
+    <div className="grid gap-5">
+      <SettingsSaveBar
+        saved={saved}
+        saveBusy={false}
+        onSave={() => void saveSoulFields()}
+        label="Save agent"
+      />
+      <Section title="Agent" subtitle="Identity, photo, and the soul of the agent passed to the responder.">
       <div className="grid gap-4">
         {/*
         Profile image UI intentionally hidden until launch.
@@ -122,14 +131,9 @@ export function AgentSettingsSection({
         <Field label="What to avoid">
           <FormTextarea rows={4} value={soul.negativeBehavior} onChange={(e) => onSoulChange({ ...soul, negativeBehavior: e.target.value })} />
         </Field>
-        <div className="flex justify-end pt-1">
-          <Button onClick={() => void saveSoulFields()}>
-            {saved ? <Check className="h-4 w-4" /> : null}
-            Save agent
-          </Button>
-        </div>
       </div>
-    </Section>
+      </Section>
+    </div>
   );
 }
 

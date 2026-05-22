@@ -95,22 +95,22 @@ describe("runMessage episode recall", () => {
       }),
     });
 
-    expect(seenMemoryExcludes).toEqual([["loaded-mem"]]);
-    expect(seenEpisodeExcludes).toEqual([["loaded-episode"]]);
+    expect(seenMemoryExcludes).toEqual([[], ["mem-1", "loaded-mem"]]);
+    expect(seenEpisodeExcludes).toEqual([[], ["ep-1", "loaded-episode"]]);
     expect(emitted).toContainEqual(
       expect.objectContaining({
         type: "agent.tool_call",
         message: expect.objectContaining({
           toolName: "memory.recall",
-          toolResult: {
-            matches: [
+          toolResult: expect.objectContaining({
+            matches: expect.arrayContaining([
               expect.objectContaining({ id: "memory:mem-1" }),
               expect.objectContaining({
                 id: "episode:ep-1",
                 contentPreview: expect.stringContaining("Past similar task: Debug postgres tests"),
               }),
-            ],
-          },
+            ]),
+          }),
         }),
       }),
     );
@@ -118,14 +118,14 @@ describe("runMessage episode recall", () => {
       expect.objectContaining({
         type: "agent.tool_call",
         message: expect.objectContaining({
-          toolResult: {
+          toolResult: expect.objectContaining({
             matches: expect.arrayContaining([
               expect.objectContaining({
                 id: "episode:ep-1",
                 contentPreview: expect.stringContaining("Raw transcript excerpt: #1 user: please debug the postgres tests"),
               }),
             ]),
-          },
+          }),
         }),
       }),
     );
@@ -182,14 +182,14 @@ describe("runMessage episode recall", () => {
         type: "agent.tool_call",
         message: expect.objectContaining({
           toolName: "memory.recall",
-          toolResult: {
+          toolResult: expect.objectContaining({
             matches: [
               expect.objectContaining({
                 id: "episode:ep-1",
                 contentPreview: expect.not.stringContaining("Raw transcript excerpt"),
               }),
             ],
-          },
+          }),
         }),
       }),
     );

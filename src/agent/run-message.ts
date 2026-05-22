@@ -14,7 +14,6 @@ import type { SqliteEpisodeStore } from "../episodes/episode-store";
 import type { SqliteArtifactStore } from "../artifacts/artifact-store";
 import type { MemoryQueue } from "../memory/memory-queue";
 import type { NotificationCreate } from "../notifications/types";
-import { formatMemoryForRecall } from "../memory/format";
 import type { SqliteUsageStore } from "../usage/usage-store";
 import type { SqliteSkillsStore } from "../skills/skills-store";
 import { captureProgramUsage, usageAttributionForConfig } from "../usage/capture";
@@ -36,7 +35,6 @@ import { artifactRepairRequest, shouldRequireArtifactForRequest } from "./artifa
 import { createAithyAgent, type AxAgentMemoriesSearchFn } from "./create-agent";
 import {
   assistantTextMessage,
-  compactPreview,
   conversationHistoryForAgent,
   safeGetChatLog,
   toChannelContext,
@@ -61,7 +59,11 @@ import {
   type SearchPrefetcher,
   type SearchPrefetchOutput,
 } from "./search-prefetch";
-import { formatEpisodeForRecallWithEvidence } from "./episode-evidence";
+import {
+  memoryContextText,
+  preRecallQueries,
+  recallForAgent,
+} from "./memory-recall-context";
 
 export interface RunMessageDeps {
   config: AppConfig;
@@ -93,6 +95,7 @@ export interface RunMessageDeps {
   flushSessionState?: () => Promise<void>;
   urlPrefetcher?: UrlPrefetcher;
   searchPrefetcher?: SearchPrefetcher;
+  logRetrieval?: (message: string, detail?: unknown) => void;
 }
 
 export async function runMessage(
@@ -148,59 +151,24 @@ export async function runMessage(
   const onSkillsSearch = wrapSkillsSearch(deps.skillsSearch, toolCallMessages, publishToolCall);
   const memoryStore = deps.memory;
   const episodeStore = deps.episodes;
+  const preloadedMemoryIds = new Set<string>();
   const onMemoriesSearch: AxAgentMemoriesSearchFn | undefined = memoryStore || episodeStore
     ? async (searches, alreadyLoaded) => {
-      const excludeMemoryIds = alreadyLoaded
-        .map((m) => m.id)
-        .flatMap((id) => id.startsWith("memory:") ? [id.slice("memory:".length)] : id.startsWith("episode:") ? [] : [id]);
-      const excludeEpisodeIds = alreadyLoaded
-        .map((m) => m.id)
-        .flatMap((id) => id.startsWith("episode:") ? [id.slice("episode:".length)] : []);
-      const [memoryHits, episodeHits] = await Promise.all([
-        memoryStore
-          ? memoryStore.search([...searches], {
-              limit: 5,
-              excludeIds: excludeMemoryIds,
-            })
-          : [],
-        episodeStore
-          ? episodeStore.search([...searches], {
-              limit: 3,
-              excludeIds: excludeEpisodeIds,
-            })
-          : [],
-      ]);
-      const episodeResults = await Promise.all(episodeHits.map(async (episode) => ({
-        id: `episode:${episode.id}`,
-        content: await formatEpisodeForRecallWithEvidence(deps.sessions, episode),
-      })));
-      const results = [
-        ...memoryHits.map((m) => ({
-          id: `memory:${m.id}`,
-          content: formatMemoryForRecall(m),
-        })),
-        ...episodeResults,
-      ];
-      const toolMessage: AssistantToolCallMessage = {
-        role: "assistant",
-        kind: "tool_call",
-        toolName: "memory.recall",
-        toolArgs: {
-          queries: [...searches],
-          excludeIds: alreadyLoaded.map((m) => m.id),
-        },
-        toolResult: {
-          matches: results.map((m) => ({
-            id: m.id,
-            contentBytes: m.content.length,
-            contentPreview: compactPreview(m.content),
-          })),
-        },
-        createdAt: new Date().toISOString(),
-      };
+      const loadedIds = [...preloadedMemoryIds, ...alreadyLoaded.map((m) => m.id)];
+      const recalled = await recallForAgent({
+        searches,
+        alreadyLoadedIds: loadedIds,
+        memoryStore,
+        episodeStore,
+        sessions: deps.sessions,
+        source: "recall",
+        limit: 8,
+      });
+      const toolMessage = recalled.toolMessage;
       toolCallMessages.push(toolMessage);
       publishToolCall(toolMessage);
-      return results;
+      deps.logRetrieval?.("memory recall", toolMessage.toolResult);
+      return recalled.memories;
     }
     : undefined;
   const { program, llm } = agentFactory({
@@ -249,10 +217,28 @@ export async function runMessage(
         onToolCall: recordToolCall,
       });
     }
+    const preRecall = memoryStore || episodeStore
+      ? await recallForAgent({
+          searches: preRecallQueries(session, message),
+          alreadyLoadedIds: [],
+          memoryStore,
+          episodeStore,
+          sessions: deps.sessions,
+          source: "preload",
+          limit: 8,
+        })
+      : undefined;
+    if (preRecall) {
+      preRecall.hitIds.forEach((id) => preloadedMemoryIds.add(id));
+      toolCallMessages.push(preRecall.toolMessage);
+      publishToolCall(preRecall.toolMessage);
+      deps.logRetrieval?.("memory preload", preRecall.toolMessage.toolResult);
+    }
     const userProfile = userProfileForAgent(deps.profile);
     const input = {
       ...(userProfile ? { userProfile } : {}),
       userRequest: message.text,
+      ...(preRecall ? { memoryContext: memoryContextText(preRecall.memories) } : {}),
       ...(urlPrefetch?.context ? { urlContext: urlPrefetch.context } : {}),
       ...(searchPrefetch?.context ? { searchContext: searchPrefetch.context } : {}),
       artifactContext: artifactContextText(artifactRun),

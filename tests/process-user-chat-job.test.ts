@@ -31,11 +31,11 @@ describe("processUserChatJob skill tracking", () => {
       const tracked = createTrackedSkills(store, ["shell-helper"]);
       expect(store.get("shell-helper")?.retrieved_count).toBe(1);
 
-      expect(tracked.skillsSearch(["coffee"]).map((skill) => skill.name)).toEqual(["Coffee Finder"]);
+      expect((await tracked.skillsSearch(["coffee"])).map((skill) => skill.name)).toEqual(["Coffee Finder"]);
       expect(store.get("coffee-finder")?.retrieved_count).toBe(1);
 
-      tracked.skillsSearch(["coffee"]);
-      tracked.skillsSearch(["shell"]);
+      await tracked.skillsSearch(["coffee"]);
+      await tracked.skillsSearch(["shell"]);
       expect(store.get("coffee-finder")?.retrieved_count).toBe(1);
       expect(store.get("shell-helper")?.retrieved_count).toBe(1);
 

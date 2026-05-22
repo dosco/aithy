@@ -2,6 +2,7 @@ import {
   axGetSupportedAIModels,
   type AxAIModelCatalogProvider,
 } from "@ax-llm/ax";
+import { isMeshInferenceProvider } from "../mesh/types";
 import { DEFAULT_LOCAL_AGENT_MODEL_ID, LOCAL_AI_PROVIDER, MANAGED_LOCAL_CHAT_MODELS } from "../local-inference/manifest";
 
 const AX_AI_MODEL_CATALOG = axGetSupportedAIModels({ type: "text" });
@@ -56,6 +57,7 @@ export const AX_AI_PROVIDER_MODELS: Record<string, readonly string[]> = {
 };
 
 export function providerDisplayName(provider: string): string {
+  if (isMeshInferenceProvider(provider)) return "Family Aithy";
   if (isLocalAiProvider(provider)) return "Local";
   if (isXaiGrokSubscriptionProvider(provider)) return "xAI Grok Subscription";
   if (isCustomOpenAIProvider(provider)) return "Custom OpenAI";
@@ -63,6 +65,7 @@ export function providerDisplayName(provider: string): string {
 }
 
 export function modelsForProvider(provider: string): readonly string[] {
+  if (isMeshInferenceProvider(provider)) return [];
   if (isLocalAiProvider(provider)) return MANAGED_LOCAL_CHAT_MODELS.map((model) => model.id);
   if (isXaiGrokSubscriptionProvider(provider)) return grokSubscriptionModels();
   if (isCustomOpenAIProvider(provider)) return [];
@@ -70,6 +73,7 @@ export function modelsForProvider(provider: string): readonly string[] {
 }
 
 export function defaultModelForProvider(provider: string): string {
+  if (isMeshInferenceProvider(provider)) return "";
   if (isLocalAiProvider(provider)) return DEFAULT_LOCAL_AGENT_MODEL_ID;
   if (isXaiGrokSubscriptionProvider(provider)) return XAI_GROK_SUBSCRIPTION_DEFAULT_MODEL;
   if (isCustomOpenAIProvider(provider)) return "";

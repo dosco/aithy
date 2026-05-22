@@ -5,6 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { SqliteSkillsStore, formatSkillContent } from "../src/skills/skills-store";
 import { seedSkillsIfEmpty } from "../src/skills/seed";
 import { diffSkillBundle, parseSkillBundleFiles } from "../src/skills/bundle";
+import { MockEmbedder } from "./embed-mock";
 
 async function tempDbPath(): Promise<string> {
   const dir = await mkdtemp(path.join(tmpdir(), "aithy-skills-"));
@@ -352,6 +353,30 @@ describe("SqliteSkillsStore", () => {
       .toEqual(["espresso-guide:name"]);
     expect(store.resolveSearchQueries(["terminal"]).map((match) => `${match.skill.id}:${match.matchKind}`))
       .toEqual(["shell-helper:search"]);
+  });
+
+  test("semantic search finds skill body and file chunks", async () => {
+    const embedder = new MockEmbedder([["kubernetes rollback plan", "helm undo release"]]);
+    const dirtied: string[] = [];
+    const store = new SqliteSkillsStore(await tempDbPath(), {
+      embedder,
+      onDirtyIndex: ({ skills }) => dirtied.push(...skills),
+    });
+    if (!store.isHybridReady()) return;
+    store.upsert({
+      id: "deploy-recovery",
+      name: "Deploy Recovery",
+      description: "Recover bad deploys.",
+      body: "Use release history and validate health after reversing.",
+      allowedTools: null,
+      tags: null,
+      files: [{ path: "runbook.md", content: "helm undo release and inspect rollout events" }],
+    });
+    expect(dirtied).toEqual(["deploy-recovery"]);
+    await store.indexEmbeddings(["deploy-recovery"]);
+    const matches = await store.resolveSearchQueriesSemantic(["kubernetes rollback plan"]);
+    expect(matches[0]?.skill.id).toBe("deploy-recovery");
+    expect((matches as { diagnostics?: unknown }).diagnostics).toBeTruthy();
   });
 });
 

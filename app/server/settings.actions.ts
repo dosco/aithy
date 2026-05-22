@@ -4,15 +4,25 @@ import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { isCustomOpenAIProvider } from "../../src/agent/ai-providers";
+import type { AppConfig } from "../../src/config/env";
 import { isAiConfigured } from "../../src/config/validate";
-import {
-  logoutGrokSubscription,
-  pollGrokSubscriptionLogin,
-  startGrokSubscriptionLogin,
-} from "../../src/grok-subscription/login";
+import { isMeshInferenceProvider, isMeshSearchProvider } from "../../src/mesh/types";
+import { logoutGrokSubscription, pollGrokSubscriptionLogin, startGrokSubscriptionLogin } from "../../src/grok-subscription/login";
 import { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import { webSearch } from "../../src/search/web-search-provider";
 import { assertLoopbackRequest } from "../../src/settings/localhost";
+import {
+  activeSearchProvider,
+  aiProfileFingerprint,
+  aiProfileFor,
+  providerNeedsLiveValidation,
+  searchProfileFingerprint,
+  searchProfileFor,
+  upsertAiProfile,
+  upsertSearchProfile,
+  validValidation,
+  validationNotRequired,
+} from "../../src/settings/provider-profiles";
 import {
   deleteParallelApiKey,
   deleteProviderApiKey,
@@ -21,17 +31,13 @@ import {
   writeProviderApiKey,
 } from "../../src/settings/secrets";
 import type { RuntimeSettings } from "../../src/settings/types";
-import {
-  grokSubscriptionLoginPollInput,
-  localInferenceSettingsInput,
-  parallelSearchTestInput,
-  settingsInput,
-} from "./action-schemas";
+import { grokSubscriptionLoginPollInput, localInferenceSettingsInput, parallelSearchTestInput, settingsInput } from "./action-schemas";
 import { assertAiSettings } from "./ai-settings-test";
 import {
   configDto,
   grokSubscriptionStatusDto,
   parallelSearchStatus,
+  providerSecretStatuses,
   secretStatus,
   secretStatusForProvider,
 } from "./dto";
@@ -42,13 +48,14 @@ export const saveSettings = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
+    const currentSettings = runtime.settings.load();
     const provider = data.runtime?.aiProvider?.trim() || runtime.config.aiProvider;
     const apiKey = normalizePostedSecret(data.apiKey);
     const fastProvider = data.runtime?.fastAiProvider?.trim();
     const fastApiKey = normalizePostedSecret(data.fastApiKey);
     const parallelApiKey = normalizePostedSecret(data.parallelApiKey);
 
-    let runtimePatch: RuntimeSettings | undefined = data.runtime;
+    let runtimePatch: RuntimeSettings | undefined = data.runtime as RuntimeSettings | undefined;
     if (apiKey && !data.clearApiKey) runtimePatch = { ...(runtimePatch ?? {}), aiApiKey: undefined };
     if (data.clearApiKey) runtimePatch = { ...(runtimePatch ?? {}), aiApiKey: null };
     if (data.clearAiModel) runtimePatch = { ...(runtimePatch ?? {}), aiModel: null };
@@ -82,7 +89,29 @@ export const saveSettings = createServerFn({ method: "POST" })
           : normalizeParallelSearchMcpUrl(runtimePatch.parallelSearchMcpUrl),
       };
     }
+    await assertMeshAiSelection(runtime, currentSettings.runtime, runtimePatch, provider, fastProvider);
     await assertAiSettings(runtime.config, { ...data, runtime: runtimePatch });
+    runtimePatch = markValidatedAiProfiles(currentSettings.runtime, runtimePatch, {
+      provider,
+      apiKeyChanged: Boolean(apiKey || data.clearApiKey),
+      fastProvider,
+      fastApiKeyChanged: Boolean(fastApiKey || data.clearFastApiKey),
+    });
+    if (isSearchPatch(runtimePatch, data.parallelApiKey, data.clearParallelApiKey)) {
+      const searchProvider = runtimePatch?.searchProvider ?? activeSearchProvider(currentSettings.runtime);
+      if (isMeshSearchProvider(searchProvider)) await runtime.mesh.validateSearchSelection(searchProvider);
+      else {
+        await assertSearchSettings(runtime.config, currentSettings.runtime, runtimePatch, {
+          parallelApiKey,
+          clearParallelApiKey: data.clearParallelApiKey,
+        });
+      }
+      runtimePatch = markValidatedSearchProfile(currentSettings.runtime, runtimePatch, {
+        parallelApiKey,
+        clearParallelApiKey: data.clearParallelApiKey,
+        hasParallelApiKey: Boolean(parallelApiKey || (!data.clearParallelApiKey && runtime.config.parallelApiKey)),
+      });
+    }
 
     let skippedPaths: string[] = [];
     if (runtimePatch?.globalMounts) {
@@ -103,13 +132,14 @@ export const saveSettings = createServerFn({ method: "POST" })
     );
     return {
       settings,
-      config: configDto(runtime.config),
+      config: configDto(runtime.config, settings),
       secret: await secretStatus(runtime.config, settings),
       fastSecret: runtime.config.fastAiProvider
         ? runtime.config.fastAiProvider === runtime.config.aiProvider
           ? await secretStatus(runtime.config, settings)
-          : await secretStatusForProvider(runtime.config.fastAiProvider, runtime.config.botId)
+          : await secretStatusForProvider(runtime.config.fastAiProvider, runtime.config.botId, settings)
         : null,
+      providerSecrets: await providerSecretStatuses(runtime.config, settings),
       grokSubscription: await grokSubscriptionStatusDto(runtime.config),
       parallelSearch: await parallelSearchStatus(runtime.config, settings),
       aiConfigured: isAiConfigured(runtime.config),
@@ -125,12 +155,13 @@ export const testParallelSearch = createServerFn({ method: "POST" })
     const runtime = await getAithyRuntime();
     const apiKey = normalizePostedSecret(data.apiKey) ?? runtime.config.parallelApiKey;
     const url = normalizeParallelSearchMcpUrl(data.url ?? runtime.config.parallelSearchMcpUrl);
+    const provider = (data.provider ?? runtime.config.searchProvider) as AppConfig["searchProvider"];
     const result = await webSearch(
       {
         query: data.query,
         task: "Verify Aithy public web search settings.",
       },
-      { ...runtime.config, parallelSearchMcpUrl: url, parallelApiKey: apiKey },
+      { ...runtime.config, searchProvider: provider, parallelSearchMcpUrl: url, parallelApiKey: apiKey },
     );
     return {
       provider: result.provider,
@@ -190,7 +221,7 @@ export const saveLocalInferenceSettings = createServerFn({ method: "POST" })
     });
     return {
       settings,
-      config: configDto(runtime.config),
+      config: configDto(runtime.config, settings),
       setupGate: setupGateStateDto(runtime),
     };
   });
@@ -268,6 +299,176 @@ function normalizeOpenAiApiUrl(value: string | null | undefined): string {
   return url.href;
 }
 
+async function assertMeshAiSelection(
+  runtime: Awaited<ReturnType<typeof getAithyRuntime>>,
+  current: RuntimeSettings,
+  patch: RuntimeSettings | undefined,
+  provider: string,
+  fastProvider?: string,
+): Promise<void> {
+  if (isMeshInferenceProvider(provider)) {
+    const model = patch?.aiModel ?? aiProfileFor(current, provider).model ?? runtime.config.aiModel;
+    await runtime.mesh.validateInferenceSelection(provider, model ?? "");
+  }
+  if (fastProvider && isMeshInferenceProvider(fastProvider)) {
+    const profile = aiProfileFor(current, fastProvider);
+    const model = patch?.fastAiModel ?? profile.fastModel ?? runtime.config.fastAiModel;
+    await runtime.mesh.validateInferenceSelection(fastProvider, model ?? "");
+  }
+}
+
+function markValidatedAiProfiles(
+  current: RuntimeSettings,
+  patch: RuntimeSettings | undefined,
+  input: {
+    provider: string;
+    apiKeyChanged: boolean;
+    fastProvider?: string;
+    fastApiKeyChanged: boolean;
+  },
+): RuntimeSettings | undefined {
+  if (!patch) return patch;
+  let profiles = patch.aiProviderProfiles ?? current.aiProviderProfiles ?? {};
+  const currentProfile = aiProfileFor(current, input.provider);
+  const secretVersion = nextSecretVersion(currentProfile.secretVersion, input.apiKeyChanged);
+  const apiUrl = patch.aiApiUrl === null ? null : patch.aiApiUrl ?? currentProfile.apiUrl;
+  const model = patch.aiModel === null ? null : patch.aiModel ?? currentProfile.model;
+  const fingerprint = aiProfileFingerprint({
+    provider: input.provider,
+    apiUrl: apiUrl ?? undefined,
+    model: model ?? undefined,
+    secretVersion,
+    purpose: "primary",
+  });
+  profiles = upsertAiProfile({ ...current, aiProviderProfiles: profiles }, input.provider, {
+    ...(patch.aiApiUrl !== undefined ? { apiUrl } : {}),
+    ...(patch.aiModel !== undefined ? { model } : {}),
+    secretVersion,
+    validation: providerNeedsLiveValidation(input.provider)
+      ? validValidation(fingerprint)
+      : validationNotRequired(),
+  });
+  if (input.fastProvider) {
+    const currentFastProfile = aiProfileFor({ ...current, aiProviderProfiles: profiles }, input.fastProvider);
+    const fastSecretVersion = nextSecretVersion(currentFastProfile.secretVersion, input.fastApiKeyChanged);
+    const fastApiUrl = patch.fastAiApiUrl === null ? null : patch.fastAiApiUrl ?? currentFastProfile.fastApiUrl;
+    const fastModel = patch.fastAiModel ?? currentFastProfile.fastModel;
+    const effectiveFastApiUrl = fastApiUrl ?? currentFastProfile.apiUrl;
+    const fastFingerprint = aiProfileFingerprint({
+      provider: input.fastProvider,
+      apiUrl: effectiveFastApiUrl ?? undefined,
+      model: fastModel ?? undefined,
+      secretVersion: input.fastProvider === input.provider ? secretVersion : fastSecretVersion,
+      purpose: "fast",
+    });
+    profiles = upsertAiProfile({ ...current, aiProviderProfiles: profiles }, input.fastProvider, {
+      ...(patch.fastAiApiUrl !== undefined ? { fastApiUrl } : {}),
+      ...(patch.fastAiModel !== undefined ? { fastModel } : {}),
+      secretVersion: input.fastProvider === input.provider ? secretVersion : fastSecretVersion,
+      fastValidation: providerNeedsLiveValidation(input.fastProvider)
+        ? validValidation(fastFingerprint)
+        : validationNotRequired(),
+    });
+  }
+  return { ...patch, aiProviderProfiles: profiles };
+}
+
+async function assertSearchSettings(
+  config: AppConfig,
+  current: RuntimeSettings,
+  patch: RuntimeSettings | undefined,
+  input: {
+    parallelApiKey?: string;
+    clearParallelApiKey?: boolean;
+  },
+): Promise<void> {
+  const provider = patch?.searchProvider ?? activeSearchProvider(current);
+  const profile = searchProfileFor(current, provider);
+  const url = provider === "parallel"
+    ? normalizeParallelSearchMcpUrl((patch?.parallelSearchMcpUrl ?? profile.url ?? config.parallelSearchMcpUrl) || "")
+    : config.parallelSearchMcpUrl;
+  const apiKey = input.clearParallelApiKey ? undefined : input.parallelApiKey ?? config.parallelApiKey;
+  await webSearch(
+    {
+      query: "Aithy settings validation",
+      task: "Verify Aithy public web search settings.",
+    },
+    {
+      ...config,
+      searchProvider: provider,
+      parallelSearchMcpUrl: url,
+      parallelApiKey: apiKey,
+    },
+  );
+}
+
+function markValidatedSearchProfile(
+  current: RuntimeSettings,
+  patch: RuntimeSettings | undefined,
+  input: {
+    parallelApiKey?: string;
+    clearParallelApiKey?: boolean;
+    hasParallelApiKey: boolean;
+  },
+): RuntimeSettings | undefined {
+  if (!patch) return patch;
+  const provider = patch.searchProvider ?? activeSearchProvider(current);
+  if (isMeshSearchProvider(provider)) {
+    return {
+      ...patch,
+      searchProvider: provider,
+      searchProviderProfiles: upsertSearchProfile(current, provider, {
+        validation: validationNotRequired("Validated against the live family catalog."),
+      }),
+    };
+  }
+  const currentProfile = searchProfileFor(current, provider);
+  const secretVersion = nextSecretVersion(currentProfile.secretVersion, Boolean(input.parallelApiKey || input.clearParallelApiKey));
+  const mode = provider === "grok-subscription"
+    ? "grok-subscription"
+    : input.clearParallelApiKey
+      ? "anonymous"
+      : input.parallelApiKey
+        ? "api-key"
+      : currentProfile.mode ?? (input.hasParallelApiKey ? "api-key" : "anonymous");
+  const url = provider === "parallel"
+    ? patch.parallelSearchMcpUrl ?? currentProfile.url
+    : currentProfile.url;
+  const fingerprint = searchProfileFingerprint({
+    provider,
+    url: url ?? undefined,
+    mode,
+    secretVersion,
+  });
+  return {
+    ...patch,
+    searchProvider: provider,
+    searchProviderProfiles: upsertSearchProfile(current, provider, {
+      ...(url !== undefined ? { url } : {}),
+      mode,
+      secretVersion,
+      validation: validValidation(fingerprint),
+    }),
+  };
+}
+
+function isSearchPatch(
+  patch: RuntimeSettings | undefined,
+  parallelApiKey: string | undefined,
+  clearParallelApiKey: boolean | undefined,
+): boolean {
+  return Boolean(
+    patch?.searchProvider !== undefined
+      || patch?.parallelSearchMcpUrl !== undefined
+      || parallelApiKey
+      || clearParallelApiKey,
+  );
+}
+
+function nextSecretVersion(current: number | undefined, changed: boolean): number {
+  return Math.max(0, Math.floor(current ?? 0)) + (changed ? 1 : 0);
+}
+
 async function grokSubscriptionActionState(
   runtime: Awaited<ReturnType<typeof getAithyRuntime>>,
   loginId: string,
@@ -281,13 +482,14 @@ async function grokSubscriptionActionState(
     message,
     status: await grokSubscriptionStatusDto(runtime.config),
     settings,
-    config: configDto(runtime.config),
+    config: configDto(runtime.config, settings),
     secret: await secretStatus(runtime.config, settings),
     fastSecret: runtime.config.fastAiProvider
       ? runtime.config.fastAiProvider === runtime.config.aiProvider
         ? await secretStatus(runtime.config, settings)
-        : await secretStatusForProvider(runtime.config.fastAiProvider, runtime.config.botId)
+        : await secretStatusForProvider(runtime.config.fastAiProvider, runtime.config.botId, settings)
       : null,
+    providerSecrets: await providerSecretStatuses(runtime.config, settings),
     parallelSearch: await parallelSearchStatus(runtime.config, settings),
     aiConfigured: isAiConfigured(runtime.config),
     setupGate: setupGateStateDto(runtime),

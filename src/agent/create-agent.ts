@@ -58,6 +58,8 @@ urlContext is optional. When present, it contains URL fetch attempts that were c
 
 searchContext is optional. When present, it contains web search results fetched before agent execution for the latest userRequest. Use it as current evidence, especially for recent scores, news, prices, weather, or explicit "search/look it up" follow-ups.
 
+memoryContext is optional. When present, it contains preloaded durable memories and past episodes selected by deterministic retrieval for the latest userRequest. Use it as evidence when relevant, and ignore stale or unrelated entries.
+
 Efficient JavaScript strategy:
 - Parse inputs.conversationHistory into turns, for example with /^\\[(.*?)\\] (user|assistant): (.*)$/.
 - Inspect from newest to oldest to find the most recent assistant question, offered choices, and unresolved topic.
@@ -65,6 +67,7 @@ Efficient JavaScript strategy:
 - When conversationHistory contains a "Published artifact:" line, carry forward its filename, title, artifact id, open URL, and exact sandboxPath. Existing artifact paths are stable across turns; do not rewrite them into the current run outbox.
 - If inputs.urlContext is present, include its useful fetched answer, page content, sources, and errors in the evidence object.
 - If inputs.searchContext is present, include its useful result text, sources, and errors in the evidence object.
+- If inputs.memoryContext is present, include only the memory entries that materially affect the task.
 - Build a compact evidence object such as { latestRequest, resolvedIntent, activeTopic, location, clarificationAnswer, supportingTurns }. Keep supportingTurns short and quote only the lines needed to justify the resolution.
 - Call final(...) as soon as the latest request is resolved; do not over-summarize the entire transcript.
 

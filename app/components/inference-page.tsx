@@ -12,6 +12,7 @@ import { ThemeSync } from "@/components/theme-sync";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { saveSettingsWithSetupGateRefresh } from "@/lib/setup-gate";
 import {
+  getMeshFamilyCatalogs,
   logoutGrokSubscriptionSignIn,
   pollGrokSubscriptionSignIn,
   startGrokSubscriptionSignIn,
@@ -19,6 +20,7 @@ import {
 import type {
   GrokSubscriptionStatusDto,
   LocalInferencePageStateDto,
+  MeshLiveCatalogPeerDto,
   SecretStatusDto,
   SettingsPageStateDto,
 } from "@/server/dto";
@@ -41,6 +43,7 @@ export function InferencePage({
   const [fastSecret, setFastSecret] = useState<SecretStatusDto | null>(
     initialState.settings.fastSecret,
   );
+  const [providerSecrets, setProviderSecrets] = useState(initialState.settings.providerSecrets);
   const [apiKey, setApiKey] = useState("");
   const [fastApiKey, setFastApiKey] = useState("");
   const [saved, setSaved] = useState(false);
@@ -49,6 +52,7 @@ export function InferencePage({
   const [grokBusy, setGrokBusy] = useState(false);
   const [grokError, setGrokError] = useState<string | null>(null);
   const [ui, setUi] = useState(initialState.settings.settings.ui);
+  const [meshCatalogs, setMeshCatalogs] = useState<MeshLiveCatalogPeerDto[]>(initialState.settings.meshCatalogs);
   const [primaryClearAction, setPrimaryClearAction] =
     useState<PrimaryClearAction | null>(null);
   const [primaryClearBusy, setPrimaryClearBusy] = useState(false);
@@ -89,6 +93,7 @@ export function InferencePage({
       setUi(result.settings.ui);
       setSecret(result.secret);
       setFastSecret(result.fastSecret);
+      setProviderSecrets(result.providerSecrets);
       setGrokSubscription(result.grokSubscription);
       setApiKey("");
       setFastApiKey("");
@@ -136,6 +141,7 @@ export function InferencePage({
         setConfig(next.config);
         setSecret(next.secret);
         setFastSecret(next.fastSecret);
+        setProviderSecrets(next.providerSecrets);
         if (next.state !== "signing_in") {
           if (next.state !== "connected") setGrokError(next.message);
           return;
@@ -158,12 +164,25 @@ export function InferencePage({
       setConfig(next.config);
       setSecret(next.secret);
       setFastSecret(next.fastSecret);
+      setProviderSecrets(next.providerSecrets);
     } catch (error) {
       setGrokError(error instanceof Error ? error.message : "Could not sign out of Grok");
     } finally {
       setGrokBusy(false);
     }
   }
+
+  async function refreshMeshCatalogs() {
+    setMeshCatalogs(await getMeshFamilyCatalogs({ data: { kind: "inference" } }));
+  }
+
+  const selectedSecret = providerSecrets[config.aiProvider] ?? secretForProvider(secret, config.aiProvider)
+    ?? emptySecret(config.aiProvider);
+  const selectedFastSecret = config.fastAiProvider
+    ? providerSecrets[config.fastAiProvider]
+      ?? secretForProvider(fastSecret, config.fastAiProvider)
+      ?? (config.fastAiProvider === config.aiProvider ? selectedSecret : emptySecret(config.fastAiProvider))
+    : null;
 
   return (
     <PageFrame eyebrow="Runtime" title="Inference">
@@ -187,12 +206,15 @@ export function InferencePage({
           <ModelSettingsTab
             config={config}
             setConfig={setConfig}
-            secret={secret}
-            fastSecret={fastSecret}
+            secret={selectedSecret}
+            fastSecret={selectedFastSecret}
+            providerSecrets={providerSecrets}
             grokSubscription={grokSubscription}
             grokBusy={grokBusy}
             grokError={grokError}
             localModels={initialState.settings.localModels}
+            meshCatalogs={meshCatalogs}
+            onRefreshMeshCatalogs={() => void refreshMeshCatalogs()}
             apiKey={apiKey}
             fastApiKey={fastApiKey}
             setApiKey={setApiKey}
@@ -234,4 +256,12 @@ function selectedLocalAgentModel(config: SettingsPageStateDto["config"]): string
   if (isLocalAiProvider(config.aiProvider)) return config.aiModel;
   if (isLocalAiProvider(config.fastAiProvider)) return config.fastAiModel;
   return config.localAgentModel;
+}
+
+function secretForProvider(secret: SecretStatusDto | null, provider: string): SecretStatusDto | null {
+  return secret?.provider === provider ? secret : null;
+}
+
+function emptySecret(provider: string): SecretStatusDto {
+  return { provider, configured: false, source: null };
 }

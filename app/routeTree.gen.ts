@@ -17,6 +17,7 @@ import { Route as SetupRouteImport } from './routes/setup'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SessionsRouteImport } from './routes/sessions'
 import { Route as NotificationsRouteImport } from './routes/notifications'
+import { Route as MeshRouteImport } from './routes/mesh'
 import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as LocalInferenceRouteImport } from './routes/local-inference'
 import { Route as InferenceRouteImport } from './routes/inference'
@@ -67,6 +68,11 @@ const SessionsRoute = SessionsRouteImport.update({
 const NotificationsRoute = NotificationsRouteImport.update({
   id: '/notifications',
   path: '/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MeshRoute = MeshRouteImport.update({
+  id: '/mesh',
+  path: '/mesh',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MemoryRoute = MemoryRouteImport.update({
@@ -134,6 +140,7 @@ export interface FileRoutesByFullPath {
   '/inference': typeof InferenceRoute
   '/local-inference': typeof LocalInferenceRoute
   '/memory': typeof MemoryRoute
+  '/mesh': typeof MeshRoute
   '/notifications': typeof NotificationsRoute
   '/sessions': typeof SessionsRoute
   '/settings': typeof SettingsRoute
@@ -155,6 +162,7 @@ export interface FileRoutesByTo {
   '/inference': typeof InferenceRoute
   '/local-inference': typeof LocalInferenceRoute
   '/memory': typeof MemoryRoute
+  '/mesh': typeof MeshRoute
   '/notifications': typeof NotificationsRoute
   '/sessions': typeof SessionsRoute
   '/settings': typeof SettingsRoute
@@ -177,6 +185,7 @@ export interface FileRoutesById {
   '/inference': typeof InferenceRoute
   '/local-inference': typeof LocalInferenceRoute
   '/memory': typeof MemoryRoute
+  '/mesh': typeof MeshRoute
   '/notifications': typeof NotificationsRoute
   '/sessions': typeof SessionsRoute
   '/settings': typeof SettingsRoute
@@ -200,6 +209,7 @@ export interface FileRouteTypes {
     | '/inference'
     | '/local-inference'
     | '/memory'
+    | '/mesh'
     | '/notifications'
     | '/sessions'
     | '/settings'
@@ -221,6 +231,7 @@ export interface FileRouteTypes {
     | '/inference'
     | '/local-inference'
     | '/memory'
+    | '/mesh'
     | '/notifications'
     | '/sessions'
     | '/settings'
@@ -242,6 +253,7 @@ export interface FileRouteTypes {
     | '/inference'
     | '/local-inference'
     | '/memory'
+    | '/mesh'
     | '/notifications'
     | '/sessions'
     | '/settings'
@@ -264,6 +276,7 @@ export interface RootRouteChildren {
   InferenceRoute: typeof InferenceRoute
   LocalInferenceRoute: typeof LocalInferenceRoute
   MemoryRoute: typeof MemoryRoute
+  MeshRoute: typeof MeshRoute
   NotificationsRoute: typeof NotificationsRoute
   SessionsRoute: typeof SessionsRoute
   SettingsRoute: typeof SettingsRoute
@@ -332,6 +345,13 @@ declare module '@tanstack/react-router' {
       path: '/notifications'
       fullPath: '/notifications'
       preLoaderRoute: typeof NotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mesh': {
+      id: '/mesh'
+      path: '/mesh'
+      fullPath: '/mesh'
+      preLoaderRoute: typeof MeshRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/memory': {
@@ -433,6 +453,7 @@ const rootRouteChildren: RootRouteChildren = {
   InferenceRoute: InferenceRoute,
   LocalInferenceRoute: LocalInferenceRoute,
   MemoryRoute: MemoryRoute,
+  MeshRoute: MeshRoute,
   NotificationsRoute: NotificationsRoute,
   SessionsRoute: SessionsRoute,
   SettingsRoute: SettingsRoute,

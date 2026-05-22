@@ -2,6 +2,7 @@ import { Database } from "bun:sqlite";
 import type { Embedder } from "./embed";
 import { bodyHash, embedText, vecToBlob } from "./embed-text";
 import type { MemoryEntry } from "./types";
+import type { EmbeddingHealthStats, TargetIndexCounts, TargetIndexStatus } from "../retrieval/indexing";
 
 interface MemoryRow {
   id: string;
@@ -32,26 +33,27 @@ export async function embedAndStore(
   db: Database,
   embedder: Embedder,
   entry: MemoryEntry,
-): Promise<void> {
+): Promise<TargetIndexStatus> {
   const text = embedText(entry);
   const hash = bodyHash(text);
   const meta = db
     .query(
-      `SELECT body_hash AS bh, model_id AS mid FROM memory_embed_meta WHERE memory_id = $id`,
+      `SELECT body_hash AS bh, model_id AS mid, dim FROM memory_embed_meta WHERE memory_id = $id`,
     )
-    .get({ $id: entry.id }) as { bh: string; mid: string } | undefined;
-  if (meta && meta.bh === hash && meta.mid === embedder.modelId) return;
+    .get({ $id: entry.id }) as { bh: string; mid: string; dim: number } | undefined;
+  if (meta && meta.bh === hash && meta.mid === embedder.modelId && meta.dim === embedder.dim) return "skipped";
 
   const vector = await embedder.embed(text);
   const rowidRow = db
     .query("SELECT rowid FROM memories WHERE id = $id")
     .get({ $id: entry.id }) as { rowid: number } | undefined;
-  if (!rowidRow) return; // memory deleted between upsert and embed completing
+  if (!rowidRow) return "missing"; // memory deleted between upsert and embed completing
 
   const now = new Date().toISOString();
   db.transaction(() => {
     writeEmbedding(db, embedder, entry.id, rowidRow.rowid, hash, vector, now);
   })();
+  return "indexed";
 }
 
 /**
@@ -114,6 +116,57 @@ export async function backfillEmbeddings(
     log(`memory: backfill done=${done} skipped=${skipped}`);
   }
   return { done, skipped, indexed };
+}
+
+export function memoryEmbeddingStats(
+  db: Database,
+  embedder: Embedder | null,
+): EmbeddingHealthStats {
+  const rows = db
+    .query(
+      `SELECT m.id AS id, m.title AS title, m.body AS body,
+              m.valid_from AS validFrom, m.valid_until AS validUntil,
+              m.duration_days AS durationDays, m.evidence AS evidence,
+              m.frequency AS frequency, meta.body_hash AS bodyHash,
+              meta.model_id AS modelId, meta.dim AS dim
+         FROM memories m
+         LEFT JOIN memory_embed_meta meta ON meta.memory_id = m.id
+         WHERE m.superseded_by IS NULL`,
+    )
+    .all() as Array<MemoryRow & { bodyHash: string | null; modelId: string | null; dim: number | null }>;
+  if (!embedder) return { total: rows.length, embedded: 0, stale: rows.length };
+  let embedded = 0;
+  for (const row of rows) {
+    if (
+      row.bodyHash === bodyHash(embedText(row))
+      && row.modelId === embedder.modelId
+      && row.dim === embedder.dim
+    ) embedded += 1;
+  }
+  return { total: rows.length, embedded, stale: rows.length - embedded };
+}
+
+export async function indexMemoryEmbeddings(
+  db: Database,
+  embedder: Embedder | null,
+  ids: readonly string[],
+  get: (id: string) => MemoryEntry | null,
+): Promise<TargetIndexCounts> {
+  if (!embedder) return { indexed: 0, skipped: 0, missing: 0, failed: ids.length };
+  const counts: TargetIndexCounts = { indexed: 0, skipped: 0, missing: 0, failed: 0 };
+  for (const id of ids) {
+    const entry = get(id);
+    if (!entry) {
+      counts.missing += 1;
+      continue;
+    }
+    try {
+      counts[await embedAndStore(db, embedder, entry)] += 1;
+    } catch {
+      counts.failed += 1;
+    }
+  }
+  return counts;
 }
 
 /**

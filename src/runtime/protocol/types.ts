@@ -1,4 +1,5 @@
 import type { SandboxBashRequest, SandboxBashResult, SandboxFile, SandboxSession, SessionMount } from "../../sandbox/provider";
+import type { TargetIndexCounts } from "../../retrieval/indexing";
 
 export const SERVICE_ROLES = [
   "web",
@@ -91,6 +92,11 @@ export type EmbeddingCommand =
   | { kind: "embedding.embedQuery"; payload: { text: string }; result: { vector: number[] } }
   | { kind: "embedding.rerank"; payload: { query: string; docs: string[] }; result: { scores: number[] } }
   | { kind: "embedding.backfill_now"; payload: Record<string, never>; result: { done: number; skipped: number } }
+  | {
+      kind: "embedding.indexTargets";
+      payload: { memories?: string[]; episodes?: string[]; skills?: string[] };
+      result: { memories: TargetIndexCounts; episodes: TargetIndexCounts; skills: TargetIndexCounts };
+    }
   | { kind: "embedding.reload_settings"; payload: Record<string, never>; result: void };
 
 export type LocalInferenceCommand =

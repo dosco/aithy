@@ -303,6 +303,39 @@ export const sessionMigrations = [
       END;
     `,
   },
+  {
+    version: 8,
+    precondition: (db: Database) => {
+      try {
+        db.query("SELECT vec_version() AS v").get();
+        return true;
+      } catch {
+        return false;
+      }
+    },
+    sql: `
+      CREATE TABLE skill_embedding_chunks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        skill_id TEXT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+        chunk_key TEXT NOT NULL,
+        text TEXT NOT NULL,
+        body_hash TEXT NOT NULL,
+        model_id TEXT NOT NULL,
+        dim INTEGER NOT NULL,
+        embedded_at TEXT NOT NULL,
+        UNIQUE(skill_id, chunk_key)
+      );
+
+      CREATE INDEX skill_embedding_chunks_skill_idx
+        ON skill_embedding_chunks(skill_id);
+      CREATE INDEX skill_embedding_chunks_model_idx
+        ON skill_embedding_chunks(model_id, dim);
+
+      CREATE VIRTUAL TABLE skills_vec USING vec0(
+        embedding float[1024]
+      );
+    `,
+  },
 ];
 
 function hasMessageTable(db: Database): boolean {

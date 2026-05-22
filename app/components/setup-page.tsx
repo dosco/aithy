@@ -261,7 +261,11 @@ export function SetupPage({
           <>
             <div className="grid gap-4 sm:grid-cols-2">
               <Field label="Provider">
-                <ProviderSelect value={provider} onChange={changeProvider} />
+                <ProviderSelect
+                  value={provider}
+                  onChange={changeProvider}
+                  providerSecrets={initialState.providerSecrets}
+                />
               </Field>
               <Field label="Model">
                 <ModelCombobox

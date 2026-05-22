@@ -29,7 +29,9 @@ export function aiConfigurationIssues(config: AppConfig): string[] {
 export function fastAiConfigurationIssues(config: AppConfig): string[] {
   if (!config.fastAiProvider) return [];
   const missing: string[] = [];
-  if (isCustomOpenAIProvider(config.fastAiProvider) && !config.fastAiApiUrl) {
+  if (
+    isCustomOpenAIProvider(config.fastAiProvider) && !config.fastAiApiUrl
+  ) {
     missing.push("fast OpenAI-compatible base URL");
   }
   const fastApiKey = config.fastAiProvider === config.aiProvider
@@ -55,5 +57,6 @@ export function providerRequiresApiKey(provider: string): boolean {
 }
 
 function requiresApiKey(provider: string): boolean {
+  if (provider.startsWith("mesh:")) return false;
   return !providersWithoutApiKey.has(provider);
 }

@@ -1,4 +1,10 @@
 import { z } from "zod";
+import { isMeshSearchProvider } from "../../src/mesh/types";
+
+const searchProviderInput = z.string().refine(
+  (value) => value === "parallel" || value === "grok-subscription" || isMeshSearchProvider(value),
+  "Invalid search provider.",
+);
 
 const localInferenceRuntimeInput = z.object({
   llamaServerPath: z.string().max(2000).optional(),
@@ -86,6 +92,22 @@ export const settingsInput = z.object({
     fastAiProvider: z.string().optional(),
     fastAiApiUrl: z.string().max(500).optional().nullable(),
     fastAiModel: z.string().optional(),
+    aiProviderProfiles: z.record(z.string(), z.object({
+      apiUrl: z.string().max(500).optional().nullable(),
+      model: z.string().max(500).optional().nullable(),
+      fastApiUrl: z.string().max(500).optional().nullable(),
+      fastModel: z.string().max(500).optional().nullable(),
+      secretVersion: z.number().int().min(0).optional(),
+      validation: z.any().optional(),
+      fastValidation: z.any().optional(),
+    })).optional(),
+    searchProvider: searchProviderInput.optional(),
+    searchProviderProfiles: z.record(z.string(), z.object({
+      url: z.string().max(500).optional().nullable(),
+      mode: z.enum(["anonymous", "api-key", "grok-subscription"]).optional(),
+      secretVersion: z.number().int().min(0).optional(),
+      validation: z.any().optional(),
+    })).optional(),
     sandboxProvider: z.enum(["microsandbox", "disabled"]).optional(),
     sandboxImage: z.string().optional(),
     sandboxCpus: z.number().positive().optional(),
@@ -127,6 +149,7 @@ export const settingsInput = z.object({
 
 export const parallelSearchTestInput = z.object({
   query: z.string().trim().min(2).max(200),
+  provider: searchProviderInput.optional(),
   url: z.string().trim().min(1).max(500).optional(),
   apiKey: z.string().max(500).optional(),
 });
@@ -138,6 +161,33 @@ export const grokSubscriptionLoginPollInput = z.object({
 export const localInferenceSettingsInput = z.object({
   localAgentModel: z.string().trim().min(1).max(500),
   localInference: localInferenceRuntimeInput.optional(),
+});
+
+export const meshPairInput = z.object({
+  peerId: z.string().min(1).max(200),
+  code: z.string().trim().min(4).max(40),
+});
+
+export const meshPeerInput = z.object({
+  peerId: z.string().min(1).max(200),
+});
+
+export const meshTrustInput = z.object({
+  peerId: z.string().min(1).max(200),
+  trustLevel: z.enum(["acquaintance", "friend", "family"]),
+});
+
+export const meshSharingInput = z.object({
+  inference: z.boolean().optional(),
+  search: z.boolean().optional(),
+});
+
+export const meshEnabledInput = z.object({
+  enabled: z.boolean(),
+});
+
+export const meshCatalogInput = z.object({
+  kind: z.enum(["inference", "search", "all"]).optional(),
 });
 
 export const soulInput = z.object({

@@ -65,6 +65,8 @@ function pageState(configPatch: Partial<ReturnType<typeof loadConfig>> = {}): Lo
       sandboxNetwork: config.sandboxNetwork,
       sessionTtlMs: config.sessionTtlMs,
       parallelAgents: config.parallelAgents,
+      searchProvider: config.searchProvider ?? "parallel",
+      searchApiUrl: config.searchApiUrl ?? "",
       parallelSearchMcpUrl: config.parallelSearchMcpUrl,
       systemBashEnabled: config.systemBashEnabled,
       traceEnabled: config.traceEnabled,
@@ -72,6 +74,8 @@ function pageState(configPatch: Partial<ReturnType<typeof loadConfig>> = {}): Lo
       stateDbPath: config.stateDbPath,
       workspaceRoot: config.workspaceRoot,
       globalMounts: [],
+      aiProviderProfiles: {},
+      searchProviderProfiles: {},
     },
     status: {
       required: false,
@@ -89,6 +93,7 @@ function pageState(configPatch: Partial<ReturnType<typeof loadConfig>> = {}): Lo
       binaryPath: null,
       binarySource: null,
       modelsIniPath: null,
+      embeddingHealth: null,
     },
     localModels: MANAGED_LOCAL_CHAT_MODELS.map((model) => ({
       id: model.id,

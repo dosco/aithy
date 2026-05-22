@@ -1,6 +1,13 @@
 import { createHash } from "node:crypto";
 import type { SQLQueryBindings } from "bun:sqlite";
-import type { SkillEntry, SkillMatchKind, SkillResolvedMatch } from "./types";
+import type {
+  SkillEntry,
+  SkillEventType,
+  SkillFileEntry,
+  SkillMatchKind,
+  SkillResolvedMatch,
+  SkillUsageEvent,
+} from "./types";
 
 export const skillColumns = [
   "id",
@@ -106,4 +113,52 @@ export function shiftHeadingsToAtLeastH4(body: string): string {
     const newLen = Math.min(6, hashes.length + shift);
     return "#".repeat(newLen) + ws;
   });
+}
+
+export interface SkillFileRow {
+  path: string;
+  content: string;
+  content_hash: string;
+  bytes: number;
+  updated_at: string;
+}
+
+export interface SkillEventRow {
+  id: number;
+  event_type: SkillEventType;
+  skill_id: string;
+  session_id: string | null;
+  task_id: string | null;
+  stage: string | null;
+  reason: string | null;
+  query: string | null;
+  match_kind: string | null;
+  queries_json: string | null;
+  created_at: string;
+}
+
+export function fileRowToEntry(row: SkillFileRow): SkillFileEntry {
+  return {
+    path: row.path,
+    content: row.content,
+    content_hash: row.content_hash,
+    bytes: row.bytes,
+    updated_at: row.updated_at,
+  };
+}
+
+export function eventRowToEntry(row: SkillEventRow): SkillUsageEvent {
+  return {
+    id: row.id,
+    event_type: row.event_type,
+    skill_id: row.skill_id,
+    session_id: row.session_id,
+    task_id: row.task_id,
+    stage: row.stage,
+    reason: row.reason,
+    query: row.query,
+    match_kind: row.match_kind,
+    queries: parseStringArray(row.queries_json),
+    created_at: row.created_at,
+  };
 }

@@ -5,32 +5,38 @@ import { applySqliteMigrations } from "../sqlite/migrations";
 import { memoryMigrations } from "./migrations";
 import { score } from "./ranking";
 import type { Embedder } from "./embed";
-import { backfillEmbeddings as runBackfill, embedAndStore, type BackfillResult } from "./embed-write";
+import { backfillEmbeddings as runBackfill, embedAndStore, indexMemoryEmbeddings, memoryEmbeddingStats, type BackfillResult } from "./embed-write";
 import { hybridSearch } from "./hybrid-search";
 import type { Reranker } from "./rerank";
 import { tryLoadVecExtension } from "./vec-extension";
 import { normalizeMemoryTiming } from "./time-bound";
 import { buildPageWhere, rowToEntry, type MemoryRow } from "./store-row";
+import {
+  retrievalDiagnostics,
+  sourceStats,
+  type RetrievalDiagnostics,
+} from "../retrieval/diagnostics";
+import type { EmbeddingHealthStats, TargetIndexCounts } from "../retrieval/indexing";
 import type {
   MemoryEntry,
   MemoryKind,
   MemorySearchOptions,
   MemoryUpsert,
 } from "./types";
+import { capBody, clamp01, quoteForFts5 } from "./store-utils";
 
 interface SearchRow extends MemoryRow {
   bm25: number;
 }
 
 const DEFAULT_PER_QUERY_LIMIT = 5;
-const MAX_BODY_BYTES = 4096;
-const BACKFILL_BATCH_SIZE = 32;
 
 export interface SqliteMemoryStoreOptions {
   embedder?: Embedder;
   reranker?: Reranker;
   log?: (msg: string) => void;
   inlineEmbeds?: boolean;
+  onDirtyIndex?: (input: { memories: string[] }) => void;
 }
 
 export type { BackfillResult };
@@ -41,8 +47,9 @@ export class SqliteMemoryStore {
   private readonly reranker: Reranker | null;
   private readonly log: (msg: string) => void;
   private readonly inlineEmbeds: boolean;
+  private readonly onDirtyIndex?: (input: { memories: string[] }) => void;
   private readonly vecEnabled: boolean;
-  private readonly pendingEmbeds = new Set<Promise<void>>();
+  private readonly pendingEmbeds = new Set<Promise<unknown>>();
 
   constructor(dbPath: string, options: SqliteMemoryStoreOptions = {}) {
     mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -56,6 +63,7 @@ export class SqliteMemoryStore {
     this.reranker = options.reranker ?? null;
     this.log = options.log ?? (() => {});
     this.inlineEmbeds = options.inlineEmbeds ?? true;
+    this.onDirtyIndex = options.onDirtyIndex;
 
     const vecLoad = this.embedder ? tryLoadVecExtension(this.db, this.log) : { ok: false as const, reason: "no embedder" };
 
@@ -121,6 +129,7 @@ export class SqliteMemoryStore {
       });
     const entry = this.get(id)!;
     this.scheduleEmbed(entry);
+    this.onDirtyIndex?.({ memories: [entry.id] });
     return entry;
   }
 
@@ -260,9 +269,39 @@ export class SqliteMemoryStore {
   }
 
   async search(queries: readonly string[], opts: MemorySearchOptions = {}): Promise<MemoryEntry[]> {
-    if (queries.length === 0) return [];
+    return (await this.searchDetailed(queries, opts)).entries;
+  }
+
+  async searchDetailed(
+    queries: readonly string[],
+    opts: MemorySearchOptions = {},
+  ): Promise<{ entries: MemoryEntry[]; diagnostics: RetrievalDiagnostics }> {
+    const startedAt = performance.now();
+    if (queries.length === 0) {
+      return {
+        entries: [],
+        diagnostics: retrievalDiagnostics({
+          source: "store",
+          mode: "fts-only",
+          queryCount: 0,
+          startedAt,
+          sources: [sourceStats({ source: "memories" })],
+        }),
+      };
+    }
     const sanitized = queries.map(quoteForFts5).filter((q): q is string => q.length > 0);
-    if (sanitized.length === 0) return [];
+    if (sanitized.length === 0) {
+      return {
+        entries: [],
+        diagnostics: retrievalDiagnostics({
+          source: "store",
+          mode: "fts-only",
+          queryCount: queries.length,
+          startedAt,
+          sources: [sourceStats({ source: "memories" })],
+        }),
+      };
+    }
 
     const limit = opts.limit ?? DEFAULT_PER_QUERY_LIMIT;
 
@@ -277,17 +316,29 @@ export class SqliteMemoryStore {
         perQueryLimit: limit,
       });
       if (opts.markRecalled !== false && result.recallIds.length > 0) this.markRecalled(result.recallIds);
-      return result.entries;
+      return {
+        entries: result.entries,
+        diagnostics: retrievalDiagnostics({
+          source: "store",
+          mode: result.reranked ? "hybrid-reranked" : "hybrid",
+          queryCount: queries.length,
+          rerankerAvailable: this.isRerankReady(),
+          startedAt,
+          sources: [result.stats],
+        }),
+      };
     }
 
-    return this.searchFtsOnly(sanitized, opts, limit);
+    return this.searchFtsOnly(sanitized, opts, limit, queries.length, startedAt);
   }
 
   private searchFtsOnly(
     sanitized: readonly string[],
     opts: MemorySearchOptions,
     limit: number,
-  ): MemoryEntry[] {
+    queryCount: number,
+    startedAt: number,
+  ): { entries: MemoryEntry[]; diagnostics: RetrievalDiagnostics } {
     const matchExpr = sanitized.join(" OR ");
     const kindFilter = opts.kinds?.length
       ? ` AND m.kind IN (${opts.kinds.map((_, i) => `$kind${i}`).join(", ")})`
@@ -338,7 +389,22 @@ export class SqliteMemoryStore {
     if (opts.markRecalled !== false && ranked.length > 0) {
       this.markRecalled(ranked.map((r) => r.entry.id));
     }
-    return ranked.map((r) => r.entry);
+    const entries = ranked.map((r) => r.entry);
+    return {
+      entries,
+      diagnostics: retrievalDiagnostics({
+        source: "store",
+        mode: "fts-only",
+        queryCount,
+        startedAt,
+        sources: [sourceStats({
+          source: "memories",
+          ftsCandidates: rows.length,
+          fusedCandidates: rows.length,
+          finalMatches: entries.length,
+        })],
+      }),
+    };
   }
 
   /**
@@ -351,6 +417,15 @@ export class SqliteMemoryStore {
     return runBackfill(this.db, this.embedder, this.log);
   }
 
+  async indexEmbeddings(ids: readonly string[]): Promise<TargetIndexCounts> {
+    if (!this.isHybridReady() || !this.embedder) return { indexed: 0, skipped: 0, missing: 0, failed: ids.length };
+    return indexMemoryEmbeddings(this.db, this.embedder, ids, (id) => this.get(id));
+  }
+
+  embeddingStats(): EmbeddingHealthStats {
+    return memoryEmbeddingStats(this.db, this.embedder);
+  }
+
   /**
    * For tests and shutdown: wait for all in-flight embed-on-write operations
    * to finish. After this resolves, the vec table is consistent with the
@@ -360,6 +435,14 @@ export class SqliteMemoryStore {
     while (this.pendingEmbeds.size > 0) {
       await Promise.all([...this.pendingEmbeds]);
     }
+  }
+
+  markRecalledIds(ids: readonly string[]): void {
+    this.markRecalled(ids);
+  }
+
+  availableReranker(): Reranker | null {
+    return this.reranker?.available() ? this.reranker : null;
   }
 
   private markRecalled(ids: readonly string[]): void {
@@ -413,26 +496,4 @@ export class SqliteMemoryStore {
   close(): void {
     this.db.close();
   }
-}
-
-function clamp01(value: number): number {
-  if (Number.isNaN(value)) return 0.5;
-  if (value < 0) return 0;
-  if (value > 1) return 1;
-  return value;
-}
-
-function capBody(body: string): string {
-  const buf = Buffer.from(body, "utf8");
-  if (buf.byteLength <= MAX_BODY_BYTES) return body;
-  return buf.subarray(0, MAX_BODY_BYTES).toString("utf8") + "\n[truncated]";
-}
-
-function quoteForFts5(raw: string): string {
-  const cleaned = raw
-    .replace(/[^\p{L}\p{N}\s_-]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!cleaned) return "";
-  return `"${cleaned}"`;
 }

@@ -3,11 +3,16 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 import { CUSTOM_OPENAI_PROVIDER } from "../src/agent/ai-providers";
+import { meshInferenceProviderId, meshSearchProviderId } from "../src/mesh/types";
 import { DEFAULT_LOCAL_AGENT_MODEL_ID, DEFAULT_LOCAL_EMBEDDING_MODEL, LOCAL_AI_PROVIDER } from "../src/local-inference/manifest";
 import { loadConfig } from "../src/config/env";
+import { SqliteMeshStore } from "../src/mesh/store";
+import { resolveEffectiveConfig } from "../src/runtime/resolve-effective-config";
 import { isLoopbackRequest } from "../src/settings/localhost";
+import { aiProfileFingerprint, searchProfileFingerprint, validValidation } from "../src/settings/provider-profiles";
 import {
   apiKeySecretName,
+  oauthTokensSecretName,
   normalizePostedSecret,
   parallelApiKeySecretName,
   readParallelApiKey,
@@ -87,6 +92,126 @@ describe("web settings", () => {
     expect(runtimeSandboxChanged(base, next)).toBe(true);
   });
 
+  test("restores provider-scoped model and URL settings when switching providers", () => {
+    const base = loadConfig({});
+    const next = applyRuntimeSettings(base, {
+      aiProvider: CUSTOM_OPENAI_PROVIDER,
+      aiProviderProfiles: {
+        openai: { model: "gpt-openai" },
+        [CUSTOM_OPENAI_PROVIDER]: {
+          apiUrl: "https://api.example.test/v1",
+          model: "custom-chat",
+        },
+      },
+      searchProvider: "parallel",
+      searchProviderProfiles: {
+        parallel: {
+          url: "https://search.example.test/mcp",
+          mode: "api-key",
+        },
+      },
+    });
+
+    expect(next.aiProvider).toBe(CUSTOM_OPENAI_PROVIDER);
+    expect(next.aiApiUrl).toBe("https://api.example.test/v1");
+    expect(next.aiModel).toBe("custom-chat");
+    expect(next.searchProvider).toBe("parallel");
+    expect(next.parallelSearchMcpUrl).toBe("https://search.example.test/mcp");
+  });
+
+  test("migrates legacy runtime fields into provider-scoped profiles on load", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "aithy-settings-"));
+    const dbPath = path.join(root, "state.db");
+    const store = new SqliteSettingsStore(dbPath);
+    store.save({
+      runtime: {
+        aiProvider: CUSTOM_OPENAI_PROVIDER,
+        aiApiUrl: "https://api.example.test/v1",
+        aiModel: "custom-chat",
+        fastAiProvider: "openai",
+        fastAiModel: "gpt-fast",
+        parallelSearchMcpUrl: "https://search.example.test/mcp",
+      },
+    });
+
+    const loaded = new SqliteSettingsStore(dbPath).load();
+    expect(loaded.runtime.aiProviderProfiles?.[CUSTOM_OPENAI_PROVIDER]).toMatchObject({
+      apiUrl: "https://api.example.test/v1",
+      model: "custom-chat",
+    });
+    expect(loaded.runtime.aiProviderProfiles?.openai).toMatchObject({
+      fastModel: "gpt-fast",
+    });
+    expect(loaded.runtime.searchProviderProfiles?.parallel).toMatchObject({
+      url: "https://search.example.test/mcp",
+    });
+  });
+
+  test("validation fingerprints change with config and secret versions", () => {
+    const llm = aiProfileFingerprint({
+      provider: "openai",
+      model: "gpt-a",
+      secretVersion: 1,
+    });
+    expect(aiProfileFingerprint({
+      provider: "openai",
+      model: "gpt-b",
+      secretVersion: 1,
+    })).not.toBe(llm);
+    expect(aiProfileFingerprint({
+      provider: "openai",
+      model: "gpt-a",
+      secretVersion: 2,
+    })).not.toBe(llm);
+
+    const search = searchProfileFingerprint({
+      provider: "parallel",
+      url: "https://search.example.test/mcp",
+      mode: "api-key",
+      secretVersion: 1,
+    });
+    expect(searchProfileFingerprint({
+      provider: "parallel",
+      url: "https://search.example.test/mcp",
+      mode: "anonymous",
+      secretVersion: 1,
+    })).not.toBe(search);
+  });
+
+  test("marks stale provider validation unknown when profile fields change", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "aithy-settings-"));
+    const store = new SqliteSettingsStore(path.join(root, "state.db"));
+    const saved = store.save({
+      runtime: {
+        aiProviderProfiles: {
+          openai: {
+            model: "gpt-new",
+            secretVersion: 1,
+            validation: validValidation(aiProfileFingerprint({
+              provider: "openai",
+              model: "gpt-old",
+              secretVersion: 1,
+            })),
+          },
+        },
+        searchProviderProfiles: {
+          parallel: {
+            url: "https://search-new.example/mcp",
+            mode: "anonymous",
+            validation: validValidation(searchProfileFingerprint({
+              provider: "parallel",
+              url: "https://search-old.example/mcp",
+              mode: "anonymous",
+            })),
+          },
+        },
+      },
+    });
+
+    expect(saved.runtime.aiProviderProfiles?.openai.validation?.status).toBe("unknown");
+    expect(saved.runtime.searchProviderProfiles?.parallel.validation?.status).toBe("unknown");
+  });
+
   test("uses local agent model for Local provider without requiring a key", () => {
     const next = applyRuntimeSettings(loadConfig({}), {
       aiProvider: LOCAL_AI_PROVIDER,
@@ -97,6 +222,42 @@ describe("web settings", () => {
     expect(next.aiModel).toBe("hf:example/model:test.gguf");
     expect(next.localAgentModel).toBe("hf:example/model:test.gguf");
     expect(next.aiApiKey).toBeUndefined();
+  });
+
+  test("keeps family Aithy selections as provider ids without persisting proxy URLs", () => {
+    const provider = meshInferenceProviderId("gpu-1");
+    const next = applyRuntimeSettings(loadConfig({}), {
+      aiProvider: provider,
+      aiApiUrl: "http://127.0.0.1:49321/mesh/proxy/gpu-1/inference/default/v1",
+      aiModel: "aithy-local-chat",
+      fastAiProvider: provider,
+      fastAiApiUrl: "http://127.0.0.1:49321/mesh/proxy/gpu-1/inference/default/v1",
+      fastAiModel: "aithy-local-chat",
+    });
+
+    expect(next.aiProvider).toBe(provider);
+    expect(next.aiApiUrl).toBeUndefined();
+    expect(next.aiModel).toBe("aithy-local-chat");
+    expect(next.fastAiProvider).toBe(provider);
+    expect(next.fastAiApiUrl).toBeUndefined();
+  });
+
+  test("resolves family proxy URLs from the current mesh proxy port", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "aithy-settings-"));
+    const base = { ...loadConfig({}), stateDbPath: path.join(root, "state.db") };
+    const store = new SqliteMeshStore(base.stateDbPath);
+    store.saveProxyPort(49321);
+    store.close();
+    const aiProvider = meshInferenceProviderId("gpu-1", "openai.primary");
+    const searchProvider = meshSearchProviderId("gpu-1", "parallel.search") as `mesh:${string}:search:${string}`;
+    const next = await resolveEffectiveConfig(base, {
+      runtime: { aiProvider, aiModel: "aithy-local-chat", searchProvider },
+      ui: { theme: "paper", colorMode: "system", layout: "chat", detailsDefault: false, lastActiveSessionId: null },
+      updatedAt: new Date().toISOString(),
+    });
+
+    expect(next.aiApiUrl).toBe("http://127.0.0.1:49321/mesh/proxy/gpu-1/inference/openai.primary/v1");
+    expect(next.searchApiUrl).toBe("http://127.0.0.1:49321/mesh/proxy/gpu-1/search/parallel.search");
   });
 
   test("falls back to the managed local model when a local model id is invalid", () => {
@@ -220,6 +381,12 @@ describe("web settings", () => {
     });
     expect(await deleteParallelApiKey("alpha", fake)).toBe(true);
     expect(await readParallelApiKey("alpha", fake)).toBeUndefined();
+  });
+
+  test("uses Aithy service-prefixed secret names", () => {
+    expect(apiKeySecretName("openai")).toBe("aithy.llm.openai.api-key");
+    expect(parallelApiKeySecretName()).toBe("aithy.search.parallel.api-key");
+    expect(oauthTokensSecretName("xai-grok-subscription")).toBe("aithy.oauth.xai-grok-subscription.tokens");
   });
 
   test("reads legacy shared secrets after bot namespace migration", async () => {

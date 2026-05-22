@@ -10,6 +10,7 @@ import {
 } from "../local-inference/manifest";
 import { DEFAULT_OPENAI_MODEL } from "../agent/ai-providers";
 import { defaultLocalInferenceSettings, type LocalInferenceSettings } from "../local-inference/settings";
+import type { SearchProviderId } from "../settings/types";
 
 export type SandboxProviderKind = "microsandbox" | "disabled";
 
@@ -36,6 +37,8 @@ export interface AppConfig {
   sessionTtlMs: number;
   idleParkMs: number;
   parallelAgents: number;
+  searchProvider?: SearchProviderId;
+  searchApiUrl?: string;
   parallelSearchMcpUrl: string;
   parallelApiKey?: string;
   grokSubscriptionConnected?: boolean;
@@ -69,6 +72,7 @@ export function loadConfig(
     sessionTtlMs: DEFAULT_SESSION_TTL_MS,
     idleParkMs: DEFAULT_IDLE_PARK_MS,
     parallelAgents: DEFAULT_PARALLEL_AGENTS,
+    searchProvider: "parallel",
     parallelSearchMcpUrl: "https://search.parallel.ai/mcp",
     grokSubscriptionConnected: false,
     systemBashEnabled: true,

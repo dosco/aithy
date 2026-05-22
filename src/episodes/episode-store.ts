@@ -8,9 +8,15 @@ import { score } from "../memory/ranking";
 import { tryLoadVecExtension } from "../memory/vec-extension";
 import { applySqliteMigrations } from "../sqlite/migrations";
 import { episodeMigrations } from "./migrations";
-import { embedAndStoreEpisode, backfillEpisodeEmbeddings, type EpisodeBackfillResult } from "./embed-write";
+import { embedAndStoreEpisode, backfillEpisodeEmbeddings, episodeEmbeddingStats, type EpisodeBackfillResult } from "./embed-write";
 import { episodeHybridSearch, rowToEpisode } from "./hybrid-search";
 import type { AgentEpisodeEntry, AgentEpisodeUpsert, EpisodeOutcome, EpisodeSearchOptions } from "./types";
+import {
+  retrievalDiagnostics,
+  sourceStats,
+  type RetrievalDiagnostics,
+} from "../retrieval/diagnostics";
+import type { EmbeddingHealthStats, TargetIndexCounts } from "../retrieval/indexing";
 
 interface EpisodeRow {
   id: string;
@@ -43,6 +49,7 @@ export interface SqliteEpisodeStoreOptions {
   reranker?: Reranker;
   log?: (msg: string) => void;
   inlineEmbeds?: boolean;
+  onDirtyIndex?: (input: { episodes: string[] }) => void;
 }
 
 const DEFAULT_PER_QUERY_LIMIT = 3;
@@ -54,8 +61,9 @@ export class SqliteEpisodeStore {
   private readonly reranker: Reranker | null;
   private readonly log: (msg: string) => void;
   private readonly inlineEmbeds: boolean;
+  private readonly onDirtyIndex?: (input: { episodes: string[] }) => void;
   private readonly vecEnabled: boolean;
-  private readonly pendingEmbeds = new Set<Promise<void>>();
+  private readonly pendingEmbeds = new Set<Promise<unknown>>();
 
   constructor(dbPath: string, options: SqliteEpisodeStoreOptions = {}) {
     mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -69,6 +77,7 @@ export class SqliteEpisodeStore {
     this.reranker = options.reranker ?? null;
     this.log = options.log ?? (() => {});
     this.inlineEmbeds = options.inlineEmbeds ?? true;
+    this.onDirtyIndex = options.onDirtyIndex;
 
     const vecLoad = this.embedder ? tryLoadVecExtension(this.db, this.log) : { ok: false as const, reason: "no embedder" };
     applySqliteMigrations(this.db, "episodes", episodeMigrations);
@@ -128,6 +137,7 @@ export class SqliteEpisodeStore {
         .run(bindUpsert({ ...input, id: existing.id, dedupeKey, now }) as never);
       const entry = this.get(existing.id)!;
       this.scheduleEmbed(entry);
+      this.onDirtyIndex?.({ episodes: [entry.id] });
       return entry;
     }
 
@@ -148,6 +158,7 @@ export class SqliteEpisodeStore {
       .run(bindUpsert({ ...input, id, dedupeKey, now }) as never);
     const entry = this.get(id)!;
     this.scheduleEmbed(entry);
+    this.onDirtyIndex?.({ episodes: [entry.id] });
     return entry;
   }
 
@@ -182,9 +193,39 @@ export class SqliteEpisodeStore {
   }
 
   async search(queries: readonly string[], opts: EpisodeSearchOptions = {}): Promise<AgentEpisodeEntry[]> {
-    if (queries.length === 0) return [];
+    return (await this.searchDetailed(queries, opts)).entries;
+  }
+
+  async searchDetailed(
+    queries: readonly string[],
+    opts: EpisodeSearchOptions = {},
+  ): Promise<{ entries: AgentEpisodeEntry[]; diagnostics: RetrievalDiagnostics }> {
+    const startedAt = performance.now();
+    if (queries.length === 0) {
+      return {
+        entries: [],
+        diagnostics: retrievalDiagnostics({
+          source: "store",
+          mode: "fts-only",
+          queryCount: 0,
+          startedAt,
+          sources: [sourceStats({ source: "episodes" })],
+        }),
+      };
+    }
     const sanitized = queries.map(quoteForFts5).filter((query): query is string => query.length > 0);
-    if (sanitized.length === 0) return [];
+    if (sanitized.length === 0) {
+      return {
+        entries: [],
+        diagnostics: retrievalDiagnostics({
+          source: "store",
+          mode: "fts-only",
+          queryCount: queries.length,
+          startedAt,
+          sources: [sourceStats({ source: "episodes" })],
+        }),
+      };
+    }
 
     const limit = opts.limit ?? DEFAULT_PER_QUERY_LIMIT;
     if (this.isHybridReady()) {
@@ -198,15 +239,47 @@ export class SqliteEpisodeStore {
         perQueryLimit: limit,
       });
       if (opts.markRecalled !== false && result.recallIds.length > 0) this.markRecalled(result.recallIds);
-      return result.entries;
+      return {
+        entries: result.entries,
+        diagnostics: retrievalDiagnostics({
+          source: "store",
+          mode: result.reranked ? "hybrid-reranked" : "hybrid",
+          queryCount: queries.length,
+          rerankerAvailable: this.isRerankReady(),
+          startedAt,
+          sources: [result.stats],
+        }),
+      };
     }
 
-    return this.searchFtsOnly(sanitized, opts, limit);
+    return this.searchFtsOnly(sanitized, opts, limit, queries.length, startedAt);
   }
 
   async backfillEmbeddings(): Promise<EpisodeBackfillResult> {
     if (!this.isHybridReady() || !this.embedder) return { done: 0, skipped: 0, indexed: [] };
     return backfillEpisodeEmbeddings(this.db, this.embedder, this.log);
+  }
+
+  async indexEmbeddings(ids: readonly string[]): Promise<TargetIndexCounts> {
+    if (!this.isHybridReady() || !this.embedder) return { indexed: 0, skipped: 0, missing: 0, failed: ids.length };
+    const counts: TargetIndexCounts = { indexed: 0, skipped: 0, missing: 0, failed: 0 };
+    for (const id of ids) {
+      const entry = this.get(id);
+      if (!entry) {
+        counts.missing += 1;
+        continue;
+      }
+      try {
+        counts[await embedAndStoreEpisode(this.db, this.embedder, entry)] += 1;
+      } catch {
+        counts.failed += 1;
+      }
+    }
+    return counts;
+  }
+
+  embeddingStats(): EmbeddingHealthStats {
+    return episodeEmbeddingStats(this.db, this.embedder);
   }
 
   async flushPendingEmbeds(): Promise<void> {
@@ -238,7 +311,9 @@ export class SqliteEpisodeStore {
     sanitized: readonly string[],
     opts: EpisodeSearchOptions,
     limit: number,
-  ): AgentEpisodeEntry[] {
+    queryCount: number,
+    startedAt: number,
+  ): { entries: AgentEpisodeEntry[]; diagnostics: RetrievalDiagnostics } {
     const matchExpr = sanitized.join(" OR ");
     const excludeFilter = opts.excludeIds?.length
       ? ` AND e.id NOT IN (${opts.excludeIds.map((_, i) => `$excl${i}`).join(", ")})`
@@ -280,7 +355,30 @@ export class SqliteEpisodeStore {
     if (opts.markRecalled !== false && ranked.length > 0) {
       this.markRecalled(ranked.map((rank) => rank.entry.id));
     }
-    return ranked.map((rank) => rank.entry);
+    const entries = ranked.map((rank) => rank.entry);
+    return {
+      entries,
+      diagnostics: retrievalDiagnostics({
+        source: "store",
+        mode: "fts-only",
+        queryCount,
+        startedAt,
+        sources: [sourceStats({
+          source: "episodes",
+          ftsCandidates: rows.length,
+          fusedCandidates: rows.length,
+          finalMatches: entries.length,
+        })],
+      }),
+    };
+  }
+
+  markRecalledIds(ids: readonly string[]): void {
+    this.markRecalled(ids);
+  }
+
+  availableReranker(): Reranker | null {
+    return this.reranker?.available() ? this.reranker : null;
   }
 
   private markRecalled(ids: readonly string[]): void {
