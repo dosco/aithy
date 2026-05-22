@@ -12,9 +12,42 @@
       ':::'
 ```
 
-Aithy is a fast, local AI teammate for people who want an agent that feels helpful without feeling out of control.
+Aithy is a fast, local AI agent. It is solid enough to run as a personal agent today, while still being an experimental harness for exploring the latest agent research in a local, inspectable product. Aithy is named after a cat I had.
 
 It runs on your machine, remembers what you approve, works in a sandboxed workspace, tracks what it uses, and gives you a polished web UI with sessions, themes, skills, dreams, attentions, memory, files, and artifacts. The goal is simple: install it, open the browser, talk to your bot, and let it help without needing to become an agent-framework expert first.
+
+## Gallery
+
+These dark-theme screenshots are captured from the real app with a disposable local profile and no real credentials.
+
+<table>
+  <tr>
+    <td><img src="screenshots/01-chat-hero.png" alt="Aithy chat home" width="280"><br><sub>Chat home</sub></td>
+    <td><img src="screenshots/02-runtime-console.png" alt="Runtime console" width="280"><br><sub>Runtime console</sub></td>
+    <td><img src="screenshots/03-theme-gallery.png" alt="Theme gallery" width="280"><br><sub>Themes</sub></td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/04-skills-gallery.png" alt="Skills gallery" width="280"><br><sub>Skills</sub></td>
+    <td><img src="screenshots/05-usage-analytics.png" alt="Usage analytics" width="280"><br><sub>Usage analytics</sub></td>
+    <td><img src="screenshots/08-mesh-family-services.png" alt="Aithy Mesh page" width="280"><br><sub>Mesh</sub></td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/09-inference-family-models.png" alt="Aithy inference settings" width="280"><br><sub>Inference settings</sub></td>
+    <td><img src="screenshots/10-local-inference-retrieval.png" alt="Local inference and retrieval health" width="280"><br><sub>Local inference</sub></td>
+    <td><img src="screenshots/11-xai-oauth-subscription.png" alt="xAI Grok subscription OAuth" width="280"><br><sub>xAI OAuth</sub></td>
+  </tr>
+</table>
+
+## Feature highlights
+
+- Personal-agent ready: durable sessions, memory, skills, attentions, artifacts, usage, permissions, and a real web UI.
+- Research-harness shaped: built on Ax and Ax Agent with an RLM-style, DSPy-inspired pipeline instead of one giant prompt.
+- Small-model friendly: deterministic JavaScript handles parsing, filtering, deduping, and orchestration so smaller or cheaper models can do more useful work.
+- Local inference: managed local chat models, embeddings, reranking, targeted indexing, and retrieval-health diagnostics.
+- Family Mesh: LAN discovery, explicit pairing, mutual-family service sharing, pinned TLS/HTTP3 RPC, and OpenAI-compatible local proxy providers.
+- xAI OAuth: use a Grok subscription for chat and `web.search` without pasting an API key into the app.
+- MCP-ready runtime: tools can become callable functions without stuffing every tool definition into model context.
+- Trust boundaries: Microsandbox execution, scoped permissions, local SQLite state, Bun secrets, explicit mounts, and no hidden Mesh secret sharing.
 
 ## Quick start
 
@@ -45,7 +78,7 @@ Aithy is built for everyday use first. You do not need to wire a graph, write pr
 - Usage tracking so you can see model and token activity instead of guessing.
 - A sandbox workspace for code, files, scripts, and generated artifacts.
 
-Under the hood, Aithy is also designed to be more consistent than the usual "giant prompt plus tools" agent. It uses Ax's RLM-style agent pipeline, with a context distiller, JavaScript runtime executor, and final responder. That structured flow is closer in spirit to DSPy than to prompt soup: the model gets narrower jobs, the runtime handles deterministic work, and smaller models can do more because less of the task is left as one huge reasoning blob.
+Under the hood, Aithy is also designed to be more consistent than the usual "giant prompt plus tools" agent. It uses Ax and Ax Agent's RLM-style pipeline, with a context distiller, JavaScript runtime executor, and final responder. That structured flow is DSPy-inspired instead of prompt soup: the model gets narrower jobs, the runtime handles deterministic work, and smaller models can do more because less of the task is left as one huge reasoning blob.
 
 ## Fast, skillful, and model-flexible
 
@@ -88,6 +121,8 @@ Family service catalogs are live mesh RPC calls, not discovery payloads. The Mod
 Shared inference is exposed locally as an OpenAI-compatible loopback proxy provider. Provider ids look like `mesh:<peerId>:inference:<serviceId>`, and the local proxy forwards requests to the serving Aithy over pinned TLS. The serving Aithy rebuilds its local catalog on every call and rejects service ids or model ids that are not currently advertised by that validated slot. Mesh providers are never re-shared, which avoids recursive proxying.
 
 Search sharing uses the same model. Search provider ids look like `mesh:<peerId>:search:<serviceId>`, and the serving Aithy resolves the selected live validated search profile before proxying the request. API keys, Grok credentials, Parallel keys, backend URLs, OAuth tokens, local prompts, sessions, memories, and provider configuration stay on the serving machine. Service requests still contain the caller's prompt or search query, because the serving Aithy must process the request.
+
+xAI Grok subscription support uses an OAuth sign-in flow instead of asking you to paste a subscription credential into the app. Once connected, chat and `web.search` can use the subscription-backed provider, and the tokens stay in local Aithy secrets.
 
 The UI uses a source selector instead of one giant dropdown. Models can use `This Aithy` or `Family Aithy`; family mode first chooses the family member, then the live provider slot, then an advertised model. Search settings mirror that pattern with local search providers or family member plus family search service. A selected family provider remains visible if it goes offline or stops being offered, but it is disabled until the live catalog is available again.
 
