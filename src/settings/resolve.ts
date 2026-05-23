@@ -1,4 +1,4 @@
-import { LEGACY_DEFAULT_SANDBOX_IMAGE, type AppConfig } from "../config/env";
+import type { AppConfig } from "../config/env";
 import { MAX_PARALLEL_AGENTS } from "../config/limits";
 import { isLocalAiProvider } from "../agent/ai-providers";
 import { selectedLocalAgentModelId } from "../local-inference/manifest";
@@ -109,7 +109,7 @@ function normalizeSandboxProvider(value: unknown): AppConfig["sandboxProvider"] 
 
 function normalizeSandboxImage(value: string | undefined): string | undefined {
   const image = cleanString(value);
-  return image && image !== LEGACY_DEFAULT_SANDBOX_IMAGE ? image : undefined;
+  return image;
 }
 
 function clampParallelAgents(value: number | undefined): number | undefined {

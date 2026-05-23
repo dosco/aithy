@@ -5,7 +5,7 @@ import { describe, expect, test } from "bun:test";
 import { CUSTOM_OPENAI_PROVIDER } from "../src/agent/ai-providers";
 import { meshInferenceProviderId, meshSearchProviderId } from "../src/mesh/types";
 import { DEFAULT_LOCAL_AGENT_MODEL_ID, DEFAULT_LOCAL_EMBEDDING_MODEL, LOCAL_AI_PROVIDER } from "../src/local-inference/manifest";
-import { DEFAULT_SANDBOX_IMAGE, LEGACY_DEFAULT_SANDBOX_IMAGE, loadConfig } from "../src/config/env";
+import { LEGACY_DEFAULT_SANDBOX_IMAGE, loadConfig } from "../src/config/env";
 import { SqliteMeshStore } from "../src/mesh/store";
 import { resolveEffectiveConfig } from "../src/runtime/resolve-effective-config";
 import { isLoopbackRequest } from "../src/settings/localhost";
@@ -92,14 +92,14 @@ describe("web settings", () => {
     expect(runtimeSandboxChanged(base, next)).toBe(true);
   });
 
-  test("old default sandbox image rolls forward to the current default", () => {
+  test("honors explicitly saved legacy sandbox image", () => {
     const base = loadConfig({});
     const next = applyRuntimeSettings(base, {
       sandboxProvider: "microsandbox",
       sandboxImage: LEGACY_DEFAULT_SANDBOX_IMAGE,
     });
 
-    expect(next.sandboxImage).toBe(DEFAULT_SANDBOX_IMAGE);
+    expect(next.sandboxImage).toBe(LEGACY_DEFAULT_SANDBOX_IMAGE);
   });
 
   test("restores provider-scoped model and URL settings when switching providers", () => {

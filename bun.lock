@@ -27,7 +27,7 @@
         "clsx": "2.1.1",
         "framer-motion": "12.38.0",
         "lucide-react": "1.14.0",
-        "microsandbox": "0.4.5",
+        "microsandbox": "0.4.6",
         "postcss": "8.5.14",
         "react": "19.2.5",
         "react-dom": "19.2.5",
@@ -285,11 +285,11 @@
 
     "@rolldown/pluginutils": ["@rolldown/pluginutils@1.0.0-rc.7", "", {}, "sha512-qujRfC8sFVInYSPPMLQByRh7zhwkGFS4+tyMQ83srV1qrxL4g8E2tyxVVyxd0+8QeBM1mIk9KbWxkegRr76XzA=="],
 
-    "@superradcompany/microsandbox-darwin-arm64": ["@superradcompany/microsandbox-darwin-arm64@0.4.5", "", { "os": "darwin", "cpu": "arm64" }, "sha512-juKMuo8lOQi1tUWt3a5txd/XgC2Xe6hyVugS1ZGxDZKCDTQt5T2MSKH2pMFIAekJpcmFOIQlftdtvy/0Jj2gdw=="],
+    "@superradcompany/microsandbox-darwin-arm64": ["@superradcompany/microsandbox-darwin-arm64@0.4.6", "", { "os": "darwin", "cpu": "arm64" }, "sha512-/TC09DAubzS73B1Lo6uY35ybwpZQQueE7kdAmd3CCmdk9Yl4V31A+8vnLSYk409oaK1URKaa3V5UTnGSYWwtXA=="],
 
-    "@superradcompany/microsandbox-linux-arm64-gnu": ["@superradcompany/microsandbox-linux-arm64-gnu@0.4.5", "", { "os": "linux", "cpu": "arm64" }, "sha512-DDTIfqy7nHS6Svkq3Hxr+D2su0O+ok0db+juvLh0ogS18Htovd9jNW4VZUqO5rY0O/OVOJQKz0YtMnWKezUNkA=="],
+    "@superradcompany/microsandbox-linux-arm64-gnu": ["@superradcompany/microsandbox-linux-arm64-gnu@0.4.6", "", { "os": "linux", "cpu": "arm64" }, "sha512-IaS21OrfxYIzlc6Coxp/eY+SYh9qer4zYX9pvp3jAq7+qpG0aKWzL+GyO4HNeDEKkiZpa1iE6OghhvHmMIt1vA=="],
 
-    "@superradcompany/microsandbox-linux-x64-gnu": ["@superradcompany/microsandbox-linux-x64-gnu@0.4.5", "", { "os": "linux", "cpu": "x64" }, "sha512-0KMEjpZUIUxSfeNBHdkEphxy2YC5aqN/+9icXgFzMkYA6e8+7VDjOp4EPBH0MQZ/uBsgh+xCHAc4jER9MNm63A=="],
+    "@superradcompany/microsandbox-linux-x64-gnu": ["@superradcompany/microsandbox-linux-x64-gnu@0.4.6", "", { "os": "linux", "cpu": "x64" }, "sha512-UqLB/sPfXCwQI8o8pyA31J2q3IvZXYMl3Wo9xDn+C2keIkamGydQiPvroUcJasKfrNH9MUpTZOPKETpFG5qS0Q=="],
 
     "@tailwindcss/node": ["@tailwindcss/node@4.3.0", "", { "dependencies": { "@jridgewell/remapping": "^2.3.5", "enhanced-resolve": "^5.21.0", "jiti": "^2.6.1", "lightningcss": "1.32.0", "magic-string": "^0.30.21", "source-map-js": "^1.2.1", "tailwindcss": "4.3.0" } }, "sha512-aFb4gUhFOgdh9AXo4IzBEOzBkkAxm9VigwDJnMIYv3lcfXCJVesNfbEaBl4BNgVRyid92AmdviqwBUBRKSeY3g=="],
 
@@ -637,7 +637,7 @@
 
     "merge-descriptors": ["merge-descriptors@2.0.0", "", {}, "sha512-Snk314V5ayFLhp3fkUREub6WtjBfPdCPY1Ln8/8munuLuiYhsABgBVWsozAG+MWMbVEvcdcpbi9R7ww22l9Q3g=="],
 
-    "microsandbox": ["microsandbox@0.4.5", "", { "optionalDependencies": { "@superradcompany/microsandbox-darwin-arm64": "0.4.5", "@superradcompany/microsandbox-linux-arm64-gnu": "0.4.5", "@superradcompany/microsandbox-linux-x64-gnu": "0.4.5" }, "bin": { "microsandbox": "bin/microsandbox.cjs", "msb": "bin/microsandbox.cjs" } }, "sha512-02XkAI6LnzcG6dykjhnGe6SAgpDF0J/4srIppe+RuV7wJfr4j8QtOiovmXaaADOLHvI5CAx6IGQT+FMIAp2Egw=="],
+    "microsandbox": ["microsandbox@0.4.6", "", { "optionalDependencies": { "@superradcompany/microsandbox-darwin-arm64": "0.4.6", "@superradcompany/microsandbox-linux-arm64-gnu": "0.4.6", "@superradcompany/microsandbox-linux-x64-gnu": "0.4.6" }, "bin": { "microsandbox": "bin/microsandbox.cjs", "msb": "bin/microsandbox.cjs" } }, "sha512-6uS+pF8E2gJjiI9MIXKjclRqQEJXZSWzXJs+ejLcO1zEn7/Vzrzv5G0q4p/w73XFyyFFEVhmndI+Uws7ysR18Q=="],
 
     "mime-db": ["mime-db@1.54.0", "", {}, "sha512-aU5EJuIN2WDemCcAp2vFBfp/m4EAhWJnUNSSw0ixs7/kXbd6Pg64EmwJkNdFhB8aWt1sH2CTXrLxo/iAGV3oPQ=="],
 
