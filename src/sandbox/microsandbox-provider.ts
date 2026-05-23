@@ -199,15 +199,7 @@ export class MicrosandboxProvider implements SandboxProvider {
     if (!factory?.builder) throw new Error("Microsandbox SDK does not expose Sandbox.builder(...). Install a local no-key microsandbox package.");
 
     try {
-      let builder = factory.builder(name).image(this.options.image).cpus(this.options.cpus).memory(this.options.memoryMb).replace();
-      builder = applyBundledRuntime(builder);
-      builder = applyNetwork(builder, this.options.network);
-      builder = builder.volume("/workspace", (v) => v.bind(hostWorkspacePath));
-      builder = builder.volume("/outbox", (v) => v.bind(hostOutboxPath));
-      for (const mount of mounts) {
-        builder = builder.volume(`/mounts/${mount.mountName}`, (v) => v.bind(mount.hostPath));
-      }
-      return await this.createFromBuilder(builder);
+      return await this.createSandboxFromImage(factory, this.options.image, name, hostWorkspacePath, hostOutboxPath, mounts);
     } catch (error) {
       const message = formatMicrosandboxStartError(error);
       this.options.onStatus?.(failedStatus("sandbox", `sandbox failed: ${message}`));
@@ -215,13 +207,32 @@ export class MicrosandboxProvider implements SandboxProvider {
     }
   }
 
-  private async createFromBuilder(builder: MicrosandboxBuilder): Promise<MicrosandboxInstance> {
-    this.options.onStatus?.(activeStatus("sandbox", `starting sandbox image ${this.options.image}`));
+  private async createSandboxFromImage(
+    factory: MicrosandboxFactory,
+    image: string,
+    name: string,
+    hostWorkspacePath: string,
+    hostOutboxPath: string,
+    mounts: SessionMount[],
+  ): Promise<MicrosandboxInstance> {
+    let builder = factory.builder(name).image(image).cpus(this.options.cpus).memory(this.options.memoryMb).replace();
+    builder = applyBundledRuntime(builder);
+    builder = applyNetwork(builder, this.options.network);
+    builder = builder.volume("/workspace", (v) => v.bind(hostWorkspacePath));
+    builder = builder.volume("/outbox", (v) => v.bind(hostOutboxPath));
+    for (const mount of mounts) {
+      builder = builder.volume(`/mounts/${mount.mountName}`, (v) => v.bind(mount.hostPath));
+    }
+    return this.createFromBuilder(builder, image);
+  }
+
+  private async createFromBuilder(builder: MicrosandboxBuilder, image: string): Promise<MicrosandboxInstance> {
+    this.options.onStatus?.(activeStatus("sandbox", `starting sandbox image ${image}`));
     if (typeof builder.createWithPullProgress !== "function") {
       return builder.create();
     }
     const created = await builder.createWithPullProgress();
-    const progressDone = this.consumePullProgress(created.progress);
+    const progressDone = this.consumePullProgress(created.progress, image);
     try {
       const sandbox = await created.awaitSandbox();
       await progressDone.catch(() => undefined);
@@ -232,12 +243,12 @@ export class MicrosandboxProvider implements SandboxProvider {
     }
   }
 
-  private async consumePullProgress(progress: AsyncIterable<PullProgressEventLike>): Promise<void> {
-    const statusFor = createPullProgressTracker(this.options.image);
+  private async consumePullProgress(progress: AsyncIterable<PullProgressEventLike>, image: string): Promise<void> {
+    const statusFor = createPullProgressTracker(image);
     for await (const event of progress) {
       this.options.onStatus?.(statusFor(event));
     }
-    this.options.onStatus?.(activeStatus("sandbox", `starting sandbox image ${this.options.image}`));
+    this.options.onStatus?.(activeStatus("sandbox", `starting sandbox image ${image}`));
   }
 
   private async execWithTimeout(sessionId: string, cmd: string, args: string[], timeoutMs: number) {

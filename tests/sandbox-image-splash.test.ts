@@ -22,7 +22,7 @@ describe("sandbox image splash status selection", () => {
     expect(isSandboxImageStatus(status("sandbox image ready", { active: false, progress: 1 }))).toBe(false);
   });
 
-  test("keeps a sandbox failure visible", () => {
+  test("keeps terminal sandbox failures visible because sandbox mode cannot work without an image", () => {
     expect(isSandboxImageStatus(status("sandbox failed: pull denied", {
       active: false,
       tone: "danger",

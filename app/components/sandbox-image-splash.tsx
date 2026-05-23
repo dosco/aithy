@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { SetupProgressSplash } from "@/components/setup-progress-splash";
 import type { RuntimeSetupStatusDto } from "@/server/runtime-console.dto";
 
@@ -6,10 +8,17 @@ export function SandboxImageSplashOverlay({
 }: {
   status: RuntimeSetupStatusDto | null;
 }) {
-  if (!status) return null;
+  const [mounted, setMounted] = useState(false);
 
-  return (
-    <div className="fixed inset-0 z-20 bg-[rgb(var(--background))]">
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  if (!status) return null;
+  if (!mounted || typeof document === "undefined") return null;
+
+  return createPortal(
+    <div className="fixed inset-0 z-50 bg-[rgb(var(--background))]">
       <SetupProgressSplash
         eyebrow="Sandbox image"
         title="Preparing the document sandbox."
@@ -17,6 +26,7 @@ export function SandboxImageSplashOverlay({
         fallbackLabel="Waiting for sandbox image"
         statuses={[status]}
       />
-    </div>
+    </div>,
+    document.body,
   );
 }

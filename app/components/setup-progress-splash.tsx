@@ -41,14 +41,15 @@ export function SetupProgressSplash({
         </p>
 
         <div className="mt-10" aria-live="polite">
-          <div className="flex items-center justify-between gap-4 text-left">
-            <div className="flex min-w-0 items-center gap-3">
+          <div className="flex items-start justify-between gap-4 text-left">
+            <div className="flex min-w-0 items-start gap-3">
               <LoaderCircle className={cn(
-                "h-3.5 w-3.5 shrink-0",
+                "mt-0.5 h-3.5 w-3.5 shrink-0",
                 danger ? "text-[rgb(var(--danger))]" : "animate-spin text-[rgb(var(--accent))]",
               )} />
               <p className={cn(
-                "min-w-0 truncate font-mono text-xs sm:text-sm",
+                "min-w-0 font-mono text-xs sm:text-sm",
+                danger ? "break-words" : "truncate",
                 danger ? "text-[rgb(var(--danger))]" : "text-[rgb(var(--foreground))]",
               )}>
                 {statusLabel}

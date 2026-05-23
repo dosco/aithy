@@ -211,9 +211,9 @@ bun run memory <session-id> # reprocess a session
 
 Aithy uses `ghcr.io/dosco/aithy-sandbox:latest` as the default Microsandbox image. It is a Wolfi-based image for document-heavy agent work with `bash`, Docling, Poppler, Ghostscript, qpdf, Tesseract English OCR, Noto and Noto CJK fonts, Python 3.13 with pip and virtualenv, common Python data/web libraries, and basic download/archive tools.
 
-When the image is not cached yet, Aithy shows a sandbox image splash with pull progress, byte counts, and filesystem preparation status. The Runtime Console shows the same setup status stream with logs and service state.
+When the image is not cached yet, Aithy shows a sandbox image splash with pull progress, byte counts, and filesystem preparation status. If the configured sandbox image cannot be pulled or started while Microsandbox mode is enabled, Aithy keeps the blocking splash visible because agent tools cannot run without a working sandbox. The Runtime Console shows the same setup status stream with logs and service state.
 
-The repository `Dockerfile` builds the same image locally when you want to test changes before publishing.
+The release workflow publishes the repository `Dockerfile` to GHCR as both `latest` and the release ref tag. GHCR creates new container packages as private by default, so the `aithy-sandbox` package must be made public in GitHub Packages before anonymous Microsandbox pulls can use it. The same Dockerfile builds locally when you want to test changes before publishing.
 
 ```bash
 docker build -t aithy-sandbox:local .

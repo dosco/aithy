@@ -57,6 +57,9 @@ export async function stopSandbox(sandbox: MicrosandboxInstance): Promise<void> 
 
 export function formatMicrosandboxStartError(error: unknown): string {
   const message = formatError(error);
+  if (/ghcr\.io\/v2\/dosco\/aithy-sandbox/i.test(message) && /not authorized|authentication required|denied/i.test(message)) {
+    return `${message}. GHCR denied the default sandbox image pull. Make the ghcr.io/dosco/aithy-sandbox package public in GitHub Packages, or choose a pullable sandbox image in Settings -> Sandbox.`;
+  }
   if (message.includes("libkrunfw not found")) {
     return `${message}. The bundled Microsandbox platform package was installed, but the runtime did not find libkrunfw. Try \`bun node_modules/.bin/microsandbox self install\` once, or set MSB_PATH/libkrunfwPath to a working Microsandbox runtime.`;
   }

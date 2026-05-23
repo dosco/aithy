@@ -8,12 +8,40 @@ on:
 
 permissions:
   contents: write
+  packages: write
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  sandbox-image:
+    name: Publish sandbox image
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Login to GHCR
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+      - name: Build and push sandbox image
+        run: |
+          set -euo pipefail
+          owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
+          image="ghcr.io/$owner/aithy-sandbox"
+          ref_tag="$(printf '%s' "${GITHUB_REF_NAME:-manual}" | tr '/:@' '---')"
+          docker buildx build \
+            --platform linux/amd64,linux/arm64 \
+            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+            -t "$image:$ref_tag" \
+            -t "$image:latest" \
+            --push \
+            .
+
   verify:
     name: Verify
     runs-on: ubuntu-latest
@@ -101,7 +129,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: package
+    needs: [package, sandbox-image]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     steps:

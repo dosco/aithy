@@ -2,6 +2,7 @@ import { mkdtemp, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
+import { DEFAULT_SANDBOX_IMAGE } from "../src/config/env";
 import { MicrosandboxProvider } from "../src/sandbox/microsandbox-provider";
 
 describe("MicrosandboxProvider", () => {
@@ -106,6 +107,29 @@ describe("MicrosandboxProvider", () => {
 
     expect(fakeFactory.removed).toContain(session.id);
   });
+
+  test("blocks when the configured sandbox image is not pullable", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "aithy-msb-image-fail-"));
+    const workspacePath = path.join(root, "workspace");
+    const statuses: string[] = [];
+    const fakeFactory = createFakeSandboxFactory({ failImages: new Set([DEFAULT_SANDBOX_IMAGE]) });
+    const provider = new MicrosandboxProvider({
+      image: DEFAULT_SANDBOX_IMAGE,
+      cpus: 1,
+      memoryMb: 512,
+      network: "none",
+      sandboxFactory: fakeFactory as any,
+      onStatus: (status) => statuses.push(status.label),
+    });
+
+    await expect(provider.createSession("image-fail-bot", workspacePath, []))
+      .rejects.toThrow("Failed to start Microsandbox microVM");
+
+    expect(fakeFactory.created.map((item: FakeConfig) => item.image)).toEqual([
+      DEFAULT_SANDBOX_IMAGE,
+    ]);
+    expect(statuses.some((label) => label.includes("GHCR denied the default sandbox image pull"))).toBe(true);
+  });
 });
 
 interface FakeConfig {
@@ -119,7 +143,7 @@ interface FakeConfig {
   envs: Record<string, string>;
 }
 
-function createFakeSandboxFactory() {
+function createFakeSandboxFactory(options: { failImages?: Set<string> } = {}) {
   const created: FakeConfig[] = [];
   const instances: FakeSandbox[] = [];
   const byName = new Map<string, FakeSandbox>();
@@ -176,6 +200,9 @@ function createFakeSandboxFactory() {
         },
         async create() {
           created.push(config);
+          if (config.image && options.failImages?.has(config.image)) {
+            throw new Error(`image error: registry error: Not authorized: url https://ghcr.io/v2/dosco/aithy-sandbox/manifests/latest`);
+          }
           const sandbox = new FakeSandbox(name);
           instances.push(sandbox);
           byName.set(name, sandbox);
