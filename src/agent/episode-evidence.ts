@@ -6,24 +6,29 @@ import type { BotMessage } from "../session/types";
 export async function formatEpisodeForRecallWithEvidence(
   sessions: SessionManager,
   episode: AgentEpisodeEntry,
+  options: { includeEvidence?: boolean; maxEvidenceChars?: number } = {},
 ): Promise<string> {
   // Evidence-first recall, following arXiv:2605.12978: keep the dream summary
   // useful, but ground it in the original transcript when that evidence exists.
-  return formatEpisodeForRecall(episode, await episodeEvidenceExcerpt(sessions, episode));
+  return formatEpisodeForRecall(
+    episode,
+    options.includeEvidence === false ? undefined : await episodeEvidenceExcerpt(sessions, episode, options.maxEvidenceChars ?? 6_000),
+  );
 }
 
 async function episodeEvidenceExcerpt(
   sessions: SessionManager,
   episode: AgentEpisodeEntry,
+  maxChars: number,
 ): Promise<string | undefined> {
   try {
     const messages = await sessions.messagesByIdRange(
       episode.sourceSessionId,
       episode.evidenceStartMessageId,
       episode.evidenceEndMessageId,
-      { limit: 12, maxChars: 6_000 },
+      { limit: 12, maxChars },
     );
-    const excerpt = formatRawTranscriptExcerpt(messages, 6_000);
+    const excerpt = formatRawTranscriptExcerpt(messages, maxChars);
     return excerpt || undefined;
   } catch {
     return undefined;

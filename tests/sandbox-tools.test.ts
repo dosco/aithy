@@ -56,6 +56,7 @@ describe("agent sandbox tools", () => {
     expect(names).not.toContain("web.scrape");
     expect(names).not.toContain("sandbox.mount");
     expect(names).not.toContain("sandbox.getPath");
+    expect(names).not.toContain("sandbox.resolveHostPath");
   });
 
   test("includes mount tools for microsandbox", () => {
@@ -67,6 +68,7 @@ describe("agent sandbox tools", () => {
 
     expect(names).toContain("sandbox.mount");
     expect(names).toContain("sandbox.getPath");
+    expect(names).toContain("sandbox.resolveHostPath");
     expect(names).toContain("system.bash");
     expect(names).toContain("web.search");
     expect(names).toContain("web.fetch");
@@ -109,12 +111,14 @@ describe("agent sandbox tools", () => {
     const resolvedSource = await realpath(source);
     const hash = createHash("sha256").update(resolvedSource).digest("hex").slice(0, 8);
     const copiedName = `data-${hash}.txt`;
-    await Bun.write(path.join(workspace, copiedName), "copied");
+    const workspacePath = path.join(workspace, copiedName);
+    await Bun.write(workspacePath, "copied");
 
     await expect(resolveSandboxPathForHostPath({
       hostPath: source,
       mounts: [],
       workspacePath: workspace,
+      copiedFiles: [{ sourcePath: resolvedSource, sandboxPath: `/workspace/${copiedName}`, workspacePath }],
     })).resolves.toBe(`/workspace/${copiedName}`);
   });
 
@@ -125,13 +129,32 @@ describe("agent sandbox tools", () => {
     await mkdir(workspace, { recursive: true });
     await mkdir(path.dirname(source), { recursive: true });
     await Bun.write(source, "source");
-    await Bun.write(path.join(workspace, "plain.txt"), "copied");
+    const resolvedSource = await realpath(source);
+    const workspacePath = path.join(workspace, "plain.txt");
+    await Bun.write(workspacePath, "copied");
 
     await expect(resolveSandboxPathForHostPath({
       hostPath: source,
       mounts: [],
       workspacePath: workspace,
+      copiedFiles: [{ sourcePath: resolvedSource, sandboxPath: "/workspace/plain.txt", workspacePath }],
     })).resolves.toBe("/workspace/plain.txt");
+  });
+
+  test("getPath does not guess copied files without recorded provenance", async () => {
+    const root = await mkdtemp(path.join(os.tmpdir(), "aithy-getpath-no-provenance-"));
+    const workspace = path.join(root, "workspace");
+    const source = path.join(root, "source", "plain.txt");
+    await mkdir(workspace, { recursive: true });
+    await mkdir(path.dirname(source), { recursive: true });
+    await Bun.write(source, "source");
+    await Bun.write(path.join(workspace, "plain.txt"), "unrelated");
+
+    await expect(resolveSandboxPathForHostPath({
+      hostPath: source,
+      mounts: [],
+      workspacePath: workspace,
+    })).resolves.toBe("");
   });
 });
 

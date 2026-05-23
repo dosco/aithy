@@ -109,7 +109,8 @@ const artifactGuidance = `
 Artifacts:
 - When the user asks you to create, save, write, export, or generate a file for them, treat that file as a user-facing artifact.
 - The current run outbox is provided in artifactContext and as $AITHY_OUTBOX for shell commands.
-- The current run outbox is for new artifacts in this turn. Existing/published artifacts may appear in conversationHistory as "Published artifact:" lines; when the user asks about a previous file, use that exact sandboxPath rather than the current run outbox.
+- The current run outbox is for new artifacts in this turn. Existing/published artifacts may appear in artifactContext or conversationHistory as artifact lines. When the user asks about a previous artifact, use artifact.find if the artifact is not already clear.
+- If you edit or transform a previous artifact, read/copy from its exact sandboxPath, then write the new deliverable under the current run outbox and publish the new file.
 - For text-like artifacts, use artifact.write; it writes under the current run outbox and publishes the chat card in one step.
 - For artifacts created by another tool or command, write them under $AITHY_OUTBOX, then call artifact.publish with that path.
 - Keep scratch files, package output, and intermediates elsewhere in /workspace unless the user explicitly asked to receive them.`;

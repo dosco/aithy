@@ -9,46 +9,28 @@ import { tryLoadVecExtension } from "../memory/vec-extension";
 import { backfillSkillEmbeddings, indexSkillEmbeddings, skillEmbeddingStats } from "./embed-write";
 import type { EmbeddingHealthStats, TargetIndexCounts } from "../retrieval/indexing";
 import { hybridSkillSearch } from "./hybrid-search";
+import { backfillSkillSearchChunks, replaceSkillSearchChunks, searchSkillChunkIds } from "./search-chunks";
 import {
   extractSkillLinks,
   normalizeSkillFiles,
   slugify,
   type SkillFileInput,
 } from "./bundle";
-export { formatSkillContent } from "./format";
-export type {
-  SkillEntry,
-  SkillEventInput,
-  SkillEventType,
-  SkillFileEntry,
-  SkillMatchKind,
-  SkillResolvedMatch,
-  SkillUpsert,
-  SkillUsageEvent,
-} from "./types";
-import type {
-  SkillEntry,
-  SkillEventInput,
-  SkillEventType,
-  SkillFileEntry,
-  SkillMatchKind,
-  SkillResolvedMatch,
-  SkillUpsert,
-  SkillUsageEvent,
-} from "./types";
+export { formatSkillContent, formatSkillSearchContent } from "./format";
+export type { SkillEntry, SkillEventInput, SkillEventType, SkillFileEntry, SkillMatchKind, SkillResolvedMatch, SkillUpsert, SkillUsageEvent } from "./types";
+import type { SkillEntry, SkillEventInput, SkillFileEntry, SkillMatchKind, SkillResolvedMatch, SkillUpsert } from "./types";
+import { skillEntryFromRow } from "./entry";
+import { builtInLocalIdForSource, duplicateBuiltIn, setBuiltInDisabled } from "./builtin-actions";
 import {
   addResolved,
+  activeSkillSql,
   buildSkillsWhere,
   byteLength,
-  eventRowToEntry,
   fileRowToEntry,
   hashText,
+  isSkillAvailable,
   normalizeName,
-  parseStringArray,
-  quoteForFts5,
   selectSkillColumns,
-  shiftHeadingsToAtLeastH4,
-  type SkillEventRow,
   type SkillFileRow,
 } from "./skills-store-helpers";
 
@@ -75,12 +57,23 @@ export class SqliteSkillsStore {
     const vecLoad = this.embedder ? tryLoadVecExtension(this.db, options.log ?? (() => {})) : { ok: false as const };
     applySqliteMigrations(this.db, "session", sessionMigrations);
     this.vecEnabled = vecLoad.ok && this.tableExists("skills_vec");
+    backfillSkillSearchChunks(this.db, this.getAll());
   }
 
-  upsert(skill: SkillUpsert): SkillEntry {
+  upsert(skill: SkillUpsert, options: { allowBuiltIn?: boolean } = {}): SkillEntry {
+    const existing = this.get(skill.id);
+    if ((existing?.source_kind === "builtin" || skill.sourceKind === "builtin") && !options.allowBuiltIn) {
+      throw new Error("Built-in skills are read-only. Duplicate the skill before editing it.");
+    }
     const updatedAt = new Date().toISOString();
     const files = normalizeSkillFiles(skill.files);
     const links = extractSkillLinks(skill.body, files);
+    const sourceKind = options.allowBuiltIn && skill.sourceKind === "builtin" ? "builtin" : "user";
+    const sourceId = sourceKind === "builtin" ? skill.sourceId : null;
+    const sourceVersion = sourceKind === "builtin" ? skill.sourceVersion : null;
+    const sourceHash = sourceKind === "builtin" ? skill.sourceHash : null;
+    const disabledAt = sourceKind === "builtin" ? skill.disabledAt ?? existing?.disabled_at ?? null : null;
+    const duplicatedFrom = sourceKind === "user" ? skill.duplicatedFromSourceId ?? existing?.duplicated_from_source_id ?? null : null;
     this.db.exec("BEGIN IMMEDIATE;");
     try {
       this.db
@@ -88,11 +81,15 @@ export class SqliteSkillsStore {
           `
             INSERT INTO skills (
               id, name, description, when_to_use, content, allowed_tools, tags,
-              disable_model_invocation, user_invocable, updated_at
+              disable_model_invocation, user_invocable, source_kind, source_id,
+              source_version, source_hash, disabled_at, duplicated_from_source_id,
+              updated_at
             )
             VALUES (
               $id, $name, $description, $whenToUse, $content, $allowedTools,
-              $tags, $disableModelInvocation, $userInvocable, $updatedAt
+              $tags, $disableModelInvocation, $userInvocable, $sourceKind,
+              $sourceId, $sourceVersion, $sourceHash, $disabledAt,
+              $duplicatedFromSourceId, $updatedAt
             )
             ON CONFLICT(id) DO UPDATE SET
               name = excluded.name,
@@ -103,6 +100,12 @@ export class SqliteSkillsStore {
               tags = excluded.tags,
               disable_model_invocation = excluded.disable_model_invocation,
               user_invocable = excluded.user_invocable,
+              source_kind = excluded.source_kind,
+              source_id = excluded.source_id,
+              source_version = excluded.source_version,
+              source_hash = excluded.source_hash,
+              disabled_at = excluded.disabled_at,
+              duplicated_from_source_id = excluded.duplicated_from_source_id,
               updated_at = excluded.updated_at
           `,
         )
@@ -116,21 +119,32 @@ export class SqliteSkillsStore {
           $tags: skill.tags,
           $disableModelInvocation: skill.disableModelInvocation ? 1 : 0,
           $userInvocable: skill.userInvocable === false ? 0 : 1,
+          $sourceKind: sourceKind,
+          $sourceId: sourceId,
+          $sourceVersion: sourceVersion,
+          $sourceHash: sourceHash,
+          $disabledAt: disabledAt,
+          $duplicatedFromSourceId: duplicatedFrom,
           $updatedAt: updatedAt,
-        });
+        } as never);
       this.replaceFiles(skill.id, files, updatedAt);
       this.replaceLinks(skill.id, links);
+      replaceSkillSearchChunks(this.db, skill, files, updatedAt);
       this.db.exec("COMMIT;");
-	    } catch (error) {
-	      this.db.exec("ROLLBACK;");
-	      throw error;
-	    }
+    } catch (error) {
+      this.db.exec("ROLLBACK;");
+      throw error;
+    }
     const entry = this.get(skill.id)!;
     this.onDirtyIndex?.({ skills: [entry.id] });
     return entry;
   }
 
   delete(id: string): boolean {
+    const existing = this.get(id);
+    if (existing?.source_kind === "builtin") {
+      throw new Error("Built-in skills cannot be deleted. Disable them instead.");
+    }
     const chunkIds = this.vecEnabled ? this.db
       .query("SELECT id FROM skill_embedding_chunks WHERE skill_id = $id")
       .all({ $id: id }) as Array<{ id: number }> : [];
@@ -150,10 +164,13 @@ export class SqliteSkillsStore {
     return this.isHybridReady() && (this.reranker?.available() ?? false);
   }
 
-  count(opts: { query?: string } = {}): number {
+  count(opts: { query?: string; activeOnly?: boolean } = {}): number {
     const where = buildSkillsWhere({ query: opts.query, cursor: null });
+    const whereSql = opts.activeOnly
+      ? `${where.sql || "WHERE"} ${where.sql ? "AND " : ""}${activeSkillSql("skills")}`
+      : where.sql;
     const row = this.db
-      .query(`SELECT COUNT(*) AS c FROM skills ${where.sql}`)
+      .query(`SELECT COUNT(*) AS c FROM skills ${whereSql}`)
       .get(where.params as never) as { c: number } | undefined;
     return row?.c ?? 0;
   }
@@ -190,6 +207,11 @@ export class SqliteSkillsStore {
     return row ? this.entry(row) : null;
   }
 
+  getBySourceId(sourceId: string): SkillEntry | null {
+    const id = builtInLocalIdForSource(this.db, sourceId);
+    return id ? this.get(id) : null;
+  }
+
   getByName(name: string): SkillEntry | null {
     const normalized = normalizeName(name);
     if (!normalized) return null;
@@ -200,7 +222,7 @@ export class SqliteSkillsStore {
     return row ? this.entry(row) : null;
   }
 
-  getByIds(ids: readonly string[]): SkillEntry[] {
+  getByIds(ids: readonly string[], opts: { activeOnly?: boolean } = {}): SkillEntry[] {
     const uniqueIds = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
     if (uniqueIds.length === 0) return [];
     const rows = this.db
@@ -213,7 +235,7 @@ export class SqliteSkillsStore {
     const byId = new Map(rows.map((row) => [row.id, this.entry(row)]));
     return uniqueIds.flatMap((id) => {
       const entry = byId.get(id);
-      return entry ? [entry] : [];
+      return entry && (!opts.activeOnly || isSkillAvailable(entry)) ? [entry] : [];
     });
   }
 
@@ -222,10 +244,14 @@ export class SqliteSkillsStore {
     limit: number;
     query?: string;
     sort?: "name" | "retrieved";
+    activeOnly?: boolean;
   }): { items: SkillEntry[]; nextCursor: { name: string; id: string; retrievedCount?: number } | null } {
     const limit = Math.max(1, opts.limit);
     const sort = opts.sort ?? "name";
     const where = buildSkillsWhere({ query: opts.query, cursor: opts.cursor, sort });
+    const whereSql = opts.activeOnly
+      ? `${where.sql || "WHERE"} ${where.sql ? "AND " : ""}${activeSkillSql("skills")}`
+      : where.sql;
     const orderBy = sort === "retrieved"
       ? "retrieved_count DESC, name ASC, id ASC"
       : "name ASC, id ASC";
@@ -233,7 +259,7 @@ export class SqliteSkillsStore {
       .query(
         `SELECT ${selectSkillColumns()}
          FROM skills
-         ${where.sql}
+         ${whereSql}
          ORDER BY ${orderBy}
          LIMIT $__limit`,
       )
@@ -259,6 +285,13 @@ export class SqliteSkillsStore {
     return rows.map((row) => this.entry(row));
   }
 
+  setBuiltInSkillDisabled(sourceId: string): SkillEntry { return setBuiltInDisabled(this.builtInContext(), sourceId, true); }
+  setBuiltInSkillEnabled(sourceId: string): SkillEntry { return setBuiltInDisabled(this.builtInContext(), sourceId, false); }
+
+  duplicateBuiltInSkill(sourceId: string): SkillEntry {
+    return duplicateBuiltIn(this.builtInContext(), sourceId);
+  }
+
   incrementRetrieved(ids: readonly string[]): void {
     const uniqueIds = [...new Set(ids.map((id) => id.trim()).filter(Boolean))];
     if (uniqueIds.length === 0) return;
@@ -274,29 +307,9 @@ export class SqliteSkillsStore {
 
   search(queries: readonly string[], perQueryLimit = 3): SkillEntry[] {
     if (queries.length === 0) return [];
-    const sanitized: string[] = [];
-    for (const q of queries) {
-      const quoted = quoteForFts5(q);
-      if (quoted) sanitized.push(quoted);
-    }
-    if (sanitized.length === 0) return [];
-    const matchExpr = sanitized.join(" OR ");
-    const rows = this.db
-      .query(
-        `
-          SELECT ${selectSkillColumns("s")}
-          FROM skills_fts f
-          JOIN skills s ON s.rowid = f.rowid
-          WHERE skills_fts MATCH $match
-          ORDER BY rank, s.used_count DESC, s.retrieved_count DESC, s.name ASC
-          LIMIT $limit
-        `,
-      )
-      .all({
-        $match: matchExpr,
-        $limit: sanitized.length * perQueryLimit,
-      }) as SkillRow[];
-    return rows.map((row) => this.entry(row));
+    return searchSkillChunkIds(this.db, queries, perQueryLimit)
+      .ids
+      .flatMap((id) => this.get(id) ?? []);
   }
 
   resolveSearchQueries(queries: readonly string[], perQueryLimit = 3): SkillResolvedMatch[] {
@@ -306,12 +319,12 @@ export class SqliteSkillsStore {
       const query = raw.trim();
       if (!query) continue;
       const byId = this.get(query) ?? this.get(slugify(query));
-      if (byId) {
+      if (byId && isSkillAvailable(byId)) {
         addResolved(matches, seen, byId, query, "id");
         continue;
       }
       const byName = this.getByName(query);
-      if (byName) {
+      if (byName && isSkillAvailable(byName)) {
         addResolved(matches, seen, byName, query, "name");
         continue;
       }
@@ -330,19 +343,18 @@ export class SqliteSkillsStore {
       const query = raw.trim();
       if (!query) continue;
       const byId = this.get(query) ?? this.get(slugify(query));
-      if (byId) {
+      if (byId && isSkillAvailable(byId)) {
         addResolved(matches, seen, byId, query, "id");
         continue;
       }
       const byName = this.getByName(query);
-      if (byName) {
+      if (byName && isSkillAvailable(byName)) {
         addResolved(matches, seen, byName, query, "name");
         continue;
       }
-      const quoted = quoteForFts5(query);
-      const result = quoted && this.isHybridReady() && this.embedder ? await hybridSkillSearch({
+      const result = this.isHybridReady() && this.embedder ? await hybridSkillSearch({
         db: this.db, embedder: this.embedder, reranker: this.reranker?.available() ? this.reranker : null,
-        rawQueries: [query], ftsExpressions: [quoted], perQueryLimit,
+        rawQueries: [query], perQueryLimit,
       }) : null;
       if (result) diagnostics.push(result.diagnostics);
       const skills = result ? result.ids.flatMap((id) => this.get(id) ?? []) : this.search([query], perQueryLimit);
@@ -410,53 +422,18 @@ export class SqliteSkillsStore {
     return row ? fileRowToEntry(row) : null;
   }
 
-  recentUsage(skillId: string, limit = 5): SkillUsageEvent[] {
-    const rows = this.db
-      .query(
-        `SELECT *
-         FROM skill_events
-         WHERE skill_id = $skillId AND event_type = 'used'
-         ORDER BY id DESC
-         LIMIT $limit`,
-      )
-      .all({ $skillId: skillId, $limit: Math.max(1, limit) }) as SkillEventRow[];
-    return rows.map(eventRowToEntry);
-  }
-
   private entry(row: SkillRow): SkillEntry {
+    return skillEntryFromRow(this.db, row);
+  }
+
+  private builtInContext() {
     return {
-      id: row.id,
-      name: row.name,
-      description: row.description,
-      when_to_use: row.when_to_use,
-      allowed_tools: row.allowed_tools,
-      tags: row.tags,
-      body: shiftHeadingsToAtLeastH4(row.content),
-      files: this.files(row.id),
-      links: this.links(row.id),
-      recent_usage: this.recentUsage(row.id),
-      retrieved_count: row.retrieved_count,
-      used_count: row.used_count,
-      disable_model_invocation: Boolean(row.disable_model_invocation),
-      user_invocable: Boolean(row.user_invocable),
-      last_retrieved_at: row.last_retrieved_at,
-      last_used_at: row.last_used_at,
-      updated_at: row.updated_at,
+      db: this.db,
+      get: (id: string) => this.get(id),
+      getBySourceId: (sourceId: string) => this.getBySourceId(sourceId),
+      upsert: (skill: SkillUpsert) => this.upsert(skill),
+      onDirtyIndex: this.onDirtyIndex,
     };
-  }
-
-  private files(skillId: string): SkillFileEntry[] {
-    const rows = this.db
-      .query("SELECT path, content, content_hash, bytes, updated_at FROM skill_files WHERE skill_id = $id ORDER BY path")
-      .all({ $id: skillId }) as SkillFileRow[];
-    return rows.map(fileRowToEntry);
-  }
-
-  private links(skillId: string): string[] {
-    const rows = this.db
-      .query("SELECT target_skill_id FROM skill_links WHERE skill_id = $id ORDER BY target_skill_id")
-      .all({ $id: skillId }) as Array<{ target_skill_id: string }>;
-    return rows.map((row) => row.target_skill_id);
   }
 
   private replaceFiles(skillId: string, files: readonly SkillFileInput[], updatedAt: string): void {

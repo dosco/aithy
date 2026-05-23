@@ -12,6 +12,10 @@ export interface SkillForm {
   tags: string;
   disableModelInvocation: boolean;
   userInvocable: boolean;
+  sourceKind: "user" | "builtin";
+  sourceId: string | null;
+  disabledAt: string | null;
+  duplicatedFromSourceId: string | null;
   files: Array<{ path: string; content: string }>;
 }
 
@@ -25,6 +29,10 @@ export const emptySkillForm: SkillForm = {
   tags: "",
   disableModelInvocation: false,
   userInvocable: true,
+  sourceKind: "user",
+  sourceId: null,
+  disabledAt: null,
+  duplicatedFromSourceId: null,
   files: [],
 };
 
@@ -41,6 +49,11 @@ export function SkillCard({ entry, onOpen }: { entry: SkillDto; onOpen: () => vo
   const tools = skillToolCount(entry.allowedTools);
   const tags = splitWords(entry.tags);
   const updated = formatUpdated(entry.updatedAt);
+  const badges = [
+    entry.sourceKind === "builtin" ? "Built-in" : "User",
+    entry.disabledAt ? "Disabled" : null,
+    entry.duplicatedFromSourceId ? "Copied" : null,
+  ].filter((badge): badge is string => Boolean(badge));
 
   return (
     <motion.li layout transition={{ type: "spring", stiffness: 360, damping: 32 }}>
@@ -65,6 +78,22 @@ export function SkillCard({ entry, onOpen }: { entry: SkillDto; onOpen: () => vo
               {tools} {tools === 1 ? "tool" : "tools"}
             </span>
           ) : null}
+        </div>
+
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {badges.map((badge) => (
+            <span
+              key={badge}
+              className={cn(
+                "rounded-full border px-2 py-0.5 text-[11px]",
+                badge === "Disabled"
+                  ? "border-amber-400/50 bg-amber-400/10 text-amber-700 dark:text-amber-200"
+                  : "border-[rgb(var(--border))] text-[rgb(var(--muted-foreground))]",
+              )}
+            >
+              {badge}
+            </span>
+          ))}
         </div>
 
         {entry.description ? (

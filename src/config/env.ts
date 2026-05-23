@@ -13,6 +13,8 @@ import { defaultLocalInferenceSettings, type LocalInferenceSettings } from "../l
 import type { SearchProviderId } from "../settings/types";
 
 export type SandboxProviderKind = "microsandbox" | "disabled";
+export const DEFAULT_SANDBOX_IMAGE = "ghcr.io/dosco/aithy-sandbox:latest";
+export const LEGACY_DEFAULT_SANDBOX_IMAGE = "python:3.11-slim";
 
 export interface GlobalMount {
   hostPath: string;
@@ -65,7 +67,7 @@ export function loadConfig(
     localAgentModel: DEFAULT_LOCAL_AGENT_MODEL_ID,
     localInference: defaultLocalInferenceSettings,
     sandboxProvider: "microsandbox",
-    sandboxImage: "python:3.11-slim",
+    sandboxImage: DEFAULT_SANDBOX_IMAGE,
     sandboxCpus: 1,
     sandboxMemoryMb: 512,
     sandboxNetwork: "none",

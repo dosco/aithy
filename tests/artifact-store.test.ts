@@ -3,26 +3,31 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 import { SqliteArtifactStore } from "../src/artifacts/artifact-store";
-import { normalizeRunOutboxPath } from "../src/artifacts/paths";
+import { normalizeRunOutboxPath, runOutboxPath } from "../src/artifacts/paths";
 import { mimeTypeForPath, previewForFile } from "../src/artifacts/preview";
 import { serveArtifactRequest } from "../src/artifacts/serve";
 
 describe("artifact outbox paths", () => {
-  const runOutbox = "/outbox/sessions/conversation/runs/run-1";
+  const runOutbox = "/outbox/conversation/run-1";
 
   test("normalizes supported run outbox path forms", () => {
     expect(normalizeRunOutboxPath("report.md", runOutbox)).toEqual({
       sandboxPath: `${runOutbox}/report.md`,
-      relativePath: "sessions/conversation/runs/run-1/report.md",
+      relativePath: "conversation/run-1/report.md",
     });
     expect(normalizeRunOutboxPath(`${runOutbox}/nested/report.md`, runOutbox)).toEqual({
       sandboxPath: `${runOutbox}/nested/report.md`,
-      relativePath: "sessions/conversation/runs/run-1/nested/report.md",
+      relativePath: "conversation/run-1/nested/report.md",
     });
   });
 
+  test("uses compact safe session and run segments", () => {
+    expect(runOutboxPath("conversation", "run-1")).toBe("/outbox/conversation/run-1");
+    expect(runOutboxPath("team/chat", "..")).toMatch(/^\/outbox\/team-chat-[a-f0-9]{8}\/item-[a-f0-9]{8}$/);
+  });
+
   test("rejects paths outside the outbox or with traversal", () => {
-    expect(() => normalizeRunOutboxPath("/outbox/sessions/other/runs/run-2/report.md", runOutbox)).toThrow("current run");
+    expect(() => normalizeRunOutboxPath("/outbox/other/run-2/report.md", runOutbox)).toThrow("current run");
     expect(() => normalizeRunOutboxPath("../secret.txt", runOutbox)).toThrow("Path traversal");
     expect(() => normalizeRunOutboxPath("/workspace/outbox/report.md", runOutbox)).toThrow("New artifacts");
   });
@@ -31,8 +36,8 @@ describe("artifact outbox paths", () => {
 describe("SqliteArtifactStore", () => {
   test("publishes, reads, serves, and deletes live outbox artifacts", async () => {
     const { store, outbox } = await artifactStore();
-    const runOutbox = "/outbox/sessions/conversation/runs/run-1";
-    await writeOutbox(outbox, "sessions/conversation/runs/run-1/report.md", "# Report\n\nhello");
+    const runOutbox = "/outbox/conversation/run-1";
+    await writeOutbox(outbox, "conversation/run-1/report.md", "# Report\n\nhello");
 
     const artifact = await store.publish({
       sessionId: "conversation",
@@ -47,7 +52,7 @@ describe("SqliteArtifactStore", () => {
       sessionId: "conversation",
       runId: "run-1",
       sandboxPath: `${runOutbox}/report.md`,
-      relativePath: "sessions/conversation/runs/run-1/report.md",
+      relativePath: "conversation/run-1/report.md",
       title: "Weekly report",
       description: "Generated report",
       filename: "report.md",
@@ -59,7 +64,7 @@ describe("SqliteArtifactStore", () => {
     });
     expect(store.get(artifact.id)).toMatchObject({ title: "Weekly report" });
 
-    await writeOutbox(outbox, "sessions/conversation/runs/run-1/report.md", "updated");
+    await writeOutbox(outbox, "conversation/run-1/report.md", "updated");
     const served = await serveArtifactRequest(
       new Request(`http://127.0.0.1/api/artifacts/${artifact.id}`),
       store,
@@ -67,6 +72,7 @@ describe("SqliteArtifactStore", () => {
     );
     expect(served.status).toBe(200);
     expect(served.headers.get("content-disposition")).toContain("inline");
+    expect(served.headers.get("content-security-policy")).toContain("sandbox");
     expect(await served.text()).toBe("updated");
 
     const download = await serveArtifactRequest(
@@ -76,7 +82,7 @@ describe("SqliteArtifactStore", () => {
     );
     expect(download.headers.get("content-disposition")).toContain("attachment");
 
-    await rm(path.join(outbox, "sessions/conversation/runs/run-1/report.md"));
+    await rm(path.join(outbox, "conversation/run-1/report.md"));
     const missing = await serveArtifactRequest(
       new Request(`http://127.0.0.1/api/artifacts/${artifact.id}`),
       store,
@@ -88,15 +94,41 @@ describe("SqliteArtifactStore", () => {
     store.close();
   });
 
+  test("deletes current-session artifact records and managed files", async () => {
+    const { store, outbox } = await artifactStore();
+    const current = await store.write({
+      sessionId: "conversation",
+      runId: "run-1",
+      runOutboxPath: "/outbox/conversation/run-1",
+      path: "current.txt",
+      content: "current",
+    });
+    const other = await store.write({
+      sessionId: "other",
+      runId: "run-1",
+      runOutboxPath: "/outbox/other/run-1",
+      path: "other.txt",
+      content: "other",
+    });
+
+    await expect(store.deleteForSessions(["conversation"], { deleteFiles: true })).resolves.toBe(1);
+
+    expect(store.get(current.id)).toBeNull();
+    expect(store.get(other.id)).not.toBeNull();
+    expect(await Bun.file(path.join(outbox, current.relativePath)).exists()).toBe(false);
+    expect(await Bun.file(path.join(outbox, other.relativePath)).exists()).toBe(true);
+    store.close();
+  });
+
   test("rejects symlinks and classifies image, binary, and large text previews", async () => {
     const { store, outbox } = await artifactStore();
-    const runOutbox = "/outbox/sessions/c/runs/run-1";
-    await writeOutbox(outbox, "sessions/c/runs/run-1/image.png", "not really a png");
-    await writeOutbox(outbox, "sessions/c/runs/run-1/file.pdf", "%PDF");
-    await writeOutbox(outbox, "sessions/c/runs/run-1/large.txt", "x".repeat(70 * 1024));
+    const runOutbox = "/outbox/c/run-1";
+    await writeOutbox(outbox, "c/run-1/image.png", "not really a png");
+    await writeOutbox(outbox, "c/run-1/file.pdf", "%PDF");
+    await writeOutbox(outbox, "c/run-1/large.txt", "x".repeat(70 * 1024));
     const secret = path.join(outbox, "secret.txt");
     await Bun.write(secret, "secret");
-    await symlink(secret, path.join(outbox, "sessions/c/runs/run-1/link.txt"));
+    await symlink(secret, path.join(outbox, "c/run-1/link.txt"));
 
     const base = { sessionId: "c", runId: "run-1", runOutboxPath: runOutbox };
     await expect(store.publish({ ...base, path: "link.txt" }))

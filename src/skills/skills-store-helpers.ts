@@ -21,6 +21,12 @@ export const skillColumns = [
   "used_count",
   "disable_model_invocation",
   "user_invocable",
+  "source_kind",
+  "source_id",
+  "source_version",
+  "source_hash",
+  "disabled_at",
+  "duplicated_from_source_id",
   "last_retrieved_at",
   "last_used_at",
   "updated_at",
@@ -41,6 +47,14 @@ export function addResolved(
   if (seen.has(skill.id)) return;
   seen.add(skill.id);
   matches.push({ skill, query, matchKind });
+}
+
+export function isSkillAvailable(skill: { source_kind: string; disabled_at: string | null }): boolean {
+  return !(skill.source_kind === "builtin" && skill.disabled_at);
+}
+
+export function activeSkillSql(alias = "s"): string {
+  return `NOT (${alias}.source_kind = 'builtin' AND ${alias}.disabled_at IS NOT NULL)`;
 }
 
 export function normalizeName(name: string): string {

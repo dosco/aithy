@@ -2,7 +2,7 @@ import { SqliteSessionStateStore } from "../../../session/sqlite-state-store";
 import type { BotMessage } from "../../../session/types";
 import { RuntimeStore, type RuntimeCommandRow } from "../../runtime-store";
 import { RuntimeLogRateLimiter } from "../../log-rate-limit";
-import { commandError, type CommandCompletion, type RuntimeQueueStatus, type RuntimeServiceRole, type RuntimeServiceStatus } from "../../protocol/types";
+import { commandError, type CommandCompletion, type RuntimeQueueStatus, type RuntimeServicePlacement, type RuntimeServiceRole, type RuntimeServiceStatus } from "../../protocol/types";
 import type { RuntimeBusClientFrame, RuntimeBusRequest, RuntimeBusServerFrame } from "../../protocol/bus";
 import { loadBaseConfig } from "../../resolve-effective-config";
 import { QueueSessionCache } from "./session-cache";
@@ -12,6 +12,13 @@ const CHAT_QUEUE_ID = "agent.chat";
 const BASE_CHAT_DEPENDENCIES: RuntimeServiceRole[] = ["sandbox-worker"];
 
 type RuntimeSocket = Bun.ServerWebSocket<{ role?: RuntimeServiceRole }>;
+
+export interface QueueServiceRuntimeOptions {
+  token?: string;
+  port?: number;
+  placement?: RuntimeServicePlacement;
+  stateDbPath?: string;
+}
 
 interface PendingWaiter {
   resolve: (completion: CommandCompletion) => void;
@@ -34,21 +41,23 @@ export class QueueServiceRuntime {
     private readonly sessions: QueueSessionCache,
     private readonly token: string,
     private readonly port: number,
+    private readonly placement: RuntimeServicePlacement,
   ) {}
 
-  static create(): QueueServiceRuntime {
-    const config = loadBaseConfig();
-    const runtimeStore = new RuntimeStore(config.stateDbPath);
+  static create(options: QueueServiceRuntimeOptions = {}): QueueServiceRuntime {
+    const stateDbPath = options.stateDbPath ?? loadBaseConfig().stateDbPath;
+    const runtimeStore = new RuntimeStore(stateDbPath);
     let runtime: QueueServiceRuntime;
     const sessions = new QueueSessionCache(
-      new SqliteSessionStateStore(config.stateDbPath),
+      new SqliteSessionStateStore(stateDbPath),
       (event) => runtime.publish(event),
     );
     runtime = new QueueServiceRuntime(
       runtimeStore,
       sessions,
-      requiredEnv("AITHY_QUEUE_TOKEN"),
-      Number(requiredEnv("AITHY_QUEUE_PORT")),
+      options.token ?? requiredEnv("AITHY_QUEUE_TOKEN"),
+      options.port ?? Number(requiredEnv("AITHY_QUEUE_PORT")),
+      options.placement ?? "process",
     );
     for (const command of runtimeStore.unfinishedCommands()) {
       if (command.status === "claimed") {
@@ -76,7 +85,7 @@ export class QueueServiceRuntime {
         close: (ws) => this.closeSocket(ws),
       },
     });
-    this.setService("queue-service", "ready", { port: this.server.port }, process.pid);
+    this.setService("queue-service", "ready", { port: this.server.port, placement: this.placement }, process.pid);
     this.publishLog({ role: "queue-service", level: "info", source: "startup", message: `queue-service ready on ${this.server.port}` });
     console.log(`[queue-service] ready ${JSON.stringify({ url: this.url(), port: this.server.port })}`);
   }
@@ -109,7 +118,7 @@ export class QueueServiceRuntime {
     if (frame.type === "hello") {
       ws.data.role = frame.role;
       if (frame.role !== "web" && frame.role !== "queue-service") this.workers.set(frame.role, ws);
-      this.setService(frame.role, "starting", { connected: true }, frame.pid);
+      this.setService(frame.role, "starting", serviceConnectionDetail(frame.placement), frame.pid);
       this.dispatchAll();
       return;
     }
@@ -393,6 +402,10 @@ function localInferenceRequiredForServices(
   const detail = services.get("local-inference-worker")?.detail;
   if (!detail || typeof detail !== "object") return false;
   return (detail as Record<string, unknown>).required === true;
+}
+
+function serviceConnectionDetail(placement: RuntimeServicePlacement | undefined): Record<string, unknown> {
+  return placement ? { connected: true, placement } : { connected: true };
 }
 
 function reviveLogicalInput(input: unknown): Parameters<QueueSessionCache["ensure"]>[0] {

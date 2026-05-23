@@ -1,8 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
-import { stat } from "node:fs/promises";
-import { homedir } from "node:os";
-import path from "node:path";
 import { isCustomOpenAIProvider } from "../../src/agent/ai-providers";
 import type { AppConfig } from "../../src/config/env";
 import { isAiConfigured } from "../../src/config/validate";
@@ -41,6 +38,7 @@ import {
   secretStatus,
   secretStatusForProvider,
 } from "./dto";
+import { prepareGlobalMounts } from "./settings-mounts";
 import { setupGateStateDto } from "./web-state.dto";
 
 export const saveSettings = createServerFn({ method: "POST" })
@@ -225,43 +223,6 @@ export const saveLocalInferenceSettings = createServerFn({ method: "POST" })
       setupGate: setupGateStateDto(runtime),
     };
   });
-
-async function prepareGlobalMounts(
-  input: Array<{ hostPath: string }>,
-  workspaceRoot: string,
-): Promise<{ mounts: Array<{ hostPath: string }>; skippedPaths: string[] }> {
-  const seen = new Set<string>();
-  const out: Array<{ hostPath: string }> = [];
-  const skippedPaths: string[] = [];
-  const normWorkspace = path.resolve(workspaceRoot);
-  for (const entry of input) {
-    const raw = entry.hostPath.trim();
-    if (!raw) continue;
-    const expanded = expandHome(raw);
-    if (!path.isAbsolute(expanded)) throw new Error(`Mount path must be absolute: ${raw}`);
-    const resolved = path.resolve(expanded);
-    if (resolved === "/workspace" || resolved === "/cache") throw new Error(`Cannot mount reserved path: ${resolved}`);
-    const rel = path.relative(normWorkspace, resolved);
-    if (rel === "" || (!rel.startsWith("..") && !path.isAbsolute(rel))) {
-      throw new Error(`Cannot mount a path inside the workspace root: ${resolved}`);
-    }
-    if (seen.has(resolved)) continue;
-    seen.add(resolved);
-    out.push({ hostPath: resolved });
-    try {
-      await stat(resolved);
-    } catch {
-      skippedPaths.push(resolved);
-    }
-  }
-  return { mounts: out, skippedPaths };
-}
-
-function expandHome(value: string): string {
-  if (value === "~") return homedir();
-  if (value.startsWith("~/")) return path.join(homedir(), value.slice(2));
-  return value;
-}
 
 function normalizeParallelSearchMcpUrl(value: string): string {
   const trimmed = value.trim();

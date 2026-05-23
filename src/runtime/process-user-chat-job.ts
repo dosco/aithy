@@ -9,6 +9,7 @@ import type { EventBus } from "../events/bus";
 import type { SqliteMemoryStore } from "../memory/memory-store";
 import type { MemoryQueue } from "../memory/memory-queue";
 import type { SqliteEpisodeStore } from "../episodes/episode-store";
+import type { SqliteTranscriptRecallStore } from "../retrieval/transcript-recall";
 import type { DreamQueue } from "../episodes/dream-queue";
 import type { SkillCandidateQueue } from "../skills/candidate-queue";
 import type { NotificationCreate, NotificationEntry } from "../notifications/types";
@@ -17,7 +18,7 @@ import type { SandboxProvider } from "../sandbox/provider";
 import type { CapabilityBroker } from "../security/capability-broker";
 import type { SessionManager } from "../session/session-manager";
 import type { SoulProfile } from "../soul/types";
-import { formatSkillContent, type SkillMatchKind } from "../skills/skills-store";
+import { formatSkillContent, formatSkillSearchContent, type SkillMatchKind } from "../skills/skills-store";
 import type { SkillResolvedMatch, SqliteSkillsStore } from "../skills/skills-store";
 import type { SqliteUsageStore } from "../usage/usage-store";
 import type { RuntimeStore } from "./runtime-store";
@@ -34,6 +35,7 @@ interface RuntimeForUserChat {
   profile?: UserProfile;
   memory: SqliteMemoryStore;
   episodes?: SqliteEpisodeStore;
+  transcripts?: SqliteTranscriptRecallStore;
   artifacts: SqliteArtifactStore;
   memoryQueue: MemoryQueue;
   dreamQueue?: DreamQueue;
@@ -75,6 +77,7 @@ export async function processUserChatJob(
     profile: runtime.profile,
     memory: runtime.memory,
     episodes: runtime.episodes,
+    transcripts: runtime.transcripts,
     artifacts: runtime.artifacts,
     memoryQueue: runtime.memoryQueue,
     usage: runtime.usage,
@@ -143,7 +146,7 @@ export function createTrackedSkills(
   selectedIds: readonly string[],
   context: { sessionId?: string | null; taskId?: string | null } = {},
 ) {
-  const selectedSkills = store.getByIds([...selectedIds]);
+  const selectedSkills = store.getByIds([...selectedIds], { activeOnly: true });
   const loadedSkillIds = new Set<string>();
   const usedSkillIds = new Set<string>();
   const recordLoaded = (matches: readonly SkillResolvedMatch[]) => {
@@ -192,12 +195,12 @@ export function createTrackedSkills(
         const startedAt = performance.now();
         const matches = store.resolveSearchQueries(queries);
         recordLoaded(matches);
-        const results = matches.map(({ skill }) => ({ id: skill.id, name: skill.name, content: formatSkillContent(skill) }));
+        const results = matches.map(({ skill }) => ({ id: skill.id, name: skill.name, content: formatSkillSearchContent(skill) }));
         return Object.assign(results, { diagnostics: [retrievalDiagnostics({ source: "skills", mode: "fts-only", queryCount: queries.length, startedAt, sources: [] })] });
       }
       return store.resolveSearchQueriesSemantic(queries).then((matches) => {
         recordLoaded(matches);
-        const results = matches.map(({ skill }) => ({ id: skill.id, name: skill.name, content: formatSkillContent(skill) }));
+        const results = matches.map(({ skill }) => ({ id: skill.id, name: skill.name, content: formatSkillSearchContent(skill) }));
         return Object.assign(results, (matches as { diagnostics?: unknown }).diagnostics ? { diagnostics: (matches as { diagnostics?: unknown }).diagnostics } : {});
       });
     },
@@ -205,7 +208,9 @@ export function createTrackedSkills(
       const matches = results.flatMap((result): SkillResolvedMatch[] => {
         if (!result.id || loadedSkillIds.has(result.id)) return [];
         const skill = store.get(result.id);
-        return skill ? [{ skill, query: result.id, matchKind: "id" }] : [];
+        return skill && !(skill.source_kind === "builtin" && skill.disabled_at)
+          ? [{ skill, query: result.id, matchKind: "id" }]
+          : [];
       });
       recordLoaded(matches);
     },

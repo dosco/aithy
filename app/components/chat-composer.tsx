@@ -62,13 +62,13 @@ export function ChatComposer({
     let cancelled = false;
     const query = skillQuery.trim();
     const input = query
-      ? { cursor: null, query, limit: 10 }
-      : { cursor: null, limit: 10, sort: "retrieved" as const };
+      ? { cursor: null, query, limit: 10, activeOnly: true }
+      : { cursor: null, limit: 10, sort: "retrieved" as const, activeOnly: true };
     void listSkillsPaged({ data: input }).then(async (result) => {
       if (cancelled) return;
       if (query && result.items.length === 0) {
         const fallback = await listSkillsPaged({
-          data: { cursor: null, limit: 10, sort: "retrieved" },
+          data: { cursor: null, limit: 10, sort: "retrieved", activeOnly: true },
         });
         if (!cancelled) {
           setSkillResults(fallback.items);

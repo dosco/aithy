@@ -47,6 +47,24 @@ describe("processUserChatJob skill tracking", () => {
       store.close();
     }
   });
+
+  test("caps search-discovered skill payloads", async () => {
+    const dir = await mkdtemp(path.join(tmpdir(), "aithy-skill-cap-"));
+    const store = new SqliteSkillsStore(path.join(dir, "state.db"));
+    store.upsert({
+      id: "long-skill",
+      name: "Long Skill",
+      description: "Long body.",
+      body: "repeat ".repeat(800),
+      allowedTools: null,
+      tags: "long",
+    });
+
+    const tracked = createTrackedSkills(store, []);
+    const [result] = await tracked.skillsSearch(["long"]);
+    expect(result.content.length).toBeLessThan(3_000);
+    expect(result.content).toContain("[truncated]");
+  });
 });
 
 describe("post-turn background tasks", () => {

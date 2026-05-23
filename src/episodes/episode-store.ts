@@ -16,6 +16,8 @@ import {
   sourceStats,
   type RetrievalDiagnostics,
 } from "../retrieval/diagnostics";
+import { addFusedHit, sortedFused, type FusedCandidate } from "../retrieval/fusion";
+import { buildRetrievalQueryPlan, type LexicalSearchQuery } from "../retrieval/query-plan";
 import type { EmbeddingHealthStats, TargetIndexCounts } from "../retrieval/indexing";
 
 interface EpisodeRow {
@@ -213,8 +215,8 @@ export class SqliteEpisodeStore {
         }),
       };
     }
-    const sanitized = queries.map(quoteForFts5).filter((query): query is string => query.length > 0);
-    if (sanitized.length === 0) {
+    const plan = buildRetrievalQueryPlan(queries);
+    if (plan.lexicalQueries.length === 0) {
       return {
         entries: [],
         diagnostics: retrievalDiagnostics({
@@ -233,8 +235,8 @@ export class SqliteEpisodeStore {
         db: this.db,
         embedder: this.embedder!,
         reranker: this.reranker?.available() ? this.reranker : null,
-        rawQueries: queries,
-        ftsExpressions: sanitized,
+        rawQueries: plan.semanticQueries,
+        ftsQueries: plan.lexicalQueries,
         opts,
         perQueryLimit: limit,
       });
@@ -252,7 +254,7 @@ export class SqliteEpisodeStore {
       };
     }
 
-    return this.searchFtsOnly(sanitized, opts, limit, queries.length, startedAt);
+    return this.searchFtsOnly(plan.lexicalQueries, opts, limit, queries.length, startedAt);
   }
 
   async backfillEmbeddings(): Promise<EpisodeBackfillResult> {
@@ -308,49 +310,51 @@ export class SqliteEpisodeStore {
   }
 
   private searchFtsOnly(
-    sanitized: readonly string[],
+    lexicalQueries: readonly LexicalSearchQuery[],
     opts: EpisodeSearchOptions,
     limit: number,
     queryCount: number,
     startedAt: number,
   ): { entries: AgentEpisodeEntry[]; diagnostics: RetrievalDiagnostics } {
-    const matchExpr = sanitized.join(" OR ");
     const excludeFilter = opts.excludeIds?.length
       ? ` AND e.id NOT IN (${opts.excludeIds.map((_, i) => `$excl${i}`).join(", ")})`
       : "";
-    const params: Record<string, SQLQueryBindings> = {
-      $match: matchExpr,
-      $limit: sanitized.length * limit * 2,
-    };
+    const params: Record<string, SQLQueryBindings> = {};
     opts.excludeIds?.forEach((id, i) => {
       params[`$excl${i}`] = id;
     });
 
-    const rows = this.db
-      .query(
-        `SELECT e.*, bm25(agent_episodes_fts) AS bm25
-         FROM agent_episodes_fts f
-         JOIN agent_episodes e ON e.rowid = f.rowid
-         WHERE agent_episodes_fts MATCH $match
-           ${excludeFilter}
-         ORDER BY rank
-         LIMIT $limit`,
-      )
-      .all(params as never) as SearchRow[];
+    const fused = new Map<string, FusedCandidate<SearchRow>>();
+    let ftsCandidates = 0;
+    for (const query of lexicalQueries) {
+      const rows = this.db
+        .query(
+          `SELECT e.*, bm25(agent_episodes_fts) AS bm25
+           FROM agent_episodes_fts f
+           JOIN agent_episodes e ON e.rowid = f.rowid
+           WHERE agent_episodes_fts MATCH $match
+             ${excludeFilter}
+           ORDER BY rank
+           LIMIT $limit`,
+        )
+        .all({ ...params, $match: query.expression, $limit: 30 } as never) as SearchRow[];
+      ftsCandidates += rows.length;
+      rows.forEach((row, rank) => addFusedHit(fused, row.id, row, query.lane, rank));
+    }
 
     const now = Date.now();
-    const ranked = rows
-      .map((row) => ({
-        entry: rowToEpisode(row),
+    const ranked = sortedFused(fused)
+      .map((candidate) => ({
+        entry: rowToEpisode(candidate.item),
         score: score({
-          bm25: row.bm25,
-          importance: row.importance,
-          updatedAt: row.updated_at,
+          bm25: -candidate.fusedScore,
+          importance: candidate.item.importance,
+          updatedAt: candidate.item.updated_at,
           now,
         }),
       }))
       .sort((a, b) => b.score - a.score)
-      .slice(0, sanitized.length * limit);
+      .slice(0, lexicalQueries.length * limit);
 
     if (opts.markRecalled !== false && ranked.length > 0) {
       this.markRecalled(ranked.map((rank) => rank.entry.id));
@@ -365,8 +369,8 @@ export class SqliteEpisodeStore {
         startedAt,
         sources: [sourceStats({
           source: "episodes",
-          ftsCandidates: rows.length,
-          fusedCandidates: rows.length,
+          ftsCandidates,
+          fusedCandidates: fused.size,
           finalMatches: entries.length,
         })],
       }),
@@ -485,13 +489,4 @@ function clamp01(value: number): number {
   if (value < 0) return 0;
   if (value > 1) return 1;
   return value;
-}
-
-function quoteForFts5(raw: string): string {
-  const cleaned = raw
-    .replace(/[^\p{L}\p{N}\s_-]/gu, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!cleaned) return "";
-  return `"${cleaned}"`;
 }

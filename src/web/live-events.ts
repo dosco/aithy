@@ -57,6 +57,7 @@ export type SerializableBotMessage =
       kind: "artifact";
       id: string;
       sessionId: string;
+      runId: string | null;
       sandboxPath: string;
       relativePath: string;
       title: string;

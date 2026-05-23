@@ -9,6 +9,7 @@ import { assertStartupConfig } from "../config/validate";
 import { EventBus } from "../events/bus";
 import { SqliteMemoryStore } from "../memory/memory-store";
 import { SqliteEpisodeStore } from "../episodes/episode-store";
+import { SqliteTranscriptRecallStore } from "../retrieval/transcript-recall";
 import { SqliteMemoryRunsStore } from "../memory/memory-runs";
 import { MemoryConsolidateProducer, type MemoryConsolidateHandle } from "../memory/consolidate-queue";
 import { shutdownManager } from "bunqueue/client";
@@ -18,7 +19,7 @@ import { SqliteUsageStore } from "../usage/usage-store";
 import type { SandboxProvider } from "../sandbox/provider";
 import { UnavailableSandboxProvider } from "../sandbox/unavailable-provider";
 import { SessionManager } from "../session/session-manager";
-import { seedSkillsIfEmpty } from "../skills/seed";
+import { syncBuiltInSkills } from "../skills/seed";
 import { SqliteSkillsStore } from "../skills/skills-store";
 import { SqliteSkillCandidateStore } from "../skills/candidate-store";
 import { SqliteSkillPromotionStore } from "../skills/promote-store";
@@ -37,8 +38,8 @@ import { clearManagedProviderSecrets, removeBotStateDir, removeMicrosandboxVm, r
 import { describe, registerSignalHandlers } from "./signals";
 import { assertSupportedBunVersion } from "./bun-version";
 import { loadBaseConfig, resolveEffectiveConfig, type RuntimeSecretOverrides } from "./resolve-effective-config";
-import { RuntimeServiceSupervisor } from "./supervisor/service-supervisor";
 import { startQueueService, type QueueServiceHandle } from "./supervisor/queue-supervisor";
+import { startRuntimeServices, type RuntimeServicesHandle } from "./supervisor/runtime-services";
 import { QueueServiceClient } from "./services/queue/client";
 import { createTargetedIndexQueue } from "./services/embedding/targeted-index";
 import { RemoteSessionStateStore } from "./services/queue/session-state-client";
@@ -47,6 +48,7 @@ import { permissionRequestEvent } from "../web/live-events";
 import { ruleOptionForRequest } from "../security/permission-gate";
 import type { CapabilityMatchKind } from "../security/capability-policy";
 import { MeshRuntime } from "../mesh/runtime";
+import { currentRuntimeTopology } from "./topology";
 export interface AithyRuntime {
   config: AppConfig;
   events: EventBus;
@@ -61,6 +63,7 @@ export interface AithyRuntime {
   artifacts: SqliteArtifactStore;
   memory: SqliteMemoryStore;
   episodes: SqliteEpisodeStore;
+  transcripts: SqliteTranscriptRecallStore;
   notifications: SqliteNotificationStore;
   notify(input: NotificationCreate): NotificationEntry;
   usage: SqliteUsageStore;
@@ -92,7 +95,6 @@ interface RuntimeGlobalState {
   runtimePromise?: Promise<AithyRuntime>;
   resetPromise?: Promise<AithyRuntime>;
 }
-
 type ViteHotContext = { dispose(callback: () => void): void };
 
 const runtimeGlobal = globalThis as typeof globalThis & { __aithyRuntimeState?: RuntimeGlobalState };
@@ -134,7 +136,7 @@ class RuntimeImpl implements AithyRuntime {
   private resetting = false;
   private storesClosed = false;
   private queueHandle?: QueueServiceHandle;
-  private workerSupervisor?: RuntimeServiceSupervisor;
+  private runtimeServices?: RuntimeServicesHandle;
 
   private constructor(
     public config: AppConfig,
@@ -151,6 +153,7 @@ class RuntimeImpl implements AithyRuntime {
     public artifacts: SqliteArtifactStore,
     public memory: SqliteMemoryStore,
     public episodes: SqliteEpisodeStore,
+    public transcripts: SqliteTranscriptRecallStore,
     public memoryRuns: SqliteMemoryRunsStore,
     public memoryConsolidate: MemoryConsolidateHandle,
     public skillCandidates: SqliteSkillCandidateStore,
@@ -187,22 +190,24 @@ class RuntimeImpl implements AithyRuntime {
   static async create(): Promise<RuntimeImpl> {
     assertSupportedBunVersion();
     const baseConfig = loadBaseConfig();
+    const topology = currentRuntimeTopology();
     const settings = new SqliteSettingsStore(baseConfig.stateDbPath);
     const config = await resolveEffectiveConfig(baseConfig, settings.load());
 
     const events = new EventBus();
     const live = new LiveEventHub();
     events.subscribe((event) => live.publishBotEvent(event));
-    const queueHandle = await startQueueService();
+    const queueHandle = await startQueueService({ topology });
     const queue = queueHandle.client;
     queue.subscribe((event) => live.publish(event));
     const queueTargetedIndex = createTargetedIndexQueue(queue, "web");
     const skills = new SqliteSkillsStore(config.stateDbPath, { onDirtyIndex: queueTargetedIndex });
-    seedSkillsIfEmpty(skills);
+    syncBuiltInSkills(skills);
     const skillPromotions = new SqliteSkillPromotionStore(config.stateDbPath);
     const skillCandidates = new SqliteSkillCandidateStore(config.stateDbPath);
     const memory = new SqliteMemoryStore(config.stateDbPath, { onDirtyIndex: queueTargetedIndex });
     const episodes = new SqliteEpisodeStore(config.stateDbPath, { onDirtyIndex: queueTargetedIndex });
+    const transcripts = new SqliteTranscriptRecallStore(config.stateDbPath);
     const artifacts = new SqliteArtifactStore(config.stateDbPath, config.workspaceRoot, config.outboxRoot);
     const memoryRuns = new SqliteMemoryRunsStore(config.stateDbPath);
     const notifications = new SqliteNotificationStore(config.stateDbPath);
@@ -264,6 +269,7 @@ class RuntimeImpl implements AithyRuntime {
       artifacts,
       memory,
       episodes,
+      transcripts,
       memoryRuns,
       memoryConsolidate,
       skillCandidates,
@@ -282,26 +288,20 @@ class RuntimeImpl implements AithyRuntime {
     runtimeRef = runtime;
     runtime.queueHandle = queueHandle;
     await runtime.mesh.start();
-    await runtime.queue.heartbeat("web", "ready", { pid: process.pid });
-    runtime.workerSupervisor = new RuntimeServiceSupervisor({
+    await runtime.queue.heartbeat("web", "ready", {
+      placement: topology.kind === "packaged" ? "coordinator" : "process",
+    });
+    runtime.runtimeServices = await startRuntimeServices({
       queue,
       queueUrl: queueHandle.url,
-      services: [
-        { role: "agent-worker", entry: "src/runtime/services/agent/worker.ts" },
-        { role: "sandbox-worker", entry: "src/runtime/services/sandbox/worker.ts" },
-        { role: "local-inference-worker", entry: "src/runtime/services/local-inference/worker.ts" },
-      ],
+      topology,
     });
-    runtime.workerSupervisor.start();
     runtime.startSweep();
     registerSignalHandlers(runtime);
     return runtime;
   }
 
-  assertReady(): void {
-    if (this.resetting) throw new Error("Aithy is resetting. Try again in a moment.");
-    assertStartupConfig(this.config);
-  }
+  assertReady(): void { if (this.resetting) throw new Error("Aithy is resetting. Try again in a moment."); assertStartupConfig(this.config); }
 
   respondSystemPermission(
     requestId: string,
@@ -353,28 +353,15 @@ class RuntimeImpl implements AithyRuntime {
     this.mesh.refreshDisplayName(); return this.soul;
   }
 
-  updateProfile(fields: UserProfileFields): UserProfile {
-    this.profile = this.profileStore.saveProfile(fields);
-    return this.profile;
-  }
+  updateProfile(fields: UserProfileFields): UserProfile { this.profile = this.profileStore.saveProfile(fields); return this.profile; }
 
-  updateProfileImage(kind: ProfileImageKind, image: StoredProfileImage): UserProfile {
-    this.profile = this.profileStore.saveImage(kind, image);
-    return this.profile;
-  }
+  updateProfileImage(kind: ProfileImageKind, image: StoredProfileImage): UserProfile { this.profile = this.profileStore.saveImage(kind, image); return this.profile; }
 
-  clearProfileImage(kind: ProfileImageKind): UserProfile {
-    this.profile = this.profileStore.clearImage(kind);
-    return this.profile;
-  }
+  clearProfileImage(kind: ProfileImageKind): UserProfile { this.profile = this.profileStore.clearImage(kind); return this.profile; }
 
-  isShuttingDown(): boolean {
-    return Boolean(this.shutdownPromise);
-  }
+  isShuttingDown(): boolean { return Boolean(this.shutdownPromise); }
 
-  isResetting(): boolean {
-    return this.resetting;
-  }
+  isResetting(): boolean { return this.resetting; }
 
   async prepareForFullReset(): Promise<void> {
     this.resetting = true;
@@ -383,7 +370,7 @@ class RuntimeImpl implements AithyRuntime {
       this.sweepTimer = undefined;
     }
     this.activeRuns.stopAll();
-    await this.workerSupervisor?.close();
+    await this.closeRuntimeServices("reset");
     await this.mesh.close();
     await this.closeQueues();
     try {
@@ -400,10 +387,7 @@ class RuntimeImpl implements AithyRuntime {
     this.closeStores();
   }
 
-  shutdown(): Promise<void> {
-    this.shutdownPromise ??= this.doShutdown();
-    return this.shutdownPromise;
-  }
+  shutdown(): Promise<void> { this.shutdownPromise ??= this.doShutdown(); return this.shutdownPromise; }
 
   private async doShutdown(): Promise<void> {
     if (this.sweepTimer) {
@@ -416,7 +400,7 @@ class RuntimeImpl implements AithyRuntime {
     if (stopped > 0) {
       this.events.emit({ type: "error", message: `[shutdown] stopped ${stopped} active run(s)` });
     }
-    await this.workerSupervisor?.close();
+    await this.closeRuntimeServices("shutdown");
     await this.mesh.close();
 
     await this.closeQueues();
@@ -463,6 +447,20 @@ class RuntimeImpl implements AithyRuntime {
     }
   }
 
+  private async closeRuntimeServices(source: "shutdown" | "reset"): Promise<void> {
+    if (!this.runtimeServices) return;
+    const handle = this.runtimeServices;
+    this.runtimeServices = undefined;
+    try {
+      await handle.close();
+    } catch (error) {
+      this.events.emit({
+        type: "error",
+        message: `[${source}] runtime services close failed: ${describe(error)}`,
+      });
+    }
+  }
+
   private closeStores(): void {
     if (this.storesClosed) return;
     this.storesClosed = true;
@@ -476,6 +474,7 @@ class RuntimeImpl implements AithyRuntime {
     this.skillCandidates.close();
     this.memory.close();
     this.episodes.close();
+    this.transcripts.close();
     this.memoryRuns.close();
     this.notifications.close();
     this.usage.close();

@@ -1,5 +1,6 @@
 import { readFile, unlink, writeFile } from "node:fs/promises";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
 import {
   LOCAL_CHAT_MODEL_ALIAS,
   LOCAL_EMBEDDING_MODEL_ALIAS,
@@ -83,7 +84,7 @@ export async function startLlamaRouter(input: {
     cwd: input.cwd,
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, ...input.env },
+    env: llamaRouterEnv(input.env),
   });
   if (input.markerPath) {
     try {
@@ -102,6 +103,33 @@ export async function startLlamaRouter(input: {
     }
   }
   return { proc, port, baseUrl: `http://127.0.0.1:${port}` };
+}
+
+export function llamaRouterEnv(extra: Record<string, string | undefined> = {}): Record<string, string> {
+  const env: Record<string, string> = { PATH: safeSystemPath() };
+  copyIfPresent(env, "HOME");
+  copyIfPresent(env, "USER");
+  copyIfPresent(env, "LOGNAME");
+  copyIfPresent(env, "XDG_CONFIG_HOME");
+  copyIfPresent(env, "XDG_CACHE_HOME");
+  copyIfPresent(env, "SSL_CERT_FILE");
+  copyIfPresent(env, "SSL_CERT_DIR");
+  env.TMPDIR = process.env.TMPDIR || process.env.TMP || process.env.TEMP || tmpdir();
+  for (const [name, value] of Object.entries(extra)) {
+    if (value !== undefined) env[name] = value;
+  }
+  return env;
+}
+
+function copyIfPresent(target: Record<string, string>, name: string): void {
+  const value = process.env[name];
+  if (value) target[name] = value;
+}
+
+function safeSystemPath(): string {
+  return process.platform === "darwin"
+    ? "/usr/bin:/bin:/usr/sbin:/sbin"
+    : "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin";
 }
 
 export async function cleanupStaleLlamaRouter(

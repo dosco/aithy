@@ -11,6 +11,7 @@ import type {
   CommandCompletion,
   RuntimeLogEventPayload,
   RuntimeQueueStatus,
+  RuntimeServicePlacement,
   RuntimeServiceRole,
   RuntimeServiceState,
   RuntimeServiceStatus,
@@ -80,7 +81,7 @@ export type RuntimeBusServerFrame =
 
 export type RuntimeBusClientFrame =
   | RuntimeBusRequest
-  | { type: "hello"; role: RuntimeServiceRole; pid: number; instanceId: string };
+  | { type: "hello"; role: RuntimeServiceRole; pid: number; instanceId: string; placement?: RuntimeServicePlacement };
 
 export interface CommandSubmitParams {
   targetRole: RuntimeServiceRole;

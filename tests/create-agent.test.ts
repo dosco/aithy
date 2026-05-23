@@ -66,7 +66,7 @@ describe("createAithyAgent", () => {
     expect(description).toContain("use artifact.write");
     expect(description).toContain("call artifact.publish");
     expect(description).toContain("Existing/published artifacts");
-    expect(description).toContain("conversationHistory as \"Published artifact:\" lines");
+    expect(description).toContain("artifactContext or conversationHistory");
     expect(description).toContain("bot-shared");
     expect(description).toContain("retrieval judged potentially relevant");
     expect(description).toContain("Treat them as optional context");
@@ -88,7 +88,7 @@ describe("createAithyAgent", () => {
     expect(description).toContain("use artifact.write");
     expect(description).toContain("call artifact.publish");
     expect(description).toContain("Existing/published artifacts");
-    expect(description).toContain("conversationHistory as \"Published artifact:\" lines");
+    expect(description).toContain("artifactContext or conversationHistory");
     expect(description).toContain("Mounting policy");
     // New topology: top-level /mounts/<name> + bot-shared /workspace, no /cache
     // mount, no "per-session" framing.

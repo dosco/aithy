@@ -24,11 +24,12 @@
     "audit:deps": "bun run scripts/audit-dependencies.ts",
     "check:lines": "bun run scripts/check-lines.ts",
     "check:supply-chain": "bun run scripts/check-supply-chain.ts",
+    "package:release": "bun run scripts/package-release.ts",
     "check": "bun run check:supply-chain && bun run check:lines && bun run typecheck && bun test",
     "ci": "bun ci && bun run check"
   },
   "dependencies": {
-    "@ax-llm/ax": "21.0.9",
+    "@ax-llm/ax": "21.0.12",
     "@huggingface/hub": "2.11.2",
     "@modelcontextprotocol/sdk": "1.29.0",
     "@radix-ui/react-popover": "1.1.15",

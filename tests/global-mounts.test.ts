@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, realpath, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import type { AppConfig } from "../src/config/env";
@@ -100,10 +100,12 @@ describe("ActiveRunRegistry.onIdle", () => {
 });
 
 describe("SessionManager.mountsForSandbox", () => {
-  test("filters out paths that don't exist on disk and dedups", async () => {
+  test("filters out paths that don't exist on disk, skips files, and dedups", async () => {
     const tmp = await mkdtemp(path.join(tmpdir(), "axbot-mounts-"));
     const present = path.join(tmp, "real");
-    await writeFile(present, "");
+    const file = path.join(tmp, "file.txt");
+    await mkdir(present, { recursive: true });
+    await writeFile(file, "");
     const missing = "/this/path/should/not/exist/anywhere";
 
     const sandbox: SandboxProvider = {
@@ -126,12 +128,14 @@ describe("SessionManager.mountsForSandbox", () => {
       globalMounts: [
         { hostPath: present },
         { hostPath: present },
+        { hostPath: file },
         { hostPath: missing },
       ],
     });
     const mounts: SessionMount[] = mgr.mountsForSandbox();
+    const resolvedPresent = await realpath(present);
     expect(mounts).toEqual([
-      { hostPath: present, mountName: computeMountName(present) },
+      { hostPath: resolvedPresent, mountName: computeMountName(resolvedPresent) },
     ]);
   });
 });
@@ -140,10 +144,7 @@ describe("SessionManager.addGlobalMount", () => {
   test("idempotent on existing host paths and persists via callback", async () => {
     const tmp = await mkdtemp(path.join(tmpdir(), "axbot-add-"));
     const folder = path.join(tmp, "vault");
-    await writeFile(path.join(tmp, "vault"), "").catch(async () => {
-      const { mkdir } = await import("node:fs/promises");
-      await mkdir(folder, { recursive: true });
-    });
+    await mkdir(folder, { recursive: true });
 
     const sandbox: SandboxProvider = {
       createSession: async () => ({ id: "x", name: "x" }),

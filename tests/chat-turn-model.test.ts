@@ -240,6 +240,7 @@ function artifact(createdAt: string): SerializableBotMessage {
     kind: "artifact",
     id: "artifact-1",
     sessionId,
+    runId: "run-1",
     sandboxPath: "/outbox/note.txt",
     relativePath: "note.txt",
     title: "note.txt",

@@ -23,13 +23,19 @@ describe("runtime remote clients", () => {
     setTimeout(() => {
       const [command] = store.claimPendingCommands("sandbox-worker");
       expect(command.kind).toBe("sandbox.bash");
+      expect(command.payload).toMatchObject({
+        request: { env: { AITHY_OUTBOX: "/outbox/session/run" } },
+      });
       store.completeCommand(command.id, "completed", {
         ok: true,
         result: { exitCode: 0, stdout: "hi\n", stderr: "", timedOut: false },
       });
     }, 10).unref();
 
-    await expect(client.bash("s1", { command: "echo hi" })).resolves.toMatchObject({ stdout: "hi\n" });
+    await expect(client.bash("s1", {
+      command: "echo hi",
+      env: { AITHY_OUTBOX: "/outbox/session/run" },
+    })).resolves.toMatchObject({ stdout: "hi\n" });
     store.close();
   });
 

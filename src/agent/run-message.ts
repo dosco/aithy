@@ -11,6 +11,7 @@ import type { AppConfig } from "../config/env";
 import type { EventBus } from "../events/bus";
 import type { SqliteMemoryStore } from "../memory/memory-store";
 import type { SqliteEpisodeStore } from "../episodes/episode-store";
+import type { SqliteTranscriptRecallStore } from "../retrieval/transcript-recall";
 import type { SqliteArtifactStore } from "../artifacts/artifact-store";
 import type { MemoryQueue } from "../memory/memory-queue";
 import type { NotificationCreate } from "../notifications/types";
@@ -74,6 +75,7 @@ export interface RunMessageDeps {
   profile?: UserProfile;
   memory?: SqliteMemoryStore;
   episodes?: SqliteEpisodeStore;
+  transcripts?: SqliteTranscriptRecallStore;
   artifacts?: SqliteArtifactStore;
   memoryQueue?: MemoryQueue;
   usage?: SqliteUsageStore;
@@ -151,8 +153,9 @@ export async function runMessage(
   const onSkillsSearch = wrapSkillsSearch(deps.skillsSearch, toolCallMessages, publishToolCall);
   const memoryStore = deps.memory;
   const episodeStore = deps.episodes;
+  const transcriptStore = deps.transcripts;
   const preloadedMemoryIds = new Set<string>();
-  const onMemoriesSearch: AxAgentMemoriesSearchFn | undefined = memoryStore || episodeStore
+  const onMemoriesSearch: AxAgentMemoriesSearchFn | undefined = memoryStore || episodeStore || transcriptStore
     ? async (searches, alreadyLoaded) => {
       const loadedIds = [...preloadedMemoryIds, ...alreadyLoaded.map((m) => m.id)];
       const recalled = await recallForAgent({
@@ -160,9 +163,11 @@ export async function runMessage(
         alreadyLoadedIds: loadedIds,
         memoryStore,
         episodeStore,
+        transcriptStore,
         sessions: deps.sessions,
         source: "recall",
-        limit: 8,
+        limit: 5,
+        beforeCreatedAt: message.createdAt.toISOString(),
       });
       const toolMessage = recalled.toolMessage;
       toolCallMessages.push(toolMessage);
@@ -217,15 +222,17 @@ export async function runMessage(
         onToolCall: recordToolCall,
       });
     }
-    const preRecall = memoryStore || episodeStore
+    const preRecall = memoryStore || episodeStore || transcriptStore
       ? await recallForAgent({
           searches: preRecallQueries(session, message),
           alreadyLoadedIds: [],
           memoryStore,
           episodeStore,
+          transcriptStore,
           sessions: deps.sessions,
           source: "preload",
-          limit: 8,
+          limit: 3,
+          beforeCreatedAt: message.createdAt.toISOString(),
         })
       : undefined;
     if (preRecall) {
@@ -241,7 +248,10 @@ export async function runMessage(
       ...(preRecall ? { memoryContext: memoryContextText(preRecall.memories) } : {}),
       ...(urlPrefetch?.context ? { urlContext: urlPrefetch.context } : {}),
       ...(searchPrefetch?.context ? { searchContext: searchPrefetch.context } : {}),
-      artifactContext: artifactContextText(artifactRun),
+      artifactContext: artifactContextText(
+        artifactRun,
+        deps.artifacts?.recentForSession(message.conversationId, 10) ?? [],
+      ),
       channelContext: toChannelContext(message),
       conversationHistory: conversationHistoryForAgent(
         session,

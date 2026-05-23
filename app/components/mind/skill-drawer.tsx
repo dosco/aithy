@@ -1,5 +1,5 @@
 import { useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent, type RefObject } from "react";
-import { FileText, Plus, Trash2, X } from "lucide-react";
+import { Copy, FileText, PauseCircle, PlayCircle, Plus, Trash2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Field, FormError, FormTextarea, fieldClass, slugify } from "@/components/lib/form-bits";
 import type { SkillForm } from "./skill-card";
@@ -20,6 +20,9 @@ export interface SkillDrawerProps {
   onSave: () => void | Promise<void>;
   onClose: () => void;
   onDelete?: () => void;
+  onDuplicate?: () => void | Promise<void>;
+  onDisable?: () => void | Promise<void>;
+  onEnable?: () => void | Promise<void>;
 }
 
 export function SkillDrawer({
@@ -35,10 +38,14 @@ export function SkillDrawer({
   onSave,
   onClose,
   onDelete,
+  onDuplicate,
+  onDisable,
+  onEnable,
 }: SkillDrawerProps) {
   const nameRef = useRef<HTMLInputElement>(null);
   const pasteRef = useRef<HTMLTextAreaElement>(null);
   const editing = mode === "edit";
+  const builtIn = form.sourceKind === "builtin";
 
   useEffect(() => {
     if (!mode) return;
@@ -66,7 +73,7 @@ export function SkillDrawer({
               Skills
             </div>
             <h2 id="skills-drawer-title" className="mt-1 truncate text-xl font-medium">
-              {drawerTitle(mode)}
+              {builtIn && mode === "edit" ? "Built-in skill" : drawerTitle(mode)}
             </h2>
           </div>
           <Button type="button" variant="ghost" size="icon" aria-label="Close skills drawer" onClick={onClose}>
@@ -90,10 +97,14 @@ export function SkillDrawer({
             links={links}
             recentUsage={recentUsage}
             editing={editing}
+            readOnly={builtIn}
             onChange={onChange}
             onSave={onSave}
             onClose={onClose}
             onDelete={onDelete}
+            onDuplicate={onDuplicate}
+            onDisable={onDisable}
+            onEnable={onEnable}
           />
         )}
       </aside>
@@ -116,9 +127,11 @@ function formatDate(iso: string): string {
 function FileEditor({
   form,
   onChange,
+  readOnly,
 }: {
   form: SkillForm;
   onChange: (next: SkillForm) => void;
+  readOnly: boolean;
 }) {
   function updateFile(index: number, patch: Partial<{ path: string; content: string }>) {
     const files = form.files.map((file, fileIndex) => fileIndex === index ? { ...file, ...patch } : file);
@@ -139,9 +152,9 @@ function FileEditor({
         <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-[rgb(var(--muted-foreground))]">
           Supporting files
         </h3>
-        <Button type="button" variant="soft" onClick={addFile}>
+        {!readOnly ? <Button type="button" variant="soft" onClick={addFile}>
           <Plus className="h-4 w-4" /> Add file
-        </Button>
+        </Button> : null}
       </div>
       {form.files.length === 0 ? (
         <p className="text-sm text-[rgb(var(--muted-foreground))]">No supporting files.</p>
@@ -153,15 +166,17 @@ function FileEditor({
               className={fieldClass}
               value={file.path}
               placeholder="reference.md"
+              readOnly={readOnly}
               onChange={(event) => updateFile(index, { path: event.target.value })}
             />
-            <Button type="button" variant="soft" size="icon" aria-label="Remove file" onClick={() => removeFile(index)}>
+            {!readOnly ? <Button type="button" variant="soft" size="icon" aria-label="Remove file" onClick={() => removeFile(index)}>
               <Trash2 className="h-4 w-4" />
-            </Button>
+            </Button> : null}
           </div>
           <FormTextarea
             rows={6}
             value={file.content}
+            readOnly={readOnly}
             onChange={(event) => updateFile(index, { content: event.target.value })}
             className="resize-y"
           />
@@ -226,10 +241,14 @@ function EditorBody({
   links,
   recentUsage,
   editing,
+  readOnly,
   onChange,
   onSave,
   onClose,
   onDelete,
+  onDuplicate,
+  onDisable,
+  onEnable,
 }: {
   form: SkillForm;
   nameRef: RefObject<HTMLInputElement | null>;
@@ -237,13 +256,17 @@ function EditorBody({
   links: string[];
   recentUsage: SkillUsageDto[];
   editing: boolean;
+  readOnly: boolean;
   onChange: (next: SkillForm) => void;
   onSave: () => void | Promise<void>;
   onClose: () => void;
   onDelete?: () => void;
+  onDuplicate?: () => void | Promise<void>;
+  onDisable?: () => void | Promise<void>;
+  onEnable?: () => void | Promise<void>;
 }) {
   function onKeyDown(event: ReactKeyboardEvent) {
-    if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+    if (!readOnly && (event.metaKey || event.ctrlKey) && event.key === "Enter") {
       event.preventDefault();
       void onSave();
     }
@@ -262,6 +285,7 @@ function EditorBody({
                 ref={nameRef}
                 className={fieldClass}
                 value={form.name}
+                readOnly={readOnly}
                 onChange={(event) => onChange({ ...form, name: event.target.value })}
               />
             </Field>
@@ -270,7 +294,7 @@ function EditorBody({
                 className={fieldClass}
                 value={form.id}
                 placeholder={form.name ? slugify(form.name) : "my-skill"}
-                disabled={editing}
+                disabled={editing || readOnly}
                 onChange={(event) => onChange({ ...form, id: event.target.value })}
               />
             </Field>
@@ -279,6 +303,7 @@ function EditorBody({
                 className={fieldClass}
                 placeholder="space separated"
                 value={form.tags}
+                readOnly={readOnly}
                 onChange={(event) => onChange({ ...form, tags: event.target.value })}
               />
             </Field>
@@ -287,6 +312,7 @@ function EditorBody({
                 className={fieldClass}
                 placeholder="Bash(docling:*) Read"
                 value={form.allowedTools}
+                readOnly={readOnly}
                 onChange={(event) => onChange({ ...form, allowedTools: event.target.value })}
               />
             </Field>
@@ -294,6 +320,7 @@ function EditorBody({
               <input
                 className={fieldClass}
                 value={form.whenToUse}
+                readOnly={readOnly}
                 onChange={(event) => onChange({ ...form, whenToUse: event.target.value })}
               />
             </Field>
@@ -303,6 +330,7 @@ function EditorBody({
               <input
                 type="checkbox"
                 checked={form.userInvocable}
+                disabled={readOnly}
                 onChange={(event) => onChange({ ...form, userInvocable: event.target.checked })}
               />
               User invocable
@@ -311,6 +339,7 @@ function EditorBody({
               <input
                 type="checkbox"
                 checked={form.disableModelInvocation}
+                disabled={readOnly}
                 onChange={(event) => onChange({ ...form, disableModelInvocation: event.target.checked })}
               />
               Disable model invocation
@@ -324,6 +353,7 @@ function EditorBody({
           <FormTextarea
             rows={3}
             value={form.description}
+            readOnly={readOnly}
             onChange={(event) => onChange({ ...form, description: event.target.value })}
           />
         </section>
@@ -334,11 +364,12 @@ function EditorBody({
           <FormTextarea
             rows={14}
             value={form.body}
+            readOnly={readOnly}
             onChange={(event) => onChange({ ...form, body: event.target.value })}
             className="min-h-[22rem] resize-y"
           />
         </section>
-        <FileEditor form={form} onChange={onChange} />
+        <FileEditor form={form} onChange={onChange} readOnly={readOnly} />
         {links.length > 0 || recentUsage.length > 0 ? (
           <section className="mt-5 grid gap-3">
             <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-[rgb(var(--muted-foreground))]">
@@ -359,21 +390,43 @@ function EditorBody({
         <FormError message={error} />
       </div>
       <footer className="sticky bottom-0 flex flex-wrap items-center justify-between gap-2 border-t border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-5 py-4">
-        <div>
-          {onDelete ? (
-            <Button type="button" variant="soft" onClick={onDelete}>
-              <Trash2 className="h-4 w-4" /> Delete
-            </Button>
-          ) : null}
-        </div>
-        <div className="flex gap-2">
-          <Button type="button" variant="soft" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="button" onClick={() => void onSave()}>
-            {editing ? "Update" : "Save"}
-          </Button>
-        </div>
+        {readOnly ? (
+          <>
+            <div className="flex flex-wrap gap-2">
+              <Button type="button" variant="soft" onClick={() => void onDuplicate?.()}>
+                <Copy className="h-4 w-4" /> Duplicate
+              </Button>
+              {form.disabledAt ? (
+                <Button type="button" variant="soft" onClick={() => void onEnable?.()}>
+                  <PlayCircle className="h-4 w-4" /> Enable
+                </Button>
+              ) : (
+                <Button type="button" variant="soft" onClick={() => void onDisable?.()}>
+                  <PauseCircle className="h-4 w-4" /> Disable
+                </Button>
+              )}
+            </div>
+            <Button type="button" variant="soft" onClick={onClose}>Close</Button>
+          </>
+        ) : (
+          <>
+            <div>
+              {onDelete ? (
+                <Button type="button" variant="soft" onClick={onDelete}>
+                  <Trash2 className="h-4 w-4" /> Delete
+                </Button>
+              ) : null}
+            </div>
+            <div className="flex gap-2">
+              <Button type="button" variant="soft" onClick={onClose}>
+                Cancel
+              </Button>
+              <Button type="button" onClick={() => void onSave()}>
+                {editing ? "Update" : "Save"}
+              </Button>
+            </div>
+          </>
+        )}
       </footer>
     </>
   );

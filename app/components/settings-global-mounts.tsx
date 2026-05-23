@@ -29,7 +29,7 @@ export function GlobalMountsSection({
   return (
     <Section
       title="Global mounts"
-      subtitle="Bind-mounted into every sandbox at /workspace/mounts/<basename>-<hash>. Read-write. Folders pasted in chat are added here automatically."
+      subtitle="Bind-mounted into every sandbox at /mounts/<name>. Read-write. Folders pasted in chat are added here automatically."
     >
       <div className="grid gap-2">
         {mounts.length === 0 ? (

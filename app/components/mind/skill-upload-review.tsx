@@ -37,6 +37,7 @@ export function SkillUploadReview({
     ...diff.modifiedFiles.map((file) => `modified ${file}`),
     ...diff.removedFiles.map((file) => `removed ${file}`),
   ].filter(Boolean);
+  const builtInTarget = preview.existing?.sourceKind === "builtin";
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/25 p-4" role="dialog" aria-modal="true">
@@ -47,7 +48,7 @@ export function SkillUploadReview({
               Upload bundle
             </div>
             <h2 className="mt-1 text-xl font-medium">
-              {preview.exists ? `Update ${preview.bundle.name}` : `Create ${preview.bundle.name}`}
+              {builtInTarget ? `Built-in skill exists` : preview.exists ? `Update ${preview.bundle.name}` : `Create ${preview.bundle.name}`}
             </h2>
           </div>
           <Button type="button" variant="ghost" size="icon" aria-label="Cancel upload" onClick={onCancel}>
@@ -58,6 +59,11 @@ export function SkillUploadReview({
           <p className="text-sm text-[rgb(var(--muted-foreground))]">
             {preview.bundle.id} · {preview.bundle.files.length} supporting {preview.bundle.files.length === 1 ? "file" : "files"}
           </p>
+          {builtInTarget ? (
+            <p className="mt-3 rounded-md border border-amber-400/40 bg-amber-400/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-200">
+              Built-in skills are read-only. Duplicate the built-in first, then import over the copy.
+            </p>
+          ) : null}
           {changed.length > 0 ? (
             <ul className="mt-4 grid gap-2 text-sm">
               {changed.map((item) => (
@@ -72,7 +78,7 @@ export function SkillUploadReview({
         </div>
         <footer className="flex justify-end gap-2 border-t border-[rgb(var(--border))] px-5 py-4">
           <Button type="button" variant="soft" onClick={onCancel}>Cancel</Button>
-          <Button type="button" onClick={() => void onSave()}>
+          <Button type="button" onClick={() => void onSave()} disabled={builtInTarget}>
             {preview.exists ? "Save update" : "Create skill"}
           </Button>
         </footer>

@@ -232,6 +232,7 @@ function bashRequestField(value: Record<string, unknown>): SandboxBashRequest {
     cwd: optionalString(record, "cwd"),
     timeoutMs: optionalNumber(record, "timeoutMs"),
     maxOutputChars: optionalNumber(record, "maxOutputChars"),
+    env: optionalStringMap(record, "env"),
   };
 }
 
@@ -240,4 +241,18 @@ function optionalString(value: Record<string, unknown>, key: string): string | u
   if (field === undefined) return undefined;
   if (typeof field !== "string") throw new Error(`Invalid sandbox command field: ${key}`);
   return field;
+}
+
+function optionalStringMap(value: Record<string, unknown>, key: string): Record<string, string> | undefined {
+  const field = value[key];
+  if (field === undefined) return undefined;
+  if (!field || typeof field !== "object" || Array.isArray(field)) {
+    throw new Error(`Invalid sandbox command field: ${key}`);
+  }
+  const out: Record<string, string> = {};
+  for (const [entryKey, entryValue] of Object.entries(field)) {
+    if (typeof entryValue !== "string") throw new Error(`Invalid sandbox command field: ${key}.${entryKey}`);
+    out[entryKey] = entryValue;
+  }
+  return out;
 }

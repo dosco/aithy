@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync, statSync } from "node:fs";
 import type { ActiveRunRegistry } from "../agent/active-runs";
 import type { GlobalMount } from "../config/env";
 import type { EventBus } from "../events/bus";
@@ -16,10 +16,17 @@ export function mountsForSandbox(globalMounts: readonly GlobalMount[]): SessionM
   const out: SessionMount[] = [];
   const seen = new Set<string>();
   for (const m of globalMounts) {
-    if (seen.has(m.hostPath)) continue;
-    seen.add(m.hostPath);
     if (!existsSync(m.hostPath)) continue;
-    out.push({ hostPath: m.hostPath, mountName: computeMountName(m.hostPath) });
+    let resolved: string;
+    try {
+      resolved = realpathSync(m.hostPath);
+      if (!statSync(resolved).isDirectory()) continue;
+    } catch {
+      continue;
+    }
+    if (seen.has(resolved)) continue;
+    seen.add(resolved);
+    out.push({ hostPath: resolved, mountName: computeMountName(resolved) });
   }
   return out;
 }

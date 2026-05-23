@@ -51,7 +51,7 @@ describe("artifact chat messages", () => {
         role: "assistant",
         kind: "artifact",
         title: "Report",
-        sandboxPath: "/outbox/sessions/conversation/runs/run-1/report.md",
+        sandboxPath: "/outbox/conversation/run-1/report.md",
       }),
     ]));
   });
@@ -224,10 +224,12 @@ describe("artifact chat messages", () => {
     expect(seenInputs[0].conversationHistory).toContain("Published artifact: compact.txt");
     expect(seenInputs[0].conversationHistory).toContain("filename=compact.txt");
     expect(seenInputs[0].conversationHistory).toContain("id=");
-    expect(seenInputs[0].conversationHistory).toContain("sandboxPath=/outbox/sessions/conversation/runs/");
+    expect(seenInputs[0].conversationHistory).toContain("sandboxPath=/outbox/conversation/");
     expect(seenInputs[0].conversationHistory).toContain("openUrl=/api/artifacts/");
     expect(seenInputs[0].artifactContext).not.toContain("Previously published artifacts");
-    expect(seenInputs[0].artifactContext).not.toContain("filename=compact.txt");
+    expect(seenInputs[0].artifactContext).toContain("Recent current-session artifacts:");
+    expect(seenInputs[0].artifactContext).toContain("filename=compact.txt");
+    expect(seenInputs[0].artifactContext).toContain("sandboxPath=/outbox/conversation/");
     artifacts.close();
   });
 });
@@ -237,8 +239,8 @@ function artifactResult() {
     id: "artifact-1",
     sessionId: "conversation",
     runId: "run-1",
-    sandboxPath: "/outbox/sessions/conversation/runs/run-1/report.md",
-    relativePath: "sessions/conversation/runs/run-1/report.md",
+    sandboxPath: "/outbox/conversation/run-1/report.md",
+    relativePath: "conversation/run-1/report.md",
     title: "Report",
     description: "A generated report",
     filename: "report.md",

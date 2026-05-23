@@ -47,6 +47,12 @@ export interface SkillRow {
   used_count: number;
   disable_model_invocation: number;
   user_invocable: number;
+  source_kind: "user" | "builtin";
+  source_id: string | null;
+  source_version: string | null;
+  source_hash: string | null;
+  disabled_at: string | null;
+  duplicated_from_source_id: string | null;
   last_retrieved_at: string | null;
   last_used_at: string | null;
   updated_at: string;
@@ -336,6 +342,112 @@ export const sessionMigrations = [
       );
     `,
   },
+  {
+    version: 9,
+    precondition: (db: Database) => hasSkillTable()(db) && !hasSkillColumn("source_kind")(db),
+    sql: `
+      ALTER TABLE skills ADD COLUMN source_kind TEXT NOT NULL DEFAULT 'user' CHECK (source_kind IN ('user', 'builtin'));
+      ALTER TABLE skills ADD COLUMN source_id TEXT;
+      ALTER TABLE skills ADD COLUMN source_version TEXT;
+      ALTER TABLE skills ADD COLUMN source_hash TEXT;
+      ALTER TABLE skills ADD COLUMN disabled_at TEXT;
+      ALTER TABLE skills ADD COLUMN duplicated_from_source_id TEXT;
+
+      CREATE UNIQUE INDEX IF NOT EXISTS skills_builtin_source_idx
+        ON skills(source_id)
+        WHERE source_kind = 'builtin' AND source_id IS NOT NULL;
+    `,
+  },
+  {
+    version: 10,
+    precondition: (db: Database) => hasMessageTable(db) && (!tableExists(db, "messages_fts") || !tableExists(db, "skill_search_chunks")),
+    sql: `
+      CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+        session_id UNINDEXED,
+        role UNINDEXED,
+        content,
+        tool_name,
+        tool_args,
+        tool_result,
+        metadata_json,
+        created_at UNINDEXED,
+        content='messages',
+        content_rowid='id',
+        tokenize='unicode61 remove_diacritics 2'
+      );
+
+      INSERT INTO messages_fts(rowid, session_id, role, content, tool_name, tool_args, tool_result, metadata_json, created_at)
+      SELECT id, session_id, role, COALESCE(content, ''), COALESCE(tool_name, ''),
+             substr(COALESCE(tool_args, ''), 1, 4000),
+             substr(COALESCE(tool_result, ''), 1, 4000),
+             substr(COALESCE(metadata_json, ''), 1, 4000),
+             created_at
+      FROM messages
+      WHERE NOT EXISTS (SELECT 1 FROM messages_fts LIMIT 1);
+
+      CREATE TRIGGER IF NOT EXISTS messages_fts_ai AFTER INSERT ON messages BEGIN
+        INSERT INTO messages_fts(rowid, session_id, role, content, tool_name, tool_args, tool_result, metadata_json, created_at)
+        VALUES (new.id, new.session_id, new.role, COALESCE(new.content, ''), COALESCE(new.tool_name, ''),
+                substr(COALESCE(new.tool_args, ''), 1, 4000),
+                substr(COALESCE(new.tool_result, ''), 1, 4000),
+                substr(COALESCE(new.metadata_json, ''), 1, 4000),
+                new.created_at);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS messages_fts_ad AFTER DELETE ON messages BEGIN
+        INSERT INTO messages_fts(messages_fts, rowid, session_id, role, content, tool_name, tool_args, tool_result, metadata_json, created_at)
+        VALUES ('delete', old.id, old.session_id, old.role, COALESCE(old.content, ''), COALESCE(old.tool_name, ''),
+                substr(COALESCE(old.tool_args, ''), 1, 4000),
+                substr(COALESCE(old.tool_result, ''), 1, 4000),
+                substr(COALESCE(old.metadata_json, ''), 1, 4000),
+                old.created_at);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS messages_fts_au AFTER UPDATE ON messages BEGIN
+        INSERT INTO messages_fts(messages_fts, rowid, session_id, role, content, tool_name, tool_args, tool_result, metadata_json, created_at)
+        VALUES ('delete', old.id, old.session_id, old.role, COALESCE(old.content, ''), COALESCE(old.tool_name, ''),
+                substr(COALESCE(old.tool_args, ''), 1, 4000),
+                substr(COALESCE(old.tool_result, ''), 1, 4000),
+                substr(COALESCE(old.metadata_json, ''), 1, 4000),
+                old.created_at);
+        INSERT INTO messages_fts(rowid, session_id, role, content, tool_name, tool_args, tool_result, metadata_json, created_at)
+        VALUES (new.id, new.session_id, new.role, COALESCE(new.content, ''), COALESCE(new.tool_name, ''),
+                substr(COALESCE(new.tool_args, ''), 1, 4000),
+                substr(COALESCE(new.tool_result, ''), 1, 4000),
+                substr(COALESCE(new.metadata_json, ''), 1, 4000),
+                new.created_at);
+      END;
+
+      CREATE TABLE IF NOT EXISTS skill_search_chunks (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        skill_id TEXT NOT NULL REFERENCES skills(id) ON DELETE CASCADE,
+        chunk_key TEXT NOT NULL,
+        text TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(skill_id, chunk_key)
+      );
+
+      CREATE INDEX IF NOT EXISTS skill_search_chunks_skill_idx ON skill_search_chunks(skill_id);
+
+      CREATE VIRTUAL TABLE IF NOT EXISTS skill_search_chunks_fts USING fts5(
+        text,
+        content='skill_search_chunks',
+        content_rowid='id',
+        tokenize='unicode61 remove_diacritics 2'
+      );
+
+      CREATE TRIGGER IF NOT EXISTS skill_search_chunks_ai AFTER INSERT ON skill_search_chunks BEGIN
+        INSERT INTO skill_search_chunks_fts(rowid, text) VALUES (new.id, new.text);
+      END;
+      CREATE TRIGGER IF NOT EXISTS skill_search_chunks_ad AFTER DELETE ON skill_search_chunks BEGIN
+        INSERT INTO skill_search_chunks_fts(skill_search_chunks_fts, rowid, text) VALUES ('delete', old.id, old.text);
+      END;
+      CREATE TRIGGER IF NOT EXISTS skill_search_chunks_au AFTER UPDATE ON skill_search_chunks BEGIN
+        INSERT INTO skill_search_chunks_fts(skill_search_chunks_fts, rowid, text) VALUES ('delete', old.id, old.text);
+        INSERT INTO skill_search_chunks_fts(rowid, text) VALUES (new.id, new.text);
+      END;
+    `,
+  },
 ];
 
 function hasMessageTable(db: Database): boolean {
@@ -364,4 +476,11 @@ function hasSkillTable(): (db: Database) => boolean {
       .get() as { name: string } | undefined;
     return Boolean(row);
   };
+}
+
+function tableExists(db: Database, name: string): boolean {
+  const row = db
+    .query("SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name = $name")
+    .get({ $name: name }) as { name: string } | undefined;
+  return Boolean(row);
 }

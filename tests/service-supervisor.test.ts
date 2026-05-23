@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
 import { RuntimeServiceSupervisor } from "../src/runtime/supervisor/service-supervisor";
 import type { QueueServiceClient } from "../src/runtime/services/queue/client";
+import type { RuntimeTopology } from "../src/runtime/topology";
+
+const devTopology: RuntimeTopology = {
+  kind: "dev",
+  queuePlacement: "process",
+  agentPlacement: "process",
+};
 
 describe("RuntimeServiceSupervisor", () => {
   test("reports service spawn failures without throwing from start", async () => {
@@ -13,6 +20,7 @@ describe("RuntimeServiceSupervisor", () => {
       const supervisor = new RuntimeServiceSupervisor({
         queue: queue.client,
         queueUrl: "ws://127.0.0.1:1/runtime",
+        topology: devTopology,
         services: [
           { role: "local-inference-worker", entry: "src/runtime/services/local-inference/worker.ts" },
         ],
@@ -36,6 +44,7 @@ describe("RuntimeServiceSupervisor", () => {
     const supervisor = new RuntimeServiceSupervisor({
       queue: rejectingQueue(),
       queueUrl: "ws://127.0.0.1:1/runtime",
+      topology: devTopology,
       services: [
         { role: "agent-worker", entry: "src/runtime/services/agent/worker.ts", enabled: false },
       ],
@@ -67,6 +76,7 @@ describe("RuntimeServiceSupervisor", () => {
       const supervisor = new RuntimeServiceSupervisor({
         queue: queue.client,
         queueUrl: "ws://127.0.0.1:1/runtime",
+        topology: devTopology,
         healthCheckIntervalMs: 60_000,
         services: [
           { role: "agent-worker", entry: "src/runtime/services/agent/worker.ts" },
@@ -119,6 +129,7 @@ describe("RuntimeServiceSupervisor", () => {
       const supervisor = new RuntimeServiceSupervisor({
         queue: queue.client,
         queueUrl: "ws://127.0.0.1:1/runtime",
+        topology: devTopology,
         healthCheckIntervalMs: 60_000,
         services: [
           { role: "local-inference-worker", entry: "src/runtime/services/local-inference/worker.ts" },

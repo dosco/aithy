@@ -54,8 +54,8 @@ export function ArtifactCard({ artifact }: { artifact: ArtifactMessage }) {
             <div className="-mr-1 flex shrink-0 items-center gap-1">
               <button
                 type="button"
-                aria-label={copied ? "Path copied" : "Copy artifact path"}
-                title={copied ? "Path copied" : "Copy artifact path"}
+                aria-label={copied ? "Sandbox path copied" : "Copy sandbox path"}
+                title={copied ? "Sandbox path copied" : "Copy sandbox path"}
                 className="grid h-8 w-8 place-items-center rounded-md text-[rgb(var(--muted-foreground))] transition-colors hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
                 onClick={copyPath}
               >

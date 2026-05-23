@@ -11,9 +11,12 @@ import {
 import { cn } from "@/lib/utils";
 import {
   deleteSkill,
+  duplicateBuiltInSkill,
   listSkillsPaged,
   previewSkillBundleUpload,
   saveSkillBundleUpload,
+  setBuiltInSkillDisabled,
+  setBuiltInSkillEnabled,
   upsertSkill,
 } from "@/server/skills-memory.functions";
 import type { SkillDto, SkillsCursor, SkillsPageStateDto } from "@/server/dto";
@@ -107,6 +110,10 @@ export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto 
 
   async function save() {
     setError(null);
+    if (form.sourceKind === "builtin") {
+      setError("Built-in skills are read-only. Duplicate the skill before editing it.");
+      return;
+    }
     const id = (form.id.trim() || slugify(form.name)).trim();
     if (!id || !form.name.trim()) {
       setError("Name and id are required");
@@ -170,6 +177,10 @@ export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto 
       disableModelInvocation: frontmatterBoolean(parsed.frontmatter, ["disable-model-invocation", "disable_model_invocation"], false),
       userInvocable: frontmatterBoolean(parsed.frontmatter, ["user-invocable", "user_invocable"], true),
       body: parsed.body,
+      sourceKind: "user",
+      sourceId: null,
+      disabledAt: null,
+      duplicatedFromSourceId: null,
       files: [],
     });
     setPasteText("");
@@ -208,6 +219,35 @@ export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto 
       setPendingUpload(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to save skill bundle");
+    }
+  }
+
+  async function duplicateCurrentBuiltIn() {
+    if (!form.sourceId) return;
+    try {
+      const result = await duplicateBuiltInSkill({ data: { sourceId: form.sourceId } });
+      prependItem(result.skill);
+      setSkillsCount(result.skillsCount);
+      setFilteredCount((count) => (queryArg ? count : result.skillsCount));
+      setToolUniverse(result.skillsToolUniverse);
+      setRefreshToken((value) => value + 1);
+      openSkill(result.skill);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to duplicate built-in skill");
+    }
+  }
+
+  async function setCurrentBuiltInDisabled(disabled: boolean) {
+    if (!form.sourceId || !openId) return;
+    try {
+      const result = disabled
+        ? await setBuiltInSkillDisabled({ data: { sourceId: form.sourceId } })
+        : await setBuiltInSkillEnabled({ data: { sourceId: form.sourceId } });
+      replaceItem(openId, result.skill);
+      setForm(skillToForm(result.skill));
+      setRefreshToken((value) => value + 1);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update built-in skill");
     }
   }
 
@@ -305,6 +345,9 @@ export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto 
         onSave={save}
         onClose={closeDrawer}
         onDelete={drawerMode === "edit" && openId ? () => void remove(openId) : undefined}
+        onDuplicate={duplicateCurrentBuiltIn}
+        onDisable={() => void setCurrentBuiltInDisabled(true)}
+        onEnable={() => void setCurrentBuiltInDisabled(false)}
       />
       {pendingUpload ? (
         <SkillUploadReview
@@ -328,6 +371,10 @@ function skillToForm(skill: SkillDto): SkillForm {
     tags: skill.tags ?? "",
     disableModelInvocation: skill.disableModelInvocation,
     userInvocable: skill.userInvocable,
+    sourceKind: skill.sourceKind,
+    sourceId: skill.sourceId,
+    disabledAt: skill.disabledAt,
+    duplicatedFromSourceId: skill.duplicatedFromSourceId,
     files: skill.files.map((file) => ({ path: file.path, content: file.content })),
   };
 }

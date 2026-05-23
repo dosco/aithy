@@ -160,6 +160,12 @@ export function skillDto(skill: SkillEntry): SkillDto {
     tags: skill.tags,
     disableModelInvocation: skill.disable_model_invocation,
     userInvocable: skill.user_invocable,
+    sourceKind: skill.source_kind,
+    sourceId: skill.source_id,
+    sourceVersion: skill.source_version,
+    sourceHash: skill.source_hash,
+    disabledAt: skill.disabled_at,
+    duplicatedFromSourceId: skill.duplicated_from_source_id,
     files: skill.files.map((file) => ({
       path: file.path,
       content: file.content,

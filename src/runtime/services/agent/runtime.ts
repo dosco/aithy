@@ -16,6 +16,7 @@ import { MemoryQueue } from "../../../memory/memory-queue";
 import { SqliteMemoryStore } from "../../../memory/memory-store";
 import { DreamQueue } from "../../../episodes/dream-queue";
 import { SqliteEpisodeStore } from "../../../episodes/episode-store";
+import { SqliteTranscriptRecallStore } from "../../../retrieval/transcript-recall";
 import { SqliteNotificationStore } from "../../../notifications/notification-store";
 import type { NotificationCreate, NotificationEntry } from "../../../notifications/types";
 import { CapabilityBroker } from "../../../security/capability-broker";
@@ -24,7 +25,7 @@ import type { TaskRecord } from "../../../tasks/types";
 import { SessionManager } from "../../../session/session-manager";
 import { globalMountsChanged, runtimeSandboxChanged } from "../../../settings/resolve";
 import { SqliteSettingsStore } from "../../../settings/store";
-import { seedSkillsIfEmpty } from "../../../skills/seed";
+import { syncBuiltInSkills } from "../../../skills/seed";
 import { SqliteSkillCandidateStore } from "../../../skills/candidate-store";
 import { SkillCandidateQueue } from "../../../skills/candidate-queue";
 import { SqliteSkillPromotionStore } from "../../../skills/promote-store";
@@ -49,6 +50,7 @@ import { RemoteSessionStateStore } from "../queue/session-state-client";
 import { payloadString, userChatPayload } from "./command-payloads";
 import { LocalInferenceWarmupGate } from "./local-inference-warmup";
 import { scheduleAgentBackgroundQueues } from "./schedules";
+
 export class AgentWorkerRuntime {
   private heartbeatTimer?: Timer;
   private shutdownPromise?: Promise<void>;
@@ -64,8 +66,7 @@ export class AgentWorkerRuntime {
     public sandbox: SandboxCommandClient,
     public readonly sessions: SessionManager,
     public readonly soul: SoulProfile,
-    public readonly memory: SqliteMemoryStore,
-    public readonly episodes: SqliteEpisodeStore,
+    public readonly memory: SqliteMemoryStore, public readonly episodes: SqliteEpisodeStore, public readonly transcripts: SqliteTranscriptRecallStore,
     public readonly artifacts: SqliteArtifactStore,
     public readonly usage: SqliteUsageStore,
     public readonly activeRuns: ActiveRunRegistry,
@@ -87,9 +88,10 @@ export class AgentWorkerRuntime {
     public readonly skillCandidateQueue: SkillCandidateQueue,
     public readonly skillPromotions: SqliteSkillPromotionStore,
     private readonly stores: { close(): void }[],
+    private readonly ownsBunqueueManager: boolean,
   ) {}
 
-  static async create(queue: QueueServiceClient): Promise<AgentWorkerRuntime> {
+  static async create(queue: QueueServiceClient, options: { ownsBunqueueManager?: boolean } = {}): Promise<AgentWorkerRuntime> {
     assertSupportedBunVersion();
     const baseConfig = loadBaseConfig();
     const settings = new SqliteSettingsStore(baseConfig.stateDbPath);
@@ -133,7 +135,7 @@ export class AgentWorkerRuntime {
       log: logMemory,
       onDirtyIndex: queueTargetedIndex,
     }); const memoryRuns = new SqliteMemoryRunsStore(config.stateDbPath);
-    const notifications = new SqliteNotificationStore(config.stateDbPath);
+    const transcripts = new SqliteTranscriptRecallStore(config.stateDbPath); const notifications = new SqliteNotificationStore(config.stateDbPath);
     const artifacts = new SqliteArtifactStore(config.stateDbPath, config.workspaceRoot, config.outboxRoot);
     const usage = new SqliteUsageStore(config.stateDbPath);
     const skills = new SqliteSkillsStore(config.stateDbPath, {
@@ -142,7 +144,7 @@ export class AgentWorkerRuntime {
       log: logMemory,
       onDirtyIndex: queueTargetedIndex,
     });
-    seedSkillsIfEmpty(skills);
+    syncBuiltInSkills(skills);
     const skillPromotions = new SqliteSkillPromotionStore(config.stateDbPath);
     const skillCandidates = new SqliteSkillCandidateStore(config.stateDbPath);
     const soulStore = new SqliteSoulStore(config.stateDbPath);
@@ -324,8 +326,7 @@ export class AgentWorkerRuntime {
       sandbox,
       sessions,
       soul,
-      memory,
-      episodes,
+      memory, episodes, transcripts,
       artifacts,
       usage,
       activeRuns,
@@ -346,7 +347,8 @@ export class AgentWorkerRuntime {
       skillCandidates,
       skillCandidateQueue,
       skillPromotions,
-      [settings, skills, skillCandidates, skillPromotions, memory, episodes, memoryRuns, artifacts, notifications, usage, soulStore, runtimeStore, tasks, automations],
+      [settings, skills, skillCandidates, skillPromotions, memory, episodes, transcripts, memoryRuns, artifacts, notifications, usage, soulStore, runtimeStore, tasks, automations],
+      options.ownsBunqueueManager ?? true,
     );
     runtimeRef = runtime;
     await automationQueue.syncSchedules();
@@ -372,9 +374,7 @@ export class AgentWorkerRuntime {
     this.queue.onCommand((command) => this.handleCommand(command));
   }
 
-  isShuttingDown(): boolean {
-    return Boolean(this.shutdownPromise);
-  }
+  isShuttingDown(): boolean { return Boolean(this.shutdownPromise); }
 
   shutdown(): Promise<void> {
     this.shutdownPromise ??= this.doShutdown();
@@ -478,9 +478,11 @@ export class AgentWorkerRuntime {
       this.sessions.parkAll(),
       this.sessionState.flush(),
     ]);
-    try {
-      shutdownManager();
-    } catch {}
+    if (this.ownsBunqueueManager) {
+      try {
+        shutdownManager();
+      } catch {}
+    }
     for (const store of this.stores) {
       try {
         store.close();
@@ -489,11 +491,7 @@ export class AgentWorkerRuntime {
     this.queue.close();
   }
 
-  private heartbeat(state: Parameters<QueueServiceClient["heartbeat"]>[1], detail?: unknown): void {
-    void this.queue.heartbeat("agent-worker", state, detail);
-  }
+  private heartbeat(state: Parameters<QueueServiceClient["heartbeat"]>[1], detail?: unknown): void { void this.queue.heartbeat("agent-worker", state, detail); }
 
-  flushSessionState(): Promise<void> {
-    return this.sessionState.flush();
-  }
+  flushSessionState(): Promise<void> { return this.sessionState.flush(); }
 }

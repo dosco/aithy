@@ -1,6 +1,7 @@
 import { access, chmod, mkdir, readdir } from "node:fs/promises";
 import { homedir, platform } from "node:os";
 import path from "node:path";
+import packageMetadata from "../../package.json" with { type: "json" };
 
 const GITHUB_RELEASE_BY_TAG = "https://api.github.com/repos/ggml-org/llama.cpp/releases/tags/";
 const REQUIRED_HELP_FLAGS = ["--models-preset", "--models-max"];
@@ -102,9 +103,10 @@ async function ensureManagedLlamaServer(input: {
   return binary;
 }
 
-async function loadPinnedLlamaCppRelease(packageRoot = process.cwd()): Promise<string> {
-  const packageJsonPath = path.join(packageRoot, "package.json");
-  const metadata = await Bun.file(packageJsonPath).json() as PackageMetadata;
+async function loadPinnedLlamaCppRelease(packageRoot?: string): Promise<string> {
+  const metadata = packageRoot
+    ? await Bun.file(path.join(packageRoot, "package.json")).json() as PackageMetadata
+    : packageMetadata as PackageMetadata;
   const tag = metadata.aithy?.llamaCppRelease;
   if (typeof tag !== "string" || !tag.trim()) {
     throw new Error("package.json is missing aithy.llamaCppRelease");

@@ -21,12 +21,19 @@ export function createArtifactRunContext(sessionId: string): ArtifactRunContext 
   };
 }
 
-export function artifactContextText(input: ArtifactRunContext): string {
-  return [
+export function artifactContextText(input: ArtifactRunContext, recentArtifacts: readonly ArtifactEntry[] = []): string {
+  const lines = [
     `Current run id: ${input.runId}`,
     `Current run outbox: ${input.runOutboxPath}`,
     "Use the current run outbox for new user-facing files. Files created there during this turn are published as artifact cards.",
-  ].join("\n");
+  ];
+  if (recentArtifacts.length > 0) {
+    lines.push("Recent current-session artifacts:");
+    for (const artifact of recentArtifacts.slice(0, 10)) {
+      lines.push(`- ${artifact.title}; filename=${artifact.filename}; id=${artifact.id}; sandboxPath=${artifact.sandboxPath}; openUrl=/api/artifacts/${artifact.id}`);
+    }
+  }
+  return lines.join("\n");
 }
 
 export function artifactEnv(input: ArtifactRunContext, sessionId: string): Record<string, string> {

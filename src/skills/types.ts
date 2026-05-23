@@ -15,10 +15,18 @@ export interface SkillEntry {
   used_count: number;
   disable_model_invocation: boolean;
   user_invocable: boolean;
+  source_kind: SkillSourceKind;
+  source_id: string | null;
+  source_version: string | null;
+  source_hash: string | null;
+  disabled_at: string | null;
+  duplicated_from_source_id: string | null;
   last_retrieved_at: string | null;
   last_used_at: string | null;
   updated_at: string;
 }
+
+export type SkillSourceKind = "user" | "builtin";
 
 export interface SkillUpsert {
   id: string;
@@ -31,6 +39,12 @@ export interface SkillUpsert {
   disableModelInvocation?: boolean;
   userInvocable?: boolean;
   files?: readonly SkillFileInput[];
+  sourceKind?: SkillSourceKind;
+  sourceId?: string | null;
+  sourceVersion?: string | null;
+  sourceHash?: string | null;
+  disabledAt?: string | null;
+  duplicatedFromSourceId?: string | null;
 }
 
 export interface SkillFileEntry extends SkillFileInput {

@@ -116,6 +116,19 @@ const migrations: readonly SqliteMigration[] = [
       ALTER TABLE permission_requests ADD COLUMN match_options_json TEXT;
     `,
   },
+  {
+    version: 5,
+    sql: `
+      CREATE TABLE IF NOT EXISTS sandbox_file_mounts (
+        source_path TEXT PRIMARY KEY,
+        sandbox_path TEXT NOT NULL,
+        workspace_path TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      );
+    `,
+  },
 ];
 
 export function applyRuntimeStoreMigrations(db: Database): void {

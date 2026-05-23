@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { loadConfig } from "../src/config/env";
+import { DEFAULT_SANDBOX_IMAGE, loadConfig } from "../src/config/env";
 import { assertStartupConfig, fastAiConfigurationIssues, providerRequiresApiKey } from "../src/config/validate";
 import {
   CUSTOM_OPENAI_PROVIDER,
@@ -15,7 +15,7 @@ describe("loadConfig", () => {
   test("defaults to Microsandbox with offline networking", () => {
     const config = loadConfig();
     expect(config.sandboxProvider).toBe("microsandbox");
-    expect(config.sandboxImage).toBe("python:3.11-slim");
+    expect(config.sandboxImage).toBe(DEFAULT_SANDBOX_IMAGE);
     expect(config.sandboxCpus).toBe(1);
     expect(config.sandboxMemoryMb).toBe(512);
     expect(config.sandboxNetwork).toBe("none");
@@ -59,7 +59,7 @@ describe("loadConfig", () => {
     expect(config.fastAiApiKey).toBeUndefined();
     expect(config.systemBashEnabled).toBe(true);
     expect(config.sandboxProvider).toBe("microsandbox");
-    expect(config.sandboxImage).toBe("python:3.11-slim");
+    expect(config.sandboxImage).toBe(DEFAULT_SANDBOX_IMAGE);
     expect(config.sandboxCpus).toBe(1);
     expect(config.sandboxMemoryMb).toBe(512);
     expect(config.sandboxNetwork).toBe("none");

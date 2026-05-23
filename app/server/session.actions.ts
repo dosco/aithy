@@ -23,6 +23,7 @@ export const clearSession = createServerFn({ method: "POST" })
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
     await runtime.sessions.clear(data.conversationId);
+    await runtime.artifacts.deleteForSessions([data.conversationId], { deleteFiles: true });
     await runtime.sessionState.flush();
     return webStateDto(runtime, data.conversationId);
   });
@@ -39,6 +40,7 @@ export const deleteSession = createServerFn({ method: "POST" })
     const deletedIds = await runtime.sessions.deleteSession(data.conversationId);
     await runtime.sessionState.flush();
     runtime.memoryRuns.deleteForSessions(deletedIds);
+    await runtime.artifacts.deleteForSessions(deletedIds, { deleteFiles: true });
     const settings = runtime.settings.load();
     if (deletedIds.includes(settings.ui.lastActiveSessionId ?? "")) {
       runtime.settings.save({ ui: { lastActiveSessionId: null } });
@@ -55,6 +57,7 @@ export const deleteAllSessions = createServerFn({ method: "POST" })
     const deletedIds = await runtime.sessions.deleteAllSessions();
     await runtime.sessionState.flush();
     runtime.memoryRuns.deleteForSessions(deletedIds);
+    await runtime.artifacts.deleteForSessions(deletedIds, { deleteFiles: true });
     runtime.settings.save({ ui: { lastActiveSessionId: null } });
     return { deletedIds, sessions: [] };
   });

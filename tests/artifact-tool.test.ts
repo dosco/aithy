@@ -14,8 +14,8 @@ describe("artifact.publish tool", () => {
     const root = await mkdtemp(path.join(tmpdir(), "aithy-artifact-tool-"));
     const workspace = path.join(root, "workspace");
     const outbox = path.join(root, "outbox");
-    await mkdir(path.join(outbox, "sessions/conversation/runs/run-1"), { recursive: true });
-    await Bun.write(path.join(outbox, "sessions/conversation/runs/run-1/note.txt"), "hello");
+    await mkdir(path.join(outbox, "conversation/run-1"), { recursive: true });
+    await Bun.write(path.join(outbox, "conversation/run-1/note.txt"), "hello");
     const dbPath = path.join(root, "state.db");
     const runtimeStore = new RuntimeStore(dbPath);
     runtimeStore.ensureGrant("artifact.publish", "test grant");
@@ -25,7 +25,7 @@ describe("artifact.publish tool", () => {
       workspacePath: workspace,
       artifacts,
       artifactRunId: "run-1",
-      artifactRunOutboxPath: "/outbox/sessions/conversation/runs/run-1",
+      artifactRunOutboxPath: "/outbox/conversation/run-1",
       capabilities: new CapabilityBroker(runtimeStore),
     } as any, { ...loadConfig(), sandboxProvider: "disabled" })
       .find((item: any) => item.namespace === "artifact" && item.name === "publish") as any;
@@ -41,7 +41,7 @@ describe("artifact.publish tool", () => {
       title: "Note",
       description: "A small note",
       runId: "run-1",
-      sandboxPath: "/outbox/sessions/conversation/runs/run-1/note.txt",
+      sandboxPath: "/outbox/conversation/run-1/note.txt",
       previewKind: "text",
       textPreview: "hello",
     });
@@ -74,7 +74,7 @@ describe("artifact.write tool", () => {
       workspacePath: workspace,
       artifacts,
       artifactRunId: "run-1",
-      artifactRunOutboxPath: "/outbox/sessions/conversation/runs/run-1",
+      artifactRunOutboxPath: "/outbox/conversation/run-1",
       capabilities: new CapabilityBroker(runtimeStore),
     } as any, { ...loadConfig(), sandboxProvider: "disabled" })
       .find((item: any) => item.namespace === "artifact" && item.name === "write") as any;
@@ -89,11 +89,11 @@ describe("artifact.write tool", () => {
     expect(result).toMatchObject({
       title: "Cat Haiku",
       runId: "run-1",
-      sandboxPath: "/outbox/sessions/conversation/runs/run-1/cat.txt",
-      relativePath: "sessions/conversation/runs/run-1/cat.txt",
+      sandboxPath: "/outbox/conversation/run-1/cat.txt",
+      relativePath: "conversation/run-1/cat.txt",
       previewKind: "text",
     });
-    expect(await readFile(path.join(outbox, "sessions/conversation/runs/run-1/cat.txt"), "utf8"))
+    expect(await readFile(path.join(outbox, "conversation/run-1/cat.txt"), "utf8"))
       .toContain("Whiskers skim");
     const db = new Database(dbPath);
     const audit = db
@@ -107,5 +107,51 @@ describe("artifact.write tool", () => {
     db.close();
     artifacts.close();
     runtimeStore.close();
+  });
+});
+
+describe("artifact.find tool", () => {
+  test("finds prior current-session artifacts by filename and returns URLs", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "aithy-artifact-find-tool-"));
+    const workspace = path.join(root, "workspace");
+    const outbox = path.join(root, "outbox");
+    const dbPath = path.join(root, "state.db");
+    const artifacts = new SqliteArtifactStore(dbPath, workspace, outbox);
+    const published = await artifacts.write({
+      sessionId: "conversation",
+      runId: "run-1",
+      runOutboxPath: "/outbox/conversation/run-1",
+      path: "reports/quarterly.md",
+      content: "# Quarterly\n",
+      title: "Quarterly Report",
+    });
+    await artifacts.write({
+      sessionId: "other",
+      runId: "run-1",
+      runOutboxPath: "/outbox/other/run-1",
+      path: "quarterly.md",
+      content: "# Other\n",
+      title: "Other Quarterly Report",
+    });
+    const tool = createAgentTools({
+      session: { conversationId: "conversation" },
+      workspacePath: workspace,
+      artifacts,
+      artifactRunId: "run-2",
+      artifactRunOutboxPath: "/outbox/conversation/run-2",
+    } as any, { ...loadConfig(), sandboxProvider: "disabled" })
+      .find((item: any) => item.namespace === "artifact" && item.name === "find") as any;
+
+    const result = await tool.func({ query: "quarterly.md", limit: 5 });
+
+    expect(result.artifacts).toHaveLength(1);
+    expect(result.artifacts[0]).toMatchObject({
+      id: published.id,
+      title: "Quarterly Report",
+      sandboxPath: "/outbox/conversation/run-1/reports/quarterly.md",
+      openUrl: `/api/artifacts/${published.id}`,
+      available: true,
+    });
+    artifacts.close();
   });
 });

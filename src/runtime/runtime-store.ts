@@ -52,6 +52,12 @@ import {
   type SystemPermissionRequest,
   type SystemPermissionStatus,
 } from "./permission-requests";
+import {
+  sandboxFileMount,
+  upsertSandboxFileMount,
+  type SandboxFileMountRecord,
+  type UpsertSandboxFileMountInput,
+} from "./sandbox-file-mount-store";
 import { applyRuntimeStoreMigrations } from "./runtime-store-migrations";
 import { heartbeat as runtimeHeartbeat, service as runtimeService, services as runtimeServices } from "./runtime-service-store";
 import type {
@@ -251,6 +257,14 @@ export class RuntimeStore {
     reason: string,
   ): SystemPermissionRequest | null {
     return decideRuntimePermissionRequest(this.db, id, status, reason);
+  }
+
+  recordSandboxFileMount(input: UpsertSandboxFileMountInput): SandboxFileMountRecord {
+    return upsertSandboxFileMount(this.db, input);
+  }
+
+  sandboxFileMount(sourcePath: string): SandboxFileMountRecord | null {
+    return sandboxFileMount(this.db, sourcePath);
   }
 
   close(): void {

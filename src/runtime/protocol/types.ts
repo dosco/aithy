@@ -10,6 +10,7 @@ export const SERVICE_ROLES = [
 ] as const;
 
 export type RuntimeServiceRole = typeof SERVICE_ROLES[number];
+export type RuntimeServicePlacement = "process" | "coordinator";
 export type RuntimeServiceState = "starting" | "ready" | "busy" | "degraded" | "stopping" | "failed";
 export type RuntimeLogLevel = "debug" | "info" | "warn" | "error";
 export type QueueState = "idle" | "running" | "paused" | "blocked" | "failed";

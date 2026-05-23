@@ -33,6 +33,10 @@ export const upsertSkill = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
+    const existing = runtime.skills.get(data.id);
+    if (existing?.source_kind === "builtin") {
+      throw new Error("Built-in skills are read-only. Duplicate the skill before editing it.");
+    }
     const entry = runtime.skills.upsert({
       id: data.id,
       name: data.name.trim(),
@@ -83,7 +87,11 @@ export const saveSkillBundleUpload = createServerFn({ method: "POST" })
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
     const bundle = parseSkillBundleFiles(data.files);
-    const exists = Boolean(runtime.skills.get(bundle.id));
+    const existing = runtime.skills.get(bundle.id);
+    const exists = Boolean(existing);
+    if (existing?.source_kind === "builtin") {
+      throw new Error("Built-in skills are read-only. Duplicate the skill before editing it.");
+    }
     if (exists && !data.confirmedOverwrite) throw new Error("This skill already exists; review the update before saving");
     const entry = runtime.skills.upsert({
       id: bundle.id,
@@ -105,6 +113,7 @@ export const saveSkillBundleUpload = createServerFn({ method: "POST" })
   });
 
 const skillDeleteInput = z.object({ id: z.string().min(1) });
+const builtInSourceInput = z.object({ sourceId: z.string().min(1).max(160) });
 
 export const deleteSkill = createServerFn({ method: "POST" })
   .inputValidator(skillDeleteInput)
@@ -119,11 +128,39 @@ export const deleteSkill = createServerFn({ method: "POST" })
     };
   });
 
+export const duplicateBuiltInSkill = createServerFn({ method: "POST" })
+  .inputValidator(builtInSourceInput)
+  .handler(async ({ data }) => {
+    assertLoopbackRequest(getRequest());
+    const runtime = await getAithyRuntime();
+    const entry = runtime.skills.duplicateBuiltInSkill(data.sourceId);
+    return {
+      skill: skillDto(entry),
+      skillsCount: runtime.skills.count(),
+      skillsToolUniverse: runtime.skills.countDistinctTools(),
+    };
+  });
+
+export const setBuiltInSkillDisabled = createServerFn({ method: "POST" })
+  .inputValidator(builtInSourceInput)
+  .handler(async ({ data }) => {
+    assertLoopbackRequest(getRequest());
+    return { skill: skillDto((await getAithyRuntime()).skills.setBuiltInSkillDisabled(data.sourceId)) };
+  });
+
+export const setBuiltInSkillEnabled = createServerFn({ method: "POST" })
+  .inputValidator(builtInSourceInput)
+  .handler(async ({ data }) => {
+    assertLoopbackRequest(getRequest());
+    return { skill: skillDto((await getAithyRuntime()).skills.setBuiltInSkillEnabled(data.sourceId)) };
+  });
+
 const skillsPageInput = z.object({
   cursor: z.object({ name: z.string(), id: z.string(), retrievedCount: z.number().optional() }).nullable().optional(),
   query: z.string().max(200).optional(),
   limit: z.number().int().positive().max(200).optional(),
   sort: z.enum(["name", "retrieved"]).optional(),
+  activeOnly: z.boolean().optional(),
 });
 
 export const listSkillsPaged = createServerFn({ method: "GET" })
@@ -136,11 +173,12 @@ export const listSkillsPaged = createServerFn({ method: "GET" })
       limit,
       query: data.query,
       sort: data.sort,
+      activeOnly: data.activeOnly,
     });
     return {
       items: result.items.map(skillDto),
       nextCursor: result.nextCursor,
-      total: data.cursor ? null : runtime.skills.count({ query: data.query }),
+      total: data.cursor ? null : runtime.skills.count({ query: data.query, activeOnly: data.activeOnly }),
     };
   });
 

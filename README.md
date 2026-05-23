@@ -12,177 +12,180 @@
       ':::'
 ```
 
-Aithy is a fast, local AI agent. It is solid enough to run as a personal agent today, while still being an experimental harness for exploring the latest agent research in a local, inspectable product. Aithy is named after a cat I had.
+Aithy is a local AI agent for real life: private by default, easy to run, polished in the browser, and ready for local models, cloud providers, eligible Grok subscriptions, and Mesh-shared home GPUs.
 
-It runs on your machine, remembers what you approve, works in a sandboxed workspace, tracks what it uses, and gives you a polished web UI with sessions, themes, skills, dreams, attentions, memory, files, and artifacts. The goal is simple: install it, open the browser, talk to your bot, and let it help without needing to become an agent-framework expert first.
+It is pronounced **ay-thee**. It is named after my cat.
 
-## Gallery
+Aithy is useful as a personal agent today, but it is also built for the messy place where agent research becomes real software: durable sessions, sandboxed tools, local inference, retrieval, memory, skills, background work, and multiple supervised services running together in an inspectable local product.
 
-These dark-theme screenshots are captured from the real app with a disposable local profile and no real credentials.
+## Why Aithy
 
-<table>
-  <tr>
-    <td><img src="screenshots/01-chat-hero.png" alt="Aithy chat home" width="280"><br><sub>Chat home</sub></td>
-    <td><img src="screenshots/02-runtime-console.png" alt="Runtime console" width="280"><br><sub>Runtime console</sub></td>
-    <td><img src="screenshots/03-theme-gallery.png" alt="Theme gallery" width="280"><br><sub>Themes</sub></td>
-  </tr>
-  <tr>
-    <td><img src="screenshots/04-skills-gallery.png" alt="Skills gallery" width="280"><br><sub>Skills</sub></td>
-    <td><img src="screenshots/05-usage-analytics.png" alt="Usage analytics" width="280"><br><sub>Usage analytics</sub></td>
-    <td><img src="screenshots/08-mesh-family-services.png" alt="Aithy Mesh page" width="280"><br><sub>Mesh</sub></td>
-  </tr>
-  <tr>
-    <td><img src="screenshots/09-inference-family-models.png" alt="Aithy inference settings" width="280"><br><sub>Inference settings</sub></td>
-    <td><img src="screenshots/10-local-inference-retrieval.png" alt="Local inference and retrieval health" width="280"><br><sub>Local inference</sub></td>
-    <td><img src="screenshots/11-xai-oauth-subscription.png" alt="xAI Grok subscription OAuth" width="280"><br><sub>xAI OAuth</sub></td>
-  </tr>
-</table>
+- **Run it locally.** Start Aithy, open the browser, and talk to a real agent UI without wiring an agent framework by hand.
+- **Use the models you already have.** Choose managed local `llama.cpp` models, normal cloud/API providers, custom OpenAI-compatible endpoints, or an eligible Grok subscription.
+- **Make your Grok subscription useful.** Grok subscription sign-in can power chat and `web.search` without pasting an API key into Aithy. For people who already pay for Grok, that can avoid setting up separate per-token API-key billing for supported usage, subject to xAI eligibility and limits.
+- **Share a stronger machine.** Pair Aithy on your laptop with Aithy on a GPU box over LAN Mesh, then use validated family inference/search services without copying secrets around.
+- **Keep the agent visible.** Sessions, memory, skills, attentions, artifacts, usage, permissions, sandbox state, and runtime services are part of the product, not hidden logs.
 
-## Feature highlights
+## Quick Start
 
-- Personal-agent ready: durable sessions, memory, skills, attentions, artifacts, usage, permissions, and a real web UI.
-- Research-harness shaped: built on Ax and Ax Agent with an RLM-style, DSPy-inspired pipeline instead of one giant prompt.
-- Small-model friendly: deterministic JavaScript handles parsing, filtering, deduping, and orchestration so smaller or cheaper models can do more useful work.
-- Local inference: managed local chat models, embeddings, reranking, targeted indexing, and retrieval-health diagnostics.
-- Family Mesh: LAN discovery, explicit pairing, mutual-family service sharing, pinned TLS/HTTP3 RPC, and OpenAI-compatible local proxy providers.
-- xAI OAuth: use a Grok subscription for chat and `web.search` without pasting an API key into the app.
-- MCP-ready runtime: tools can become callable functions without stuffing every tool definition into model context.
-- Trust boundaries: Microsandbox execution, scoped permissions, local SQLite state, Bun secrets, explicit mounts, and no hidden Mesh secret sharing.
+### Download a build
 
-## Quick start
+Download the latest packaged build from [GitHub Releases](https://github.com/dosco/aithy/releases/latest), choose the archive for your OS, unpack it, and run Aithy:
 
-You need [Bun](https://bun.sh/) 1.3.14 or newer and a model API key from a supported provider.
+```bash
+gh release download --repo dosco/aithy --pattern 'aithy-*-darwin-arm64.tar.gz'
+tar -xzf aithy-*-darwin-arm64.tar.gz
+cd aithy-*-darwin-arm64
+./aithy
+```
+
+Open `http://127.0.0.1:3000`. Use `--host` and `--port` if you want a different bind address.
+
+Release archives are named by platform:
+
+- `aithy-v*-darwin-arm64.tar.gz` for Apple Silicon Macs.
+- `aithy-v*-linux-x64-gnu.tar.gz` for Linux x64.
+- `aithy-v*-linux-arm64-gnu.tar.gz` for Linux ARM64.
+
+Intel Mac and Windows archives are not published yet because the packaged sandbox runtime is not available for those targets.
+
+### Start from code
+
+Use this path if you want to run from the repo, hack on Aithy, or follow the code as it changes. You need [Bun](https://bun.sh/) 1.3.14 or newer.
 
 ```bash
 bun install
 bun run start
 ```
 
-Open `http://127.0.0.1:3000`. The welcome screen walks you through your name, optional profile details, choosing a provider, model, and API key.
+The welcome screen walks through your profile, provider, model, key or sign-in flow, sandbox settings, and local inference options.
 
-Local state lives at `~/.config/aithy/default/`. Use the web UI and persisted settings for provider-scoped model profiles, search profiles, keys, sandbox settings, and local inference.
+Local state lives at `~/.config/aithy/default/` by default. Use the web UI and persisted settings for provider-scoped model profiles, search profiles, secrets, sandbox settings, Mesh, and local inference.
 
-Every Aithy is a full Aithy. There is no separate inference-only mode: if you want to share a GPU box with laptops on the same LAN, run Aithy on each machine, open the Mesh page, pair the machines, and mark the relationship level you actually trust.
+Every Aithy is a full Aithy. There is no separate inference-only daemon: to share a GPU box with laptops on the same LAN, run Aithy on each machine, open Mesh, pair them, and mark the relationship level you actually trust.
 
-## Why Aithy feels different
+## Packaged Releases
 
-Aithy is built for everyday use first. You do not need to wire a graph, write prompts, or manage a pile of terminal scripts before it becomes useful.
+Pushing a `v*` tag runs the GitHub Actions release flow. It checks the repo, builds the production web app, packages supported portable archives, smoke-tests the Linux x64 package, and attaches archives plus SHA-256 checksums to the GitHub release.
 
-- Easy install, easy setup, and a real web UI.
-- Themes and layouts for a chatty personal bot or a quieter work surface.
-- Durable sessions, so conversation history becomes useful context instead of disappearing.
-- User-approved memory for facts, preferences, and recurring context.
-- Dreams that distill recent work into reusable task episodes.
-- Skills that capture repeated workflows, including Claude-style folders and portable skill bundles.
-- Attentions for reminders, briefings, watches, and ongoing tasks.
-- Usage tracking so you can see model and token activity instead of guessing.
-- A sandbox workspace for code, files, scripts, and generated artifacts.
+Each archive contains one pinned Bun runtime, bundled app JavaScript, built client assets, a target-specific native vendor slice, and external worker bundles only for sandbox and local inference. The packaged `aithy` command runs the web runtime, queue service, and agent/background queues inside one coordinator process while keeping `sandbox-worker` and `local-inference-worker` as supervised child processes.
 
-Under the hood, Aithy is also designed to be more consistent than the usual "giant prompt plus tools" agent. It uses Ax and Ax Agent's RLM-style pipeline, with a context distiller, JavaScript runtime executor, and final responder. That structured flow is DSPy-inspired instead of prompt soup: the model gets narrower jobs, the runtime handles deterministic work, and smaller models can do more because less of the task is left as one huge reasoning blob.
+## Screenshots
 
-## Fast, skillful, and model-flexible
+These light-mode screenshots are captured from the real app with a disposable local profile, demo-safe runtime and usage records, and no real credentials.
 
-Aithy separates the work that should be deterministic from the work that should be linguistic.
+<p>
+  <img src="screenshots/light/00-chat-hero-light.png" alt="Aithy chat workspace with visible tool evidence" width="1000">
+</p>
 
-The agent can use JavaScript for filtering, parsing, deduping, sorting, and tool orchestration, while the model focuses on understanding, decisions, and response quality. You can also configure a fast model separately from the main model, so cheaper or smaller models can carry parts of the pipeline when that fits your setup.
+<table>
+  <tr>
+    <td><img src="screenshots/light/01-chat-workspace-haiku-hash-light.png" alt="Aithy chat workspace with tool output" width="280"><br><sub>Chat with tools, files, and visible runtime evidence</sub></td>
+    <td><img src="screenshots/light/09-inference-settings-light.png" alt="Aithy inference settings" width="280"><br><sub>Choose local, cloud, Grok, or family model sources</sub></td>
+    <td><img src="screenshots/light/10-local-inference-light.png" alt="Local inference settings" width="280"><br><sub>Run chat, embeddings, reranking, and retrieval locally</sub></td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/light/11-xai-oauth-light.png" alt="xAI Grok subscription OAuth" width="280"><br><sub>Use Grok subscription sign-in without an API key paste</sub></td>
+    <td><img src="screenshots/light/08-mesh-pairing-light.png" alt="Aithy Mesh page" width="280"><br><sub>Pair local Aithys and share trusted services</sub></td>
+    <td><img src="screenshots/light/02-console-runtime-overview-light.png" alt="Runtime console" width="280"><br><sub>Watch services, queues, jobs, and logs</sub></td>
+  </tr>
+  <tr>
+    <td><img src="screenshots/light/05-usage-analytics-light.png" alt="Usage tracking dashboard" width="280"><br><sub>Track calls, tokens, cache, and purpose</sub></td>
+    <td><img src="screenshots/light/04-skills-library-light.png" alt="Skills gallery" width="280"><br><sub>Teach repeatable workflows and reusable abilities</sub></td>
+    <td><img src="screenshots/light/03-themes-palette-list-light.png" alt="Theme gallery" width="280"><br><sub>Tune the surface without changing the agent</sub></td>
+  </tr>
+</table>
 
-That is the heart of the consistency story: Aithy is not only asking a model to improvise. It gives the model a runtime, typed functions, stored context, skills, and a permissioned environment to act in.
+## Use the Models You Already Have
 
-## MCP without context bloat
+Aithy lets the model source be a runtime choice instead of a project rewrite.
 
-Aithy ships with Parallel Search MCP for public web search. It works through Parallel's free anonymous endpoint by default, so no Parallel account or API key is required. For higher limits or proxying, configure Parallel search in Settings. Search settings are provider-scoped and validated before they are saved, just like model settings.
+```mermaid
+flowchart LR
+  User["You"] --> UI["Aithy web UI"]
+  UI --> Source{"Model source"}
+  Source --> Local["This Aithy: managed llama.cpp"]
+  Source --> Grok["This Aithy: eligible Grok subscription"]
+  Source --> Cloud["This Aithy: cloud/API provider"]
+  Source --> Family["Family Aithy over Mesh"]
+  Local --> Agent["Agent pipeline"]
+  Grok --> Agent
+  Cloud --> Agent
+  Family --> Agent
+```
 
-The larger architecture is ready for much more than one search tool. Ax can expose MCP tools, prompts, and resources as callable functions, then make those functions available through the JavaScript runtime. That means Aithy can scale toward effectively unlimited MCPs without stuffing every tool definition into the model context. The model can discover and call what it needs, when it needs it, while the runtime keeps the tool surface outside the prompt budget.
+Local inference uses a managed `llama.cpp` `llama-server` release pinned in `package.json`, with Qwen GGUF chat models plus local Qwen embedding and reranker models. A saved path to your own compatible `llama-server` can be used instead.
 
-That is a big deal for serious agent work: more services, more tools, less context pressure, and fewer brittle prompt tricks.
+The Grok subscription provider uses OAuth/PKCE sign-in. Tokens stay in local Aithy secrets, and the connected provider can be used for chat and `web.search` when the subscription is eligible for the underlying xAI access.
 
-## Aithy Mesh
+## Share Inference With Mesh
 
-Aithy Mesh lets full Aithy instances find each other on a local network, pair explicitly, remember that pairing locally, show presence, and share selected services without copying secrets between machines.
+Aithy Mesh is for the home-lab shape a lot of local AI users already have: a laptop where you work, and a stronger machine somewhere nearby.
 
-The common home-lab shape is simple: run Aithy on a Linux box with the big GPU, run Aithy on your laptop, pair them from the Mesh page, then mark both sides as `family`. Once both sides agree, the laptop can select that family member on the Models page and choose one of the GPU box's currently validated provider slots.
+```mermaid
+flowchart LR
+  Laptop["Laptop Aithy"] --> Pair["Explicit pairing"]
+  Gpu["GPU-box Aithy"] --> Pair
+  Pair --> Trust["Mutual family trust"]
+  Trust --> Catalog["Live validated service catalog"]
+  Laptop --> Proxy["Local OpenAI-compatible proxy"]
+  Proxy --> Rpc["Pinned TLS / HTTP3 mesh RPC"]
+  Rpc --> Gpu
+  Gpu --> Services["Local, cloud, Grok, search services"]
+```
 
-Mesh can be switched off from the Mesh page. Turning it off stops LAN advertising, discovery, pairing, mesh RPC/proxy servers, health checks, and family mesh providers while keeping saved pairings in local SQLite for later.
+Mesh discovery is LAN-only. It advertises identity and connection metadata, not model lists, provider URLs, API keys, prompts, sessions, memories, or service catalogs. Family catalogs are live RPC calls, only mutual `family` peers can return them, and shared providers are never recursively re-shared.
 
-Mesh is intentionally human-shaped:
+## Built for Real Agent Work
 
-- `acquaintance`: paired identity and presence only.
-- `friend`: trusted identity and presence, reserved for richer future collaboration.
-- `family`: service sharing, only when both sides mark each other as family.
+Aithy is not just a chat box with a pile of tools. It treats the agent as a local runtime system.
 
-Discovery uses mDNS on the LAN with the `_aithy._tcp` service name. The advertisement is deliberately boring: peer id, display name, mesh API port, certificate fingerprint, HTTP/3 support, and protocol version. It does not advertise provider URLs, API keys, prompts, sessions, memories, service catalogs, or model lists.
+```mermaid
+flowchart TD
+  Browser["Browser UI"] --> Web["web runtime"]
+  Web --> Queue["queue-service"]
+  Queue --> Agent["agent-worker"]
+  Queue --> Sandbox["sandbox-worker"]
+  Queue --> Local["local-inference-worker"]
+  Agent --> SQLite["SQLite state"]
+  Sandbox --> Workspace["sandbox workspace"]
+  Local --> Llama["llama.cpp router"]
+  Local --> SQLite
+  Agent --> Artifacts["artifacts and outbox"]
+```
 
-Pairing is manual. Opening a pairing window creates a short-lived, single-use code; the code is used to prove both sides saw the same certificate fingerprints and pairing window. The code is not sent as the pairing payload. New pairings start as `acquaintance`, and re-pairing resets trust back to `acquaintance`.
+The runtime services are `web`, `queue-service`, `agent-worker`, `sandbox-worker`, and `local-inference-worker`. In source/dev mode they run as separate supervised processes. In packaged releases, `web`, `queue-service`, and `agent-worker` share the coordinator process, while sandbox and local inference stay outside that process for native dependency and safety boundaries.
 
-Each Aithy generates a local self-signed mesh TLS certificate on first run. Paired peers pin that certificate, prefer HTTP/3 over QUIC for mesh RPC, and fall back to pinned HTTPS when HTTP/3 is unavailable or blocked. The fallback is still certificate-pinned; mDNS is discovery, not authority.
+Under the hood, Aithy uses Ax and Ax Agent with an RLM-style, DSPy-inspired flow: context distillation, JavaScript runtime execution, and final response generation. Deterministic work such as parsing, filtering, sorting, deduping, retrieval orchestration, and tool routing can happen in code while the model focuses on language, judgment, and response quality.
 
-Family service catalogs are live mesh RPC calls, not discovery payloads. The Models and Search pages fetch catalogs when opened or refreshed, and only paired mutual-family peers can return them. Catalogs are metadata-only: provider label, slot label, model ids, capability kind, search mode, and validation status/time. They are never published through mDNS, returned from healthchecks, cached in peer rows, or stored as client state.
+MCP fits this shape naturally. Tools can become callable runtime functions instead of being stuffed into every model prompt, which gives Aithy room to grow without turning context into a junk drawer.
 
-Shared inference is exposed locally as an OpenAI-compatible loopback proxy provider. Provider ids look like `mesh:<peerId>:inference:<serviceId>`, and the local proxy forwards requests to the serving Aithy over pinned TLS. The serving Aithy rebuilds its local catalog on every call and rejects service ids or model ids that are not currently advertised by that validated slot. Mesh providers are never re-shared, which avoids recursive proxying.
+## Memory, Skills, Dreams, and Attentions
 
-Search sharing uses the same model. Search provider ids look like `mesh:<peerId>:search:<serviceId>`, and the serving Aithy resolves the selected live validated search profile before proxying the request. API keys, Grok credentials, Parallel keys, backend URLs, OAuth tokens, local prompts, sessions, memories, and provider configuration stay on the serving machine. Service requests still contain the caller's prompt or search query, because the serving Aithy must process the request.
+Aithy keeps durable conversation history and separate user-approved memory for facts worth keeping. Retrieval is grep-first and sparse: exact lexical anchors such as paths, filenames, commands, quoted text, and error codes are searched with SQLite FTS, semantic sqlite-vec candidates fill in fuzzy recall, and local reranking refines the strongest candidates when available. The agent sees only a small evidence pack, not every retrieved candidate.
 
-xAI Grok subscription support uses an OAuth sign-in flow instead of asking you to paste a subscription credential into the app. Once connected, chat and `web.search` can use the subscription-backed provider, and the tokens stay in local Aithy secrets.
+Dreams turn completed work into searchable episodes with task, approach, outcome, notes, tools, errors, artifacts, and evidence. Transcript recall can surface small raw snippets from prior messages, tool calls, and artifact metadata when exact evidence matters. Skills capture reusable workflows, including Claude-style skill folders and portable `SKILL.md` bundles with supporting files; skill names, descriptions, bodies, and supporting files are searchable without stuffing all skill text into prompt context. Attentions are ongoing reminders, briefings, watches, and tasks that need to come back later.
 
-The UI uses a source selector instead of one giant dropdown. Models can use `This Aithy` or `Family Aithy`; family mode first chooses the family member, then the live provider slot, then an advertised model. Search settings mirror that pattern with local search providers or family member plus family search service. A selected family provider remains visible if it goes offline or stops being offered, but it is disabled until the live catalog is available again.
+Aithy ships a source-managed built-in skills catalog for document sandbox work: Docling conversion, OCR, PDF repair/assembly/optimization, spreadsheet and CSV cleanup, web/table extraction, downloads, and artifact packaging. Built-ins are read-only, can be disabled without deletion, and can be duplicated into normal editable user skills.
 
-Mesh v2 is LAN-only. It does not do internet relay, NAT traversal, or multi-network identity sync.
+## Built for Trust
 
-## Built for trust
-
-Aithy is local-first by default. State, sessions, memories, skills, settings, usage, and runtime metadata live under your Aithy config directory unless you deliberately point them elsewhere.
-
-Security is not bolted on at the edge:
+Aithy is local-first by default. State, sessions, memories, skills, settings, usage, runtime status, and Mesh peer records live under your Aithy config directory unless you deliberately point them elsewhere.
 
 - Microsandbox mode runs agent commands in a Linux sandbox.
-- Host files are exposed only through explicit attachments or mounts.
-- Folder mounts are named and scoped; individual file attachments are copied into the workspace.
+- Host files are exposed through explicit attachments or mounts.
+- User-facing files are published from `/outbox/<session>/<run>` and can be found later by filename in the same chat.
 - Optional host shell access goes through permission prompts.
-- Permission decisions can become scoped capability rules, such as one command, one folder, one host path, or one website origin.
-- Slash commands are routed before they reach the agent, so commands like `/help`, `/skills`, and `/session` are not treated as ordinary prompts.
-- API keys and provider settings stay local. Non-secret model and search profile settings live in SQLite; credentials live in Bun secrets under Aithy-prefixed names such as `aithy.llm.<provider>.api-key`, `aithy.search.<provider>.api-key`, and `aithy.oauth.<provider>.tokens`.
-- Model and search profiles are validated against the current URL, model or mode, and credential version before they are marked valid; changing the profile makes that validation stale until the next successful test.
-- Mesh secrets stay local: the mesh TLS private key is stored in Bun secrets, paired certificate pins live in SQLite, and provider API keys are never sent to peers.
-- Mesh RPC runs over pinned TLS with HTTP/3 preferred and pinned HTTPS fallback. RPC metadata includes sender, recipient, request id, method, timestamp, nonce, and an ECDSA signature from the caller's pinned mesh certificate; stale, replayed, and unsigned/forged envelopes are rejected.
-- Mesh service access requires mutual `family` trust, live catalog authorization, and a current model/service allowlist match. Downgrading or revoking either side removes shared services.
+- Permission decisions can become scoped capability rules.
+- Slash commands such as `/help`, `/skills`, and `/session` are routed before they reach the agent.
+- Non-secret provider settings live in SQLite; credentials live in Bun secrets under Aithy-prefixed names.
+- Provider profiles are validated against URL, model or mode, and credential version before being marked valid.
+- Mesh TLS private keys stay in local secrets, paired certificate pins live in SQLite, and provider API keys are never sent to peers.
+- Mesh RPC uses pinned TLS with HTTP/3 preferred and pinned HTTPS fallback.
+- Mesh service access requires mutual `family` trust, live catalog authorization, and a current model/service allowlist match.
 - Usage capture records provider, model, token, cache, and purpose details for visibility.
 
 The agent can be powerful, but it should not be mysterious. Aithy is designed so you can see what is happening, approve risky actions, and keep local state under your control.
-
-## Memory, dreams, skills, and attentions
-
-Aithy has durable conversation memory and a separate memory system for facts worth keeping. Every chat turn performs a deterministic pre-recall before the agent starts, then agent-directed recall uses the same global retrieval pipeline across memories and dream episodes. Retrieval combines full-text and local vector candidates, fuses them, and lets the local reranker make the final ordering decision when it is available; importance and recency only break close ties.
-
-Dreams are episodic memory for work the agent has already done. Aithy can inspect recent sessions, detect practical task episodes, and save what happened: the task, approach, outcome, notes, tools, errors, artifacts, and supporting message evidence. Future runs can reuse those lessons instead of rediscovering the same project gotchas.
-
-Skills are reusable instructions for workflows you repeat. They can be searched, selected, suggested, and tracked by usage. Aithy supports Claude-style skill folders and portable skill bundles: one `SKILL.md` entrypoint with frontmatter, plus optional supporting files like references, examples, and guides. Skill cards, bodies, and attached files are chunked into the local semantic index, so a workflow can be found by what it teaches, not only by its name or tags. Aithy can notice repeated patterns and surface skill candidates, turning habits into reusable agent behavior.
-
-Memory, episode, and skill writes queue targeted local embedding immediately. The periodic backfill still runs as a safety net, and if local inference is down the write still succeeds while retrieval falls back to full-text until indexing catches up. `memory.recall` and `skills.search` tool details include compact diagnostics, and the Local Inference page shows embedded/stale counts plus reranker status.
-
-Attentions are ongoing work: reminders, briefings, watches, and tasks that need to come back later. They make Aithy feel less like a single chat box and more like a small local operating layer for the things you want help tracking.
-
-## Technical architecture
-
-Aithy's technical architecture is way ahead of many open-source agents because it treats the agent as a runtime system, not just a chat loop.
-
-Key pieces:
-
-- Ax RLM pipeline: context distiller, executor, and responder stages with typed signatures.
-- JavaScript runtime execution: deterministic work happens in code, not only in model tokens.
-- Function-based tools: sandbox, files, web search, web fetch, artifacts, memory, skills, automations, tasks, and permissions are exposed as callable functions.
-- MCP-ready shape: MCP tools can become runtime functions instead of prompt-stuffed tool lists.
-- Skill bundles: `SKILL.md` plus supporting files can be uploaded, diffed, stored, linked, and loaded on demand.
-- Multi-service architecture: web runtime, queue service, agent worker, sandbox worker, and embedding worker are supervised separately.
-- LAN mesh runtime: mDNS discovery, explicit pairing, peer presence, trust levels, pinned TLS/HTTP3 RPC, and local proxy providers for family Aithys.
-- Local SQLite state: sessions, memory, skills, soul guidance, notifications, usage, tasks, automations, permissions, and runtime service status are durable.
-- Unified retrieval: SQLite FTS, sqlite-vec, reciprocal-rank fusion, targeted embedding, pre-turn recall, semantic skill chunks, diagnostics, and reranker-primary final ordering.
-- Episodic dreams: background extraction turns completed work into searchable agent episodes with evidence and outcomes.
-- Capability governance: permission prompts, scoped allow rules, audit paths, and capability policies live in the runtime.
-- Sandboxed execution: Microsandbox gives the agent a persistent workspace without handing it the whole host by default.
-- Usage accounting: model usage is captured per provider, model, purpose, session, and run.
-- Clean subsystem boundaries: startup wiring stays in `src/main.ts`; behavior lives in focused subsystem files.
-
-This is the difference between "an LLM with tools" and an agent platform that can keep growing without becoming fragile.
 
 ## Commands
 
@@ -203,6 +206,20 @@ bun run debug               # list SQLite tables
 bun run debug <table> <id>  # inspect a table
 bun run memory <session-id> # reprocess a session
 ```
+
+### Sandbox Image
+
+Aithy uses `ghcr.io/dosco/aithy-sandbox:latest` as the default Microsandbox image. It is a Wolfi-based image for document-heavy agent work with `bash`, Docling, Poppler, Ghostscript, qpdf, Tesseract English OCR, Noto and Noto CJK fonts, Python 3.13 with pip and virtualenv, common Python data/web libraries, and basic download/archive tools.
+
+When the image is not cached yet, Aithy shows a sandbox image splash with pull progress, byte counts, and filesystem preparation status. The Runtime Console shows the same setup status stream with logs and service state.
+
+The repository `Dockerfile` builds the same image locally when you want to test changes before publishing.
+
+```bash
+docker build -t aithy-sandbox:local .
+```
+
+Set the sandbox image to `aithy-sandbox:local` in Settings -> Sandbox when you want a local test build instead of the published default.
 
 Useful project areas:
 

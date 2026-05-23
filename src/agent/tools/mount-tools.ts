@@ -56,12 +56,19 @@ export function createMountTools(ctx: ToolContext) {
 
         if (info.isFile()) {
           await mkdir(ctx.workspacePath, { recursive: true });
-          const placement = await pickWorkspaceName(ctx.workspacePath, resolved);
+          const placement = await existingCopiedPlacement(ctx, resolved)
+            ?? await pickWorkspaceName(ctx.workspacePath, resolved);
           const dest = path.join(ctx.workspacePath, placement.fileName);
           if (!placement.alreadyExisted) {
             await cowCopy(resolved, dest);
           }
           const sandboxPath = `/workspace/${placement.fileName}`;
+          recordCopiedPlacement(ctx, {
+            resolvedSource: resolved,
+            sandboxPath,
+            workspacePath: dest,
+            sizeBytes: info.size,
+          });
           if (!placement.alreadyExisted) {
             ctx.notify?.({
               kind: "mount.added",
@@ -84,39 +91,50 @@ export function createMountTools(ctx: ToolContext) {
       })
       .build(),
 
-    fn("getPath")
-      .namespace("sandbox")
-      .description(
-        "Look up the sandbox path for a host file or directory. Directories and files under mounted folders resolve to /mounts/<name>. Files copied into the workspace by sandbox.mount resolve to /workspace/<filename> or /workspace/<base>-<hash><ext> when that copied file exists. Returns an empty string if the host path is not available in the sandbox."
-      )
-      .arg("hostPath", f.string("Absolute host path"))
-      .returnsField("path", f.string("Sandbox path under /mounts or /workspace, or empty string if unavailable"))
-      .handler(async ({ hostPath }) => {
-        await requireToolPermission(ctx, {
-          capability: "sandbox.getPath",
-          toolName: "sandbox.getPath",
-          command: `get sandbox path for ${hostPath}`,
-          reason: "Allow the agent to inspect whether this host path is available in the sandbox.",
-          targetKind: "host_path",
-          targetValue: hostPath,
-          matchContext: { hostPath },
-          args: { hostPath },
-        });
-        const path = await resolveSandboxPathForHostPath({
-          hostPath,
-          mounts: ctx.sessions.mountsForSandbox(),
-          workspacePath: ctx.workspacePath,
-        });
-        return { path };
-      })
-      .build(),
+    createResolveHostPathTool(ctx, "resolveHostPath"),
+    createResolveHostPathTool(ctx, "getPath"),
   ];
+}
+
+function createResolveHostPathTool(ctx: ToolContext, name: "resolveHostPath" | "getPath") {
+  const toolName = `sandbox.${name}`;
+  const description = name === "resolveHostPath"
+    ? "Resolve an absolute host file or directory path to its sandbox path if it is already available. Mounted folders resolve to /mounts/<name>. Files copied by sandbox.mount resolve from recorded copy provenance. Returns an empty string if unavailable. This is not for finding published artifacts; use artifact.find for artifacts."
+    : "Compatibility alias for sandbox.resolveHostPath. Use this only for absolute host paths that may already be mounted or copied into the sandbox, not for artifacts; use artifact.find for artifacts.";
+  return fn(name)
+    .namespace("sandbox")
+    .description(description)
+    .arg("hostPath", f.string("Absolute host path"))
+    .returnsField("path", f.string("Sandbox path under /mounts or /workspace, or empty string if unavailable"))
+    .handler(async ({ hostPath }) => {
+      const requestedPath = path.resolve(hostPath);
+      await requireToolPermission(ctx, {
+        capability: "sandbox.getPath",
+        toolName,
+        command: `resolve sandbox path for ${requestedPath}`,
+        reason: "Allow the agent to inspect whether this host path is available in the sandbox.",
+        targetKind: "host_path",
+        targetValue: requestedPath,
+        matchContext: { hostPath: requestedPath },
+        args: { hostPath: requestedPath },
+      });
+      const copied = await copiedFileRecord(ctx, requestedPath);
+      const sandboxPath = await resolveSandboxPathForHostPath({
+        hostPath: requestedPath,
+        mounts: ctx.sessions.mountsForSandbox(),
+        workspacePath: ctx.workspacePath,
+        copiedFiles: copied ? [copied] : [],
+      });
+      return { path: sandboxPath };
+    })
+    .build();
 }
 
 export async function resolveSandboxPathForHostPath(input: {
   hostPath: string;
   mounts: Array<{ hostPath: string; mountName: string }>;
   workspacePath: string;
+  copiedFiles?: Array<{ sourcePath: string; sandboxPath: string; workspacePath?: string }>;
 }): Promise<string> {
   let resolved: string;
   let info: Awaited<ReturnType<typeof stat>>;
@@ -131,7 +149,7 @@ export async function resolveSandboxPathForHostPath(input: {
   if (mountedPath) return mountedPath;
   if (!info.isFile()) return "";
 
-  return sandboxPathForWorkspaceFile(input.workspacePath, resolved);
+  return sandboxPathForCopiedFile(input.copiedFiles ?? [], resolved);
 }
 
 function sandboxPathForMountedHostPath(
@@ -143,22 +161,54 @@ function sandboxPathForMountedHostPath(
 
   const parent = mounts
     .map((m) => ({ mount: m, rel: path.relative(m.hostPath, hostPath) }))
-    .find(({ rel }) => rel && !rel.startsWith("..") && !path.isAbsolute(rel));
+    .filter(({ rel }) => rel && !rel.startsWith("..") && !path.isAbsolute(rel))
+    .sort((a, b) => a.rel.length - b.rel.length)
+    .at(0);
   if (!parent) return "";
 
   return `/mounts/${parent.mount.mountName}/${parent.rel}`;
 }
 
-async function sandboxPathForWorkspaceFile(
-  workspaceDir: string,
+async function sandboxPathForCopiedFile(
+  copiedFiles: Array<{ sourcePath: string; sandboxPath: string; workspacePath?: string }>,
   resolvedSource: string,
 ): Promise<string> {
-  const directName = path.basename(resolvedSource);
-  const hashedName = hashedWorkspaceName(resolvedSource);
+  const copied = copiedFiles.find((file) => file.sourcePath === resolvedSource);
+  if (!copied) return "";
+  if (copied.workspacePath && !(await exists(copied.workspacePath))) return "";
+  return copied.sandboxPath;
+}
 
-  if (await exists(path.join(workspaceDir, hashedName))) return `/workspace/${hashedName}`;
-  if (await exists(path.join(workspaceDir, directName))) return `/workspace/${directName}`;
-  return "";
+async function copiedFileRecord(ctx: ToolContext, requestedPath: string) {
+  if (!ctx.runtimeStore) return null;
+  try {
+    return ctx.runtimeStore.sandboxFileMount(await realpath(requestedPath));
+  } catch {
+    return null;
+  }
+}
+
+async function existingCopiedPlacement(ctx: ToolContext, resolvedSource: string): Promise<WorkspacePlacement | null> {
+  const existing = ctx.runtimeStore?.sandboxFileMount(resolvedSource);
+  if (!existing || !(await exists(existing.workspacePath))) return null;
+  const fileName = existing.sandboxPath.startsWith("/workspace/")
+    ? existing.sandboxPath.slice("/workspace/".length)
+    : path.basename(existing.workspacePath);
+  return { fileName, alreadyExisted: true };
+}
+
+function recordCopiedPlacement(ctx: ToolContext, input: {
+  resolvedSource: string;
+  sandboxPath: string;
+  workspacePath: string;
+  sizeBytes: number;
+}): void {
+  ctx.runtimeStore?.recordSandboxFileMount({
+    sourcePath: input.resolvedSource,
+    sandboxPath: input.sandboxPath,
+    workspacePath: input.workspacePath,
+    sizeBytes: input.sizeBytes,
+  });
 }
 
 interface WorkspacePlacement {

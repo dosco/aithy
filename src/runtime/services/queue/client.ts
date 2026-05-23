@@ -12,6 +12,7 @@ import type {
   CommandCompletion,
   RuntimeLogEventPayload,
   RuntimeQueueStatus,
+  RuntimeServicePlacement,
   RuntimeServiceRole,
   RuntimeServiceState,
   RuntimeServiceStatus,
@@ -54,16 +55,18 @@ export class QueueServiceClient {
     private readonly socket: WebSocket,
     public readonly role: RuntimeServiceRole,
     private readonly requestTimeoutMs: number,
+    private readonly placement?: RuntimeServicePlacement,
   ) {}
 
   static async connect(input: {
     url: string;
     role: RuntimeServiceRole;
+    placement?: RuntimeServicePlacement;
     requestTimeoutMs?: number;
     connectTimeoutMs?: number;
   }): Promise<QueueServiceClient> {
     const socket = new WebSocket(input.url);
-    const client = new QueueServiceClient(socket, input.role, input.requestTimeoutMs ?? 5_000);
+    const client = new QueueServiceClient(socket, input.role, input.requestTimeoutMs ?? 5_000, input.placement);
     let opened = false;
     await new Promise<void>((resolve, reject) => {
       let settled = false;
@@ -95,7 +98,13 @@ export class QueueServiceClient {
       void client.receive(message.data).catch((error) => client.handleReceiveError(error));
     };
     socket.onclose = () => client.markClosed(new QueueServiceConnectionClosedError());
-    client.send({ type: "hello", role: input.role, pid: process.pid, instanceId: crypto.randomUUID() });
+    client.send({
+      type: "hello",
+      role: input.role,
+      pid: process.pid,
+      instanceId: crypto.randomUUID(),
+      placement: input.placement,
+    });
     return client;
   }
 
@@ -150,7 +159,7 @@ export class QueueServiceClient {
   }
 
   async heartbeat(role: RuntimeServiceRole, state: RuntimeServiceState, detail?: unknown): Promise<void> {
-    await this.notify("runtime.serviceStatus", { role, state, detail, pid: process.pid });
+    await this.notify("runtime.serviceStatus", { role, state, detail: this.detailWithPlacement(detail), pid: process.pid });
   }
 
   async service(role: RuntimeServiceRole): Promise<RuntimeServiceStatus | null> {
@@ -334,6 +343,15 @@ export class QueueServiceClient {
 
   private send(frame: RuntimeBusClientFrame): void {
     this.socket.send(JSON.stringify(frame));
+  }
+
+  private detailWithPlacement(detail: unknown): unknown {
+    if (!this.placement) return detail;
+    if (detail === undefined || detail === null) return { placement: this.placement };
+    if (!detail || typeof detail !== "object" || Array.isArray(detail)) {
+      return { value: detail, placement: this.placement };
+    }
+    return { ...(detail as Record<string, unknown>), placement: this.placement };
   }
 }
 

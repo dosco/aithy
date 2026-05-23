@@ -13,11 +13,13 @@ export async function serveArtifactRequest(
   }
   if (!resolved) return new Response("Artifact not found", { status: 404 });
   const download = new URL(request.url).searchParams.get("download") === "1";
+  const disposition = download || shouldForceDownload(resolved.entry.mimeType) ? "attachment" : "inline";
   const headers = new Headers({
     "Content-Length": String(resolved.sizeBytes),
     "Content-Type": resolved.entry.mimeType,
     "X-Content-Type-Options": "nosniff",
-    "Content-Disposition": `${download ? "attachment" : "inline"}; filename="${safeFilename(resolved.entry.filename)}"`,
+    "Content-Security-Policy": "sandbox; default-src 'none'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'unsafe-inline'",
+    "Content-Disposition": `${disposition}; filename="${safeFilename(resolved.entry.filename)}"`,
   });
   return new Response(Bun.file(resolved.hostPath).stream(), {
     status: 200,
@@ -26,5 +28,10 @@ export async function serveArtifactRequest(
 }
 
 function safeFilename(filename: string): string {
-  return filename.replaceAll(/[\\"]/g, "_");
+  return filename.replaceAll(/[\x00-\x1f\x7f\\"]/g, "_") || "artifact";
+}
+
+function shouldForceDownload(mimeType: string): boolean {
+  const normalized = mimeType.split(";")[0]?.trim().toLowerCase() ?? "";
+  return normalized === "text/javascript" || normalized === "application/javascript";
 }

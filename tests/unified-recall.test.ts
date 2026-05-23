@@ -69,4 +69,32 @@ describe("unified memory recall", () => {
     expect(result.diagnostics.mode).toBe("hybrid-reranked");
     expect(result.diagnostics.sources.map((source) => source.source).sort()).toEqual(["episodes", "memories"]);
   });
+
+  test("preload recall injects a sparse evidence pack", async () => {
+    const dbPath = await tempDbPath();
+    const memory = new SqliteMemoryStore(dbPath);
+    for (let index = 0; index < 6; index += 1) {
+      memory.upsert({ kind: "fact", title: `Coffee ${index}`, body: `coffee planning note ${index}` });
+    }
+
+    const result = await unifiedMemoryRecall({ memory, queries: ["coffee planning"], source: "preload", limit: 3 });
+    expect(result.hits.length).toBeLessThanOrEqual(3);
+    expect(result.diagnostics.candidateMatches).toBeGreaterThan(result.diagnostics.injectedMatches ?? 0);
+    expect(result.diagnostics.withheldMatches).toBeGreaterThan(0);
+  });
+
+  test("anchor queries drop semantic-only hits that do not contain the anchor", async () => {
+    const dbPath = await tempDbPath();
+    const embedder = new MockEmbedder([["SOUL.md", "persona configuration"]]);
+    const memory = new SqliteMemoryStore(dbPath, { embedder });
+    if (!memory.isHybridReady()) return;
+
+    memory.upsert({ kind: "fact", title: "Persona config", body: "persona configuration without the literal filename" });
+    await memory.flushPendingEmbeds();
+
+    const result = await unifiedMemoryRecall({ memory, queries: ["`SOUL.md`"], source: "preload", limit: 3 });
+    expect(result.hits).toEqual([]);
+    expect(result.diagnostics.candidateMatches).toBeGreaterThan(0);
+    expect(result.diagnostics.injectedMatches).toBe(0);
+  });
 });

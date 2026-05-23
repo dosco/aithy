@@ -208,6 +208,12 @@ export interface SkillDto {
   tags: string | null;
   disableModelInvocation: boolean;
   userInvocable: boolean;
+  sourceKind: "user" | "builtin";
+  sourceId: string | null;
+  sourceVersion: string | null;
+  sourceHash: string | null;
+  disabledAt: string | null;
+  duplicatedFromSourceId: string | null;
   files: SkillFileDto[];
   links: string[];
   recentUsage: SkillUsageDto[];

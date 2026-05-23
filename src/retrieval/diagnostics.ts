@@ -1,7 +1,7 @@
 export type RetrievalMode = "fts-only" | "hybrid" | "hybrid-reranked" | "fallback";
 
 export interface RetrievalSourceStats {
-  source: "memories" | "episodes" | "skills";
+  source: "memories" | "episodes" | "skills" | "transcripts";
   ftsCandidates: number;
   vectorCandidates: number;
   fusedCandidates: number;
@@ -16,6 +16,9 @@ export interface RetrievalDiagnostics {
   latencyMs: number;
   sources: RetrievalSourceStats[];
   errors: string[];
+  candidateMatches?: number;
+  injectedMatches?: number;
+  withheldMatches?: number;
 }
 
 export interface RetrievalStatsInput {
@@ -44,6 +47,9 @@ export function retrievalDiagnostics(input: {
   startedAt: number;
   sources: RetrievalSourceStats[];
   errors?: string[];
+  candidateMatches?: number;
+  injectedMatches?: number;
+  withheldMatches?: number;
 }): RetrievalDiagnostics {
   return {
     source: input.source,
@@ -53,6 +59,9 @@ export function retrievalDiagnostics(input: {
     latencyMs: Math.max(0, Math.round(performance.now() - input.startedAt)),
     sources: input.sources,
     errors: input.errors ?? [],
+    ...(input.candidateMatches !== undefined ? { candidateMatches: input.candidateMatches } : {}),
+    ...(input.injectedMatches !== undefined ? { injectedMatches: input.injectedMatches } : {}),
+    ...(input.withheldMatches !== undefined ? { withheldMatches: input.withheldMatches } : {}),
   };
 }
 

@@ -34,11 +34,11 @@ export interface ToolContext {
   notify?: (input: NotificationCreate) => void;
   /** Capability checks and audit logging for sensitive tools. */
   capabilities?: CapabilityBroker;
-  /** User-facing artifact publishing from /workspace/outbox. */
+  /** User-facing artifact publishing from /outbox. */
   artifacts?: SqliteArtifactStore;
   /** Current agent run id for run-scoped artifacts. */
   artifactRunId?: string;
-  /** Current run's sandbox outbox path, e.g. /outbox/sessions/<id>/runs/<id>. */
+  /** Current run's sandbox outbox path, e.g. /outbox/<session>/<run>. */
   artifactRunOutboxPath?: string;
   /** Runtime store for approval requests and other cross-process state. */
   runtimeStore?: RuntimeStore;

@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, test } from "bun:test";
 import { SqliteSkillsStore, formatSkillContent } from "../src/skills/skills-store";
-import { seedSkillsIfEmpty } from "../src/skills/seed";
 import { diffSkillBundle, parseSkillBundleFiles } from "../src/skills/bundle";
 import { MockEmbedder } from "./embed-mock";
 
@@ -188,6 +187,21 @@ describe("SqliteSkillsStore", () => {
     expect(
       store.search(["docling", "bash"]).map((s) => s.name).sort(),
     ).toEqual(["pdf-tool", "shell-helper"]);
+  });
+
+  test("search finds skill body and supporting files without embeddings", async () => {
+    const store = new SqliteSkillsStore(await tempDbPath());
+    store.upsert({
+      id: "deploy-recovery",
+      name: "Deploy Recovery",
+      description: "Recover bad deploys.",
+      body: "Validate health after reversing a release.",
+      allowedTools: null,
+      tags: null,
+      files: [{ path: "runbook.md", content: "helm undo release and inspect rollout events" }],
+    });
+
+    expect(store.search(["helm undo release"]).map((s) => s.id)).toEqual(["deploy-recovery"]);
   });
 
   test("search sanitizes empty/operator-like queries", async () => {
@@ -444,31 +458,5 @@ describe("parseSkillBundleFiles", () => {
       modifiedFiles: [],
       skillMarkdownChanged: true,
     });
-  });
-});
-
-describe("seedSkillsIfEmpty", () => {
-  test("seeds bundled skills into an empty store", async () => {
-    const store = new SqliteSkillsStore(await tempDbPath());
-    seedSkillsIfEmpty(store);
-    const all = store.getAll();
-    expect(all.map((s) => s.id)).toContain("docling-processor");
-    const docling = all.find((s) => s.id === "docling-processor")!;
-    expect(docling.description).toContain("Docling");
-    expect(docling.body).not.toContain("---\nname:");
-  });
-
-  test("does not reseed when skills already exist", async () => {
-    const store = new SqliteSkillsStore(await tempDbPath());
-    store.upsert({
-      id: "custom",
-      name: "custom",
-      description: "",
-      body: "",
-      allowedTools: null,
-      tags: null,
-    });
-    seedSkillsIfEmpty(store);
-    expect(store.getAll().map((s) => s.id)).toEqual(["custom"]);
   });
 });

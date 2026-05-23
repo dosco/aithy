@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { lstat, mkdir, realpath, stat } from "node:fs/promises";
 import path from "node:path";
 import { ensureRelativePath, safeJoin } from "../workspace/safe-path";
@@ -16,7 +17,7 @@ export interface ResolvedArtifactFile {
 }
 
 export function runOutboxPath(sessionId: string, runId: string): string {
-  return `${OUTBOX_SANDBOX_ROOT}/sessions/${safeSegment(sessionId)}/runs/${safeSegment(runId)}`;
+  return `${OUTBOX_SANDBOX_ROOT}/${safeSegment(sessionId)}/${safeSegment(runId)}`;
 }
 
 export function normalizeRunOutboxPath(input: string, currentRunOutbox: string): OutboxPath {
@@ -114,7 +115,12 @@ function assertInside(root: string, target: string, options?: { allowRoot?: bool
 }
 
 function safeSegment(value: string): string {
-  return value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") || "item";
+  const cleaned = value.replace(/[^A-Za-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+  if (cleaned === value && cleaned.length > 0 && cleaned !== "." && cleaned !== "..") return cleaned;
+  const safeBase = cleaned === "." || cleaned === ".." ? "item" : cleaned;
+  const base = (safeBase || "item").slice(0, 80).replace(/-+$/g, "") || "item";
+  const hash = createHash("sha256").update(value).digest("hex").slice(0, 8);
+  return `${base}-${hash}`;
 }
 
 function isNotFoundError(error: unknown): boolean {

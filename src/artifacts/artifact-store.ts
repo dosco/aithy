@@ -1,8 +1,9 @@
 import { mkdirSync } from "node:fs";
+import { lstat, rmdir, unlink } from "node:fs/promises";
 import path from "node:path";
 import { Database } from "bun:sqlite";
 import { applySqliteMigrations, type SqliteMigration } from "../sqlite/migrations";
-import { basename } from "../workspace/safe-path";
+import { basename, safeJoin } from "../workspace/safe-path";
 import { mimeTypeForPath, previewForFile } from "./preview";
 import {
   normalizeRunOutboxPath,
@@ -189,6 +190,16 @@ export class SqliteArtifactStore {
     return rows.map(entryFromRow);
   }
 
+  recentForSession(sessionId: string, limit = 10): ArtifactEntry[] {
+    const rows = this.db.query(`
+      SELECT * FROM artifacts
+      WHERE session_id = $sessionId
+      ORDER BY created_at DESC, id DESC
+      LIMIT $limit
+    `).all({ $sessionId: sessionId, $limit: limit }) as ArtifactRow[];
+    return rows.map(entryFromRow);
+  }
+
   listForRun(sessionId: string, runId: string): ArtifactEntry[] {
     const rows = this.db.query(`
       SELECT * FROM artifacts
@@ -196,6 +207,15 @@ export class SqliteArtifactStore {
       ORDER BY created_at, id
     `).all({ $sessionId: sessionId, $runId: runId }) as ArtifactRow[];
     return rows.map(entryFromRow);
+  }
+
+  findInSession(sessionId: string, query: string, limit = 10): ArtifactEntry[] {
+    const needle = query.trim().toLowerCase();
+    if (!needle) return this.recentForSession(sessionId, limit);
+    return this.listForSession(sessionId)
+      .filter((entry) => artifactMatches(entry, needle))
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id))
+      .slice(0, limit);
   }
 
   outboxRootPath(): string {
@@ -207,6 +227,26 @@ export class SqliteArtifactStore {
     return result.changes > 0;
   }
 
+  async deleteForSessions(sessionIds: readonly string[], options: { deleteFiles?: boolean } = {}): Promise<number> {
+    const ids = [...new Set(sessionIds.filter(Boolean))];
+    if (ids.length === 0) return 0;
+    const placeholders = ids.map((_, i) => `$id${i}`).join(", ");
+    const params = Object.fromEntries(ids.map((id, i) => [`$id${i}`, id]));
+    const rows = this.db.query(`
+      SELECT * FROM artifacts
+      WHERE session_id IN (${placeholders})
+    `).all(params) as ArtifactRow[];
+    const entries = rows.map(entryFromRow);
+    if (options.deleteFiles) {
+      for (const entry of entries) await this.deleteManagedFile(entry);
+    }
+    const result = this.db.query(`
+      DELETE FROM artifacts
+      WHERE session_id IN (${placeholders})
+    `).run(params);
+    return result.changes;
+  }
+
   async resolveFile(id: string): Promise<{ entry: ArtifactEntry; hostPath: string; sizeBytes: number } | null> {
     const entry = this.get(id);
     if (!entry) return null;
@@ -216,6 +256,20 @@ export class SqliteArtifactStore {
 
   close(): void {
     this.db.close();
+  }
+
+  private async deleteManagedFile(entry: ArtifactEntry): Promise<void> {
+    if (!entry.sandboxPath.startsWith("/outbox/")) return;
+    let hostPath: string;
+    try {
+      hostPath = safeJoin(this.outboxRoot, entry.relativePath);
+      const info = await lstat(hostPath);
+      if (!info.isFile() || info.isSymbolicLink()) return;
+      await unlink(hostPath);
+    } catch {
+      return;
+    }
+    await pruneEmptyParents(path.dirname(hostPath), this.outboxRoot);
   }
 }
 
@@ -287,6 +341,33 @@ function entryFromRow(row: ArtifactRow): ArtifactEntry {
     textPreview: row.text_preview,
     createdAt: row.created_at,
   };
+}
+
+function artifactMatches(entry: ArtifactEntry, needle: string): boolean {
+  const haystack = [
+    entry.id,
+    entry.title,
+    entry.description ?? "",
+    entry.filename,
+    entry.sandboxPath,
+    entry.relativePath,
+  ].join("\n").toLowerCase();
+  return haystack.includes(needle);
+}
+
+async function pruneEmptyParents(start: string, root: string): Promise<void> {
+  let dir = path.resolve(start);
+  const resolvedRoot = path.resolve(root);
+  while (dir !== resolvedRoot) {
+    const rel = path.relative(resolvedRoot, dir);
+    if (rel.startsWith("..") || path.isAbsolute(rel)) return;
+    try {
+      await rmdir(dir);
+    } catch {
+      return;
+    }
+    dir = path.dirname(dir);
+  }
 }
 
 function stringField(value: unknown): string {

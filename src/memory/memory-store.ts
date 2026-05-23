@@ -16,6 +16,8 @@ import {
   sourceStats,
   type RetrievalDiagnostics,
 } from "../retrieval/diagnostics";
+import { addFusedHit, sortedFused, type FusedCandidate } from "../retrieval/fusion";
+import { buildRetrievalQueryPlan, type LexicalSearchQuery } from "../retrieval/query-plan";
 import type { EmbeddingHealthStats, TargetIndexCounts } from "../retrieval/indexing";
 import type {
   MemoryEntry,
@@ -23,7 +25,7 @@ import type {
   MemorySearchOptions,
   MemoryUpsert,
 } from "./types";
-import { capBody, clamp01, quoteForFts5 } from "./store-utils";
+import { capBody, clamp01 } from "./store-utils";
 
 interface SearchRow extends MemoryRow {
   bm25: number;
@@ -72,12 +74,10 @@ export class SqliteMemoryStore {
     this.vecEnabled = vecLoad.ok && this.tableExists("memories_vec");
   }
 
-  /** True if hybrid retrieval is wired up — both vec extension and embedder ready. */
   isHybridReady(): boolean {
     return this.vecEnabled && (this.embedder?.available() ?? false);
   }
 
-  /** True if a cross-encoder reranker is loaded and ready to refine top-K. */
   isRerankReady(): boolean {
     return this.isHybridReady() && (this.reranker?.available() ?? false);
   }
@@ -244,11 +244,6 @@ export class SqliteMemoryStore {
     return { items, nextCursor };
   }
 
-  /**
-   * Total rows including superseded — used as a tool-activity probe. Any of
-   * write (+1), supersede (+1), or delete (-1) shifts this; a hallucinated
-   * tool call leaves it unchanged.
-   */
   rawCount(): number {
     const row = this.db.query("SELECT COUNT(*) AS c FROM memories").get() as
       | { c: number }
@@ -289,8 +284,8 @@ export class SqliteMemoryStore {
         }),
       };
     }
-    const sanitized = queries.map(quoteForFts5).filter((q): q is string => q.length > 0);
-    if (sanitized.length === 0) {
+    const plan = buildRetrievalQueryPlan(queries);
+    if (plan.lexicalQueries.length === 0) {
       return {
         entries: [],
         diagnostics: retrievalDiagnostics({
@@ -310,8 +305,8 @@ export class SqliteMemoryStore {
         db: this.db,
         embedder: this.embedder!,
         reranker: this.reranker?.available() ? this.reranker : null,
-        rawQueries: queries,
-        ftsExpressions: sanitized,
+        rawQueries: plan.semanticQueries,
+        ftsQueries: plan.lexicalQueries,
         opts,
         perQueryLimit: limit,
       });
@@ -329,17 +324,16 @@ export class SqliteMemoryStore {
       };
     }
 
-    return this.searchFtsOnly(sanitized, opts, limit, queries.length, startedAt);
+    return this.searchFtsOnly(plan.lexicalQueries, opts, limit, queries.length, startedAt);
   }
 
   private searchFtsOnly(
-    sanitized: readonly string[],
+    lexicalQueries: readonly LexicalSearchQuery[],
     opts: MemorySearchOptions,
     limit: number,
     queryCount: number,
     startedAt: number,
   ): { entries: MemoryEntry[]; diagnostics: RetrievalDiagnostics } {
-    const matchExpr = sanitized.join(" OR ");
     const kindFilter = opts.kinds?.length
       ? ` AND m.kind IN (${opts.kinds.map((_, i) => `$kind${i}`).join(", ")})`
       : "";
@@ -347,10 +341,7 @@ export class SqliteMemoryStore {
       ? ` AND m.id NOT IN (${opts.excludeIds.map((_, i) => `$excl${i}`).join(", ")})`
       : "";
 
-    const params: Record<string, SQLQueryBindings> = {
-      $match: matchExpr,
-      $limit: sanitized.length * limit * 2,
-    };
+    const params: Record<string, SQLQueryBindings> = {};
     opts.kinds?.forEach((kind, i) => {
       params[`$kind${i}`] = kind;
     });
@@ -358,33 +349,39 @@ export class SqliteMemoryStore {
       params[`$excl${i}`] = id;
     });
 
-    const rows = this.db
-      .query(
-        `SELECT m.*, bm25(memories_fts) AS bm25
-         FROM memories_fts f
-         JOIN memories m ON m.rowid = f.rowid
-         WHERE memories_fts MATCH $match
-           AND m.superseded_by IS NULL
-           ${kindFilter}
-           ${excludeFilter}
-         ORDER BY rank
-         LIMIT $limit`,
-      )
-      .all(params as never) as SearchRow[];
+    const fused = new Map<string, FusedCandidate<SearchRow>>();
+    let ftsCandidates = 0;
+    for (const query of lexicalQueries) {
+      const rows = this.db
+        .query(
+          `SELECT m.*, bm25(memories_fts) AS bm25
+           FROM memories_fts f
+           JOIN memories m ON m.rowid = f.rowid
+           WHERE memories_fts MATCH $match
+             AND m.superseded_by IS NULL
+             ${kindFilter}
+             ${excludeFilter}
+           ORDER BY rank
+           LIMIT $limit`,
+        )
+        .all({ ...params, $match: query.expression, $limit: 30 } as never) as SearchRow[];
+      ftsCandidates += rows.length;
+      rows.forEach((row, rank) => addFusedHit(fused, row.id, row, query.lane, rank));
+    }
 
     const now = Date.now();
-    const ranked = rows
-      .map((row) => ({
-        entry: rowToEntry(row),
+    const ranked = sortedFused(fused)
+      .map((candidate) => ({
+        entry: rowToEntry(candidate.item),
         score: score({
-          bm25: row.bm25,
-          importance: row.importance,
-          updatedAt: row.updated_at,
+          bm25: -candidate.fusedScore,
+          importance: candidate.item.importance,
+          updatedAt: candidate.item.updated_at,
           now,
         }),
       }))
       .sort((a, b) => b.score - a.score)
-      .slice(0, sanitized.length * limit);
+      .slice(0, lexicalQueries.length * limit);
 
     if (opts.markRecalled !== false && ranked.length > 0) {
       this.markRecalled(ranked.map((r) => r.entry.id));
@@ -399,19 +396,14 @@ export class SqliteMemoryStore {
         startedAt,
         sources: [sourceStats({
           source: "memories",
-          ftsCandidates: rows.length,
-          fusedCandidates: rows.length,
+          ftsCandidates,
+          fusedCandidates: fused.size,
           finalMatches: entries.length,
         })],
       }),
     };
   }
 
-  /**
-   * Embed every memory missing an up-to-date row in `memory_embed_meta`. Runs
-   * in batches with yields between them so the server stays responsive.
-   * Idempotent and resumable.
-   */
   async backfillEmbeddings(): Promise<BackfillResult> {
     if (!this.isHybridReady() || !this.embedder) return { done: 0, skipped: 0, indexed: [] };
     return runBackfill(this.db, this.embedder, this.log);
@@ -426,11 +418,6 @@ export class SqliteMemoryStore {
     return memoryEmbeddingStats(this.db, this.embedder);
   }
 
-  /**
-   * For tests and shutdown: wait for all in-flight embed-on-write operations
-   * to finish. After this resolves, the vec table is consistent with the
-   * memories table for everything that has been upserted so far.
-   */
   async flushPendingEmbeds(): Promise<void> {
     while (this.pendingEmbeds.size > 0) {
       await Promise.all([...this.pendingEmbeds]);

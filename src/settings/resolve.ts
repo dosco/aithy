@@ -1,4 +1,4 @@
-import type { AppConfig } from "../config/env";
+import { LEGACY_DEFAULT_SANDBOX_IMAGE, type AppConfig } from "../config/env";
 import { MAX_PARALLEL_AGENTS } from "../config/limits";
 import { isLocalAiProvider } from "../agent/ai-providers";
 import { selectedLocalAgentModelId } from "../local-inference/manifest";
@@ -58,7 +58,7 @@ export function applyRuntimeSettings(
       : undefined,
     fastAiApiKey: fastProvider ? (fastApiKey === null ? undefined : fastApiKey) : undefined,
     sandboxProvider: normalizeSandboxProvider(settings.sandboxProvider) ?? config.sandboxProvider,
-    sandboxImage: cleanString(settings.sandboxImage) ?? config.sandboxImage,
+    sandboxImage: normalizeSandboxImage(settings.sandboxImage) ?? config.sandboxImage,
     sandboxCpus: settings.sandboxCpus ?? config.sandboxCpus,
     sandboxMemoryMb: settings.sandboxMemoryMb ?? config.sandboxMemoryMb,
     sandboxNetwork: settings.sandboxNetwork ?? config.sandboxNetwork,
@@ -105,6 +105,11 @@ function normalizeSandboxProvider(value: unknown): AppConfig["sandboxProvider"] 
   if (value === "microsandbox") return "microsandbox";
   if (value === "disabled" || value === "mock") return "disabled";
   return undefined;
+}
+
+function normalizeSandboxImage(value: string | undefined): string | undefined {
+  const image = cleanString(value);
+  return image && image !== LEGACY_DEFAULT_SANDBOX_IMAGE ? image : undefined;
 }
 
 function clampParallelAgents(value: number | undefined): number | undefined {

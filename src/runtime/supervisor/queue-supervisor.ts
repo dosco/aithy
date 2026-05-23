@@ -1,7 +1,9 @@
 import { createServer } from "node:net";
-import path from "node:path";
+import { runtimeServiceCommand } from "../service-command";
 import { QueueServiceClient } from "../services/queue/client";
 import { QueueServiceRuntime } from "../services/queue/runtime";
+import { currentRuntimeTopology, type RuntimeTopology } from "../topology";
+import { managedServiceEnv } from "./service-env";
 
 const DEFAULT_SHUTDOWN_GRACE_MS = 10_000;
 
@@ -12,29 +14,32 @@ export interface QueueServiceHandle {
   close(): Promise<void>;
 }
 
-export async function startQueueService(): Promise<QueueServiceHandle> {
-  if (process.env.AITHY_DISABLE_CHILD_SERVICES === "1") {
-    return startInProcessQueueService();
-  }
+export async function startQueueService(input: { topology?: RuntimeTopology } = {}): Promise<QueueServiceHandle> {
+  const topology = input.topology ?? currentRuntimeTopology();
+  if (topology.queuePlacement === "coordinator") return startInProcessQueueService(topology);
+
   const port = await availablePort();
   const token = crypto.randomUUID();
   const url = `ws://127.0.0.1:${port}/runtime?token=${encodeURIComponent(token)}`;
-  const entry = path.join(process.cwd(), "src/runtime/services/queue/worker.ts");
-  const proc = Bun.spawn([process.execPath, "run", entry], {
+  const { command } = runtimeServiceCommand({
+    role: "queue-service",
+    sourceEntry: "src/runtime/services/queue/worker.ts",
+    topology,
+  });
+  const proc = Bun.spawn(command, {
     cwd: process.cwd(),
     stdout: "pipe",
     stderr: "pipe",
-    env: {
-      ...process.env,
+    env: managedServiceEnv({
       AITHY_SERVICE_ROLE: "queue-service",
       AITHY_QUEUE_PORT: String(port),
       AITHY_QUEUE_TOKEN: token,
-    },
+    }),
   });
   void pipeChildOutput("queue-service", "stdout", proc.stdout);
   void pipeChildOutput("queue-service", "stderr", proc.stderr);
   await waitForHealth(port, token);
-  const client = await QueueServiceClient.connect({ url, role: "web" });
+  const client = await QueueServiceClient.connect({ url, role: "web", placement: "process" });
   return {
     url,
     token,
@@ -55,15 +60,17 @@ export async function startQueueService(): Promise<QueueServiceHandle> {
   };
 }
 
-async function startInProcessQueueService(): Promise<QueueServiceHandle> {
+async function startInProcessQueueService(topology: RuntimeTopology): Promise<QueueServiceHandle> {
   const port = await availablePort();
   const token = crypto.randomUUID();
   const url = `ws://127.0.0.1:${port}/runtime?token=${encodeURIComponent(token)}`;
-  process.env.AITHY_QUEUE_PORT = String(port);
-  process.env.AITHY_QUEUE_TOKEN = token;
-  const runtime = QueueServiceRuntime.create();
+  const runtime = QueueServiceRuntime.create({
+    port,
+    token,
+    placement: topology.queuePlacement,
+  });
   runtime.start();
-  const client = await QueueServiceClient.connect({ url, role: "web" });
+  const client = await QueueServiceClient.connect({ url, role: "web", placement: topology.queuePlacement });
   return {
     url,
     token,

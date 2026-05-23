@@ -5,6 +5,8 @@ import { score } from "./ranking";
 import type { Reranker } from "./rerank";
 import type { MemoryEntry, MemoryKind, MemorySearchOptions } from "./types";
 import { sourceStats, type RetrievalSourceStats } from "../retrieval/diagnostics";
+import { addFusedHit, sortedFused, type FusedCandidate } from "../retrieval/fusion";
+import type { LexicalSearchQuery, RetrievalLane } from "../retrieval/query-plan";
 
 interface MemoryRow {
   id: string;
@@ -39,18 +41,19 @@ interface VecRow extends MemoryRow {
 interface RankedHit {
   row: MemoryRow & { rowid: number };
   rank: number;
+  lane: RetrievalLane;
 }
 
-const RRF_K = 60;
 const PER_RANKER_LIMIT = 30;
 const RERANK_CANDIDATE_LIMIT = 30;
+const FUSED_CANDIDATE_LIMIT = 60;
 
 export interface HybridSearchDeps {
   db: Database;
   embedder: Embedder;
   reranker: Reranker | null;
   rawQueries: readonly string[];
-  ftsExpressions: readonly string[];
+  ftsQueries: readonly LexicalSearchQuery[];
   opts: MemorySearchOptions;
   perQueryLimit: number;
 }
@@ -58,36 +61,29 @@ export interface HybridSearchDeps {
 export async function hybridSearch(
   deps: HybridSearchDeps,
 ): Promise<{ entries: MemoryEntry[]; recallIds: string[]; stats: RetrievalSourceStats; reranked: boolean }> {
-  const { db, embedder, reranker, rawQueries, ftsExpressions, opts, perQueryLimit } = deps;
+  const { db, embedder, reranker, rawQueries, ftsQueries, opts, perQueryLimit } = deps;
   const kindFilter = buildKindFilter(opts.kinds);
   const excludeFilter = buildExcludeFilter(opts.excludeIds);
 
   // Stage 1: candidate retrieval — FTS5 + vec KNN per query, in parallel.
-  const perQuery = await Promise.all(
-    rawQueries.map(async (raw, i) => {
-      const ftsExpr = ftsExpressions[i];
-      const [ftsHits, vecHits] = await Promise.all([
-        runFts(db, ftsExpr, kindFilter, excludeFilter),
-        embedder
-          .embedQuery(raw)
-          .then((vec) => runVec(db, vec, kindFilter, excludeFilter))
-          .catch(() => [] as RankedHit[]),
-      ]);
-      return { ftsHits, vecHits };
-    }),
-  );
-  const ftsCandidates = perQuery.reduce((sum, item) => sum + item.ftsHits.length, 0);
-  const vectorCandidates = perQuery.reduce((sum, item) => sum + item.vecHits.length, 0);
+  const [ftsGroups, vecGroups] = await Promise.all([
+    Promise.all(ftsQueries.map((query) => Promise.resolve(runFts(db, query, kindFilter, excludeFilter)))),
+    Promise.all(rawQueries.map((raw) =>
+      embedder
+        .embedQuery(raw)
+        .then((vec) => runVec(db, vec, kindFilter, excludeFilter))
+        .catch(() => [] as RankedHit[]),
+    )),
+  ]);
+  const ftsCandidates = ftsGroups.reduce((sum, hits) => sum + hits.length, 0);
+  const vectorCandidates = vecGroups.reduce((sum, hits) => sum + hits.length, 0);
 
   // Stage 2: RRF fusion across all rankers and queries.
-  const fused = new Map<number, { row: MemoryRow & { rowid: number }; rrf: number }>();
-  for (const { ftsHits, vecHits } of perQuery) {
-    addToFusion(fused, ftsHits);
-    addToFusion(fused, vecHits);
-  }
-  const candidates = [...fused.values()]
-    .filter(({ row }) => row.superseded_by === null)
-    .sort((a, b) => b.rrf - a.rrf);
+  const fused = new Map<number, FusedCandidate<MemoryRow & { rowid: number }>>();
+  for (const hits of [...ftsGroups, ...vecGroups]) addToFusion(fused, hits);
+  const candidates = sortedFused(fused)
+    .filter(({ item }) => item.superseded_by === null)
+    .slice(0, FUSED_CANDIDATE_LIMIT);
 
   const finalLimit = rawQueries.length * perQueryLimit;
 
@@ -97,7 +93,7 @@ export async function hybridSearch(
     const reranked = await tryRerank(reranker, rawQueries, candidates);
     if (reranked) {
       const trimmed = reranked.slice(0, finalLimit);
-      const entries = trimmed.map((r) => rowToEntry(r.row));
+      const entries = trimmed.map((r) => rowToEntry(r.item));
       return {
         entries,
         recallIds: entries.map((e) => e.id),
@@ -116,12 +112,12 @@ export async function hybridSearch(
   // Fallback: legacy RRF + importance × recency multiplier.
   const now = Date.now();
   const ranked = candidates
-    .map(({ row, rrf }) => ({
-      row,
+    .map((candidate) => ({
+      row: candidate.item,
       finalScore: score({
-        bm25: -rrf,
-        importance: row.importance,
-        updatedAt: row.updated_at,
+        bm25: -candidate.fusedScore,
+        importance: candidate.item.importance,
+        updatedAt: candidate.item.updated_at,
         now,
       }),
     }))
@@ -151,16 +147,16 @@ export async function hybridSearch(
 async function tryRerank(
   reranker: Reranker,
   queries: readonly string[],
-  candidates: readonly { row: MemoryRow & { rowid: number }; rrf: number }[],
-): Promise<{ row: MemoryRow & { rowid: number }; score: number }[] | null> {
+  candidates: readonly FusedCandidate<MemoryRow & { rowid: number }>[],
+): Promise<Array<FusedCandidate<MemoryRow & { rowid: number }> & { score: number }> | null> {
   const top = candidates.slice(0, RERANK_CANDIDATE_LIMIT);
   const docs = top.map((c) => embedText({
-    ...c.row,
-    validFrom: c.row.valid_from,
-    validUntil: c.row.valid_until,
-    durationDays: c.row.duration_days,
-    evidence: c.row.evidence,
-    frequency: c.row.frequency,
+    ...c.item,
+    validFrom: c.item.valid_from,
+    validUntil: c.item.valid_until,
+    durationDays: c.item.duration_days,
+    evidence: c.item.evidence,
+    frequency: c.item.frequency,
   }));
 
   const perQueryScores = await Promise.all(
@@ -183,7 +179,7 @@ async function tryRerank(
   });
 
   return top
-    .map((c, i) => ({ row: c.row, score: finalScores[i] }))
+    .map((c, i) => ({ ...c, score: finalScores[i] }))
     .sort((a, b) => b.score - a.score);
 }
 
@@ -220,7 +216,7 @@ function buildExcludeFilter(excludeIds: readonly string[] | undefined): {
 
 function runFts(
   db: Database,
-  ftsExpr: string,
+  query: LexicalSearchQuery,
   kindFilter: ReturnType<typeof buildKindFilter>,
   excludeFilter: ReturnType<typeof buildExcludeFilter>,
 ): RankedHit[] {
@@ -237,12 +233,12 @@ function runFts(
         LIMIT $limit`,
     )
     .all({
-      $match: ftsExpr,
+      $match: query.expression,
       $limit: PER_RANKER_LIMIT,
       ...kindFilter.params,
       ...excludeFilter.params,
     } as never) as FtsRow[];
-  return rows.map((row, rank) => ({ row, rank }));
+  return rows.map((row, rank) => ({ row, rank, lane: query.lane }));
 }
 
 function runVec(
@@ -274,21 +270,15 @@ function runVec(
       ...kindFilter.params,
       ...excludeFilter.params,
     } as never) as VecRow[];
-  return rows.slice(0, PER_RANKER_LIMIT).map((row, rank) => ({ row, rank }));
+  return rows.slice(0, PER_RANKER_LIMIT).map((row, rank) => ({ row, rank, lane: "semantic" }));
 }
 
 function addToFusion(
-  fused: Map<number, { row: MemoryRow & { rowid: number }; rrf: number }>,
+  fused: Map<number, FusedCandidate<MemoryRow & { rowid: number }>>,
   hits: readonly RankedHit[],
 ): void {
-  for (const { row, rank } of hits) {
-    const existing = fused.get(row.rowid);
-    const contribution = 1 / (RRF_K + rank);
-    if (existing) {
-      existing.rrf += contribution;
-    } else {
-      fused.set(row.rowid, { row, rrf: contribution });
-    }
+  for (const { row, rank, lane } of hits) {
+    addFusedHit(fused, row.rowid, row, lane, rank);
   }
 }
 

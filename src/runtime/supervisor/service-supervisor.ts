@@ -1,6 +1,8 @@
-import path from "node:path";
+import { runtimeServiceCommand } from "../service-command";
 import type { RuntimeServiceRole } from "../protocol/types";
 import type { QueueServiceClient } from "../services/queue/client";
+import type { RuntimeTopology } from "../topology";
+import { managedServiceEnv } from "./service-env";
 
 const DEFAULT_SHUTDOWN_GRACE_MS = 10_000;
 const DEFAULT_HEALTHCHECK_INTERVAL_MS = 2_000;
@@ -19,6 +21,7 @@ interface SupervisorOptions {
   queue: QueueServiceClient;
   queueUrl: string;
   services: ManagedServiceConfig[];
+  topology: RuntimeTopology;
   healthCheckIntervalMs?: number;
   heartbeatStaleMs?: number;
   startupGraceMs?: number;
@@ -33,6 +36,7 @@ export class RuntimeServiceSupervisor {
       opts.queue,
       opts.queueUrl,
       config,
+      opts.topology,
       {
         heartbeatStaleMs: opts.heartbeatStaleMs ?? DEFAULT_HEARTBEAT_STALE_MS,
         startupGraceMs: opts.startupGraceMs ?? DEFAULT_STARTUP_GRACE_MS,
@@ -77,13 +81,13 @@ class ServiceProcess {
     private readonly queue: QueueServiceClient,
     private readonly queueUrl: string,
     private readonly config: ManagedServiceConfig,
+    private readonly topology: RuntimeTopology,
     private readonly health: ServiceHealthOptions,
   ) {}
 
   start(): void {
     if (this.config.enabled === false) return;
     if (process.env.AITHY_SERVICE_ROLE === this.config.role) return;
-    if (process.env.AITHY_DISABLE_CHILD_SERVICES === "1") return;
     if (this.proc) return;
     try {
       this.spawn();
@@ -160,8 +164,12 @@ class ServiceProcess {
   }
 
   private spawn(): void {
-    const entry = path.join(process.cwd(), this.config.entry);
-    void sendBestEffort(this.queue.heartbeat(this.config.role, "starting", { entry }));
+    const { command, entry } = runtimeServiceCommand({
+      role: this.config.role,
+      sourceEntry: this.config.entry,
+      topology: this.topology,
+    });
+    void sendBestEffort(this.queue.heartbeat(this.config.role, "starting", { entry, placement: "process" }));
     void sendBestEffort(this.queue.appendLog({
       role: "web",
       level: "info",
@@ -169,16 +177,16 @@ class ServiceProcess {
       message: `starting ${this.config.role}`,
       detail: { entry },
     }));
-    const proc = Bun.spawn([process.execPath, "run", entry], {
+    const proc = Bun.spawn(command, {
       cwd: process.cwd(),
       stdout: "pipe",
       stderr: "pipe",
-      env: {
-        ...process.env,
-        ...this.config.env,
+      env: managedServiceEnv({
         AITHY_SERVICE_ROLE: this.config.role,
+        AITHY_SERVICE_PLACEMENT: "process",
         AITHY_QUEUE_URL: this.queueUrl,
-      },
+        ...this.config.env,
+      }),
     });
     this.proc = proc;
     this.startedAt = Date.now();
