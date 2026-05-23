@@ -37,6 +37,25 @@ describe("runtime console dto", () => {
       active: true,
       progress: 0.5,
     });
+    store.appendEvent({
+      type: "setup-status",
+      id: "setup-2",
+      createdAt: "2026-05-14T00:00:02.000Z",
+      key: "sandbox",
+      label: "sandbox failed: registry error",
+      active: false,
+      tone: "danger",
+    });
+    store.appendEvent({
+      type: "setup-status",
+      id: "setup-3",
+      createdAt: "2026-05-14T00:00:03.000Z",
+      key: "sandbox",
+      label: "sandbox settings loaded: python:3.11-slim",
+      active: false,
+      tone: "success",
+      progress: 1,
+    });
     store.close();
 
     const dto = staleRuntimeConsoleDto(
@@ -64,5 +83,6 @@ describe("runtime console dto", () => {
       label: "downloading local model Qwen3 Embedding 0.6B Q8_0",
       progress: 0.5,
     }));
+    expect(dto.setupStatuses.some((status) => status.key === "sandbox")).toBe(false);
   });
 });

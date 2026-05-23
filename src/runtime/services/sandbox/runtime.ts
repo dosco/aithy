@@ -5,7 +5,7 @@ import type {
   SandboxProvider,
   SessionMount,
 } from "../../../sandbox/provider";
-import type { SetupStatusInput } from "../../../setup/status";
+import { readyStatus, type SetupStatusInput } from "../../../setup/status";
 import { EventBus } from "../../../events/bus";
 import { LiveEventHub } from "../../../web/live-events";
 import { SqliteSettingsStore } from "../../../settings/store";
@@ -15,12 +15,14 @@ import type { SandboxCommand } from "../../protocol/types";
 import type { RuntimeCommandRow } from "../../runtime-store";
 import type { QueueServiceClient } from "../queue/client";
 
+type SandboxWorkerConfig = Awaited<ReturnType<typeof resolveEffectiveConfig>>;
+
 export class SandboxWorkerRuntime {
   private heartbeatTimer?: Timer;
   private shutdownPromise?: Promise<void>;
 
   private constructor(
-    private config: Awaited<ReturnType<typeof resolveEffectiveConfig>>,
+    private config: SandboxWorkerConfig,
     private readonly settings: SqliteSettingsStore,
     private readonly queue: QueueServiceClient,
     private readonly events: EventBus,
@@ -37,24 +39,16 @@ export class SandboxWorkerRuntime {
     const live = new LiveEventHub();
     events.subscribe((event) => live.publishBotEvent(event));
     live.subscribe((event) => void queue.appendEvent(event));
-    const setupStatus = (status: SetupStatusInput) => {
-      events.emit({ type: "setup.status", status });
-      void queue.appendLog({
-        role: "sandbox-worker",
-        level: status.tone === "danger" ? "error" : "info",
-        source: "setup",
-        message: status.label,
-        detail: status,
-      });
-    };
+    const setupStatus = setupStatusReporter(events, queue);
+    reportSandboxConfig(queue, setupStatus, config);
     const provider = createWorkerProvider(config, setupStatus);
     return new SandboxWorkerRuntime(config, settings, queue, events, live, provider);
   }
 
   start(): void {
-    this.heartbeat("ready", { provider: this.config.sandboxProvider });
+    this.heartbeat("ready", sandboxHeartbeatDetail(this.config));
     this.heartbeatTimer = setInterval(() => {
-      this.heartbeat("ready", { provider: this.config.sandboxProvider });
+      this.heartbeat("ready", sandboxHeartbeatDetail(this.config));
     }, 2_000);
     this.heartbeatTimer.unref();
     this.queue.onCommand((command) => this.handleCommand(command));
@@ -163,9 +157,11 @@ export class SandboxWorkerRuntime {
 
   private async reloadSettings(): Promise<void> {
     const next = await resolveEffectiveConfig(loadBaseConfig(), this.settings.load());
+    const setupStatus = setupStatusReporter(this.events, this.queue);
     this.config = next;
-    this.provider = createWorkerProvider(next, (status) => this.events.emit({ type: "setup.status", status }));
-    this.heartbeat("ready", { provider: next.sandboxProvider });
+    reportSandboxConfig(this.queue, setupStatus, next);
+    this.provider = createWorkerProvider(next, setupStatus);
+    this.heartbeat("ready", sandboxHeartbeatDetail(next));
   }
 
   private async doShutdown(): Promise<void> {
@@ -186,10 +182,49 @@ export class SandboxWorkerRuntime {
 }
 
 function createWorkerProvider(
-  config: Awaited<ReturnType<typeof resolveEffectiveConfig>>,
+  config: SandboxWorkerConfig,
   onStatus: (status: SetupStatusInput) => void,
 ): SandboxProvider {
   return new LifecycleLockedSandboxProvider(createSandboxProvider(config, onStatus));
+}
+
+function setupStatusReporter(
+  events: EventBus,
+  queue: QueueServiceClient,
+): (status: SetupStatusInput) => void {
+  return (status) => {
+    events.emit({ type: "setup.status", status });
+    void queue.appendLog({
+      role: "sandbox-worker",
+      level: status.tone === "danger" ? "error" : "info",
+      source: "setup",
+      message: status.label,
+      detail: status,
+    });
+  };
+}
+
+function reportSandboxConfig(
+  queue: QueueServiceClient,
+  setupStatus: (status: SetupStatusInput) => void,
+  config: SandboxWorkerConfig,
+): void {
+  setupStatus(readyStatus("sandbox", `sandbox settings loaded: ${config.sandboxImage}`));
+  void queue.appendLog({
+    role: "sandbox-worker",
+    level: "info",
+    source: "config",
+    message: `sandbox image configured: ${config.sandboxImage}`,
+    detail: sandboxHeartbeatDetail(config),
+  });
+}
+
+function sandboxHeartbeatDetail(config: SandboxWorkerConfig): Record<string, unknown> {
+  return {
+    provider: config.sandboxProvider,
+    image: config.sandboxImage,
+    network: config.sandboxNetwork,
+  };
 }
 
 function objectPayload(payload: unknown): Record<string, unknown> {
