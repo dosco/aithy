@@ -1,6 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { NetworkPolicy, Sandbox } from "microsandbox";
+import { DEFAULT_SANDBOX_IMAGE } from "../config/env";
 import {
   DEFAULT_BASH_TIMEOUT_MS,
   MAX_BASH_TIMEOUT_MS,
@@ -216,6 +217,7 @@ export class MicrosandboxProvider implements SandboxProvider {
     mounts: SessionMount[],
   ): Promise<MicrosandboxInstance> {
     let builder = factory.builder(name).image(image).cpus(this.options.cpus).memory(this.options.memoryMb).replace();
+    builder = enablePublicGhcrPull(builder, image);
     builder = applyBundledRuntime(builder);
     builder = applyNetwork(builder, this.options.network);
     builder = builder.volume("/workspace", (v) => v.bind(hostWorkspacePath));
@@ -294,6 +296,18 @@ export class MicrosandboxProvider implements SandboxProvider {
   private factory(): MicrosandboxFactory {
     return (this.options.sandboxFactory ?? Sandbox) as MicrosandboxFactory;
   }
+}
+
+function enablePublicGhcrPull(builder: MicrosandboxBuilder, image: string): MicrosandboxBuilder {
+  if (!isDefaultGhcrImage(image) || typeof builder.registry !== "function") return builder;
+  // Microsandbox calls this "anonymous" registry auth; it is the no-credentials public pull mode.
+  return builder.registry((registry) => registry.auth({ kind: "anonymous" })) ?? builder;
+}
+
+function isDefaultGhcrImage(image: string): boolean {
+  const value = image.trim().toLowerCase();
+  const repository = DEFAULT_SANDBOX_IMAGE.replace(/:.+$/, "");
+  return value === repository || value.startsWith(`${repository}:`) || value.startsWith(`${repository}@`);
 }
 
 async function ensureHostPath(hostPath: string): Promise<void> {
