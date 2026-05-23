@@ -27,7 +27,6 @@ export interface MicrosandboxBuilder {
   cpus(value: number): MicrosandboxBuilder;
   memory(value: number): MicrosandboxBuilder;
   replace(): MicrosandboxBuilder;
-  registry?(configure: (registry: { auth(auth: { kind: string }): unknown }) => unknown): MicrosandboxBuilder;
   network(configure: (network: { policy(policy: unknown): unknown }) => unknown): MicrosandboxBuilder;
   volume(path: string, configure: (volume: { bind(path: string): unknown }) => unknown): MicrosandboxBuilder;
   libkrunfwPath?(path: string): MicrosandboxBuilder;

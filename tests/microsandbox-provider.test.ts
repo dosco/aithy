@@ -26,7 +26,6 @@ describe("MicrosandboxProvider", () => {
     const created = fakeFactory.created[0];
     expect(created?.image).toBe("python:3.11-slim");
     expect(created?.network).toBe("none");
-    expect(created?.registryAuth).toBeUndefined();
     expect(created?.libkrunfwPath).toContain("libkrunfw");
     expect(created?.volumes).toEqual([
       { guest: "/workspace", host: workspacePath, readonly: false },
@@ -129,7 +128,6 @@ describe("MicrosandboxProvider", () => {
     expect(fakeFactory.created.map((item: FakeConfig) => item.image)).toEqual([
       DEFAULT_SANDBOX_IMAGE,
     ]);
-    expect(fakeFactory.created[0]?.registryAuth).toEqual({ kind: "anonymous" });
     expect(statuses.some((label) => label.includes("GHCR denied the default sandbox image pull"))).toBe(true);
   });
 });
@@ -140,7 +138,6 @@ interface FakeConfig {
   cpus?: number;
   memory?: number;
   network?: string;
-  registryAuth?: { kind: string };
   libkrunfwPath?: string;
   volumes: Array<{ guest: string; host: string; readonly: boolean }>;
   envs: Record<string, string>;
@@ -175,15 +172,6 @@ function createFakeSandboxFactory(options: { failImages?: Set<string> } = {}) {
         cpus(value: number) { config.cpus = value; return builder; },
         memory(value: number) { config.memory = value; return builder; },
         replace() { return builder; },
-        registry(configure: (b: any) => any) {
-          configure({
-            auth(auth: { kind: string }) {
-              config.registryAuth = auth;
-              return this;
-            }
-          });
-          return builder;
-        },
         libkrunfwPath(value: string) { config.libkrunfwPath = value; return builder; },
         env(key: string, value: string) { config.envs[key] = value; return builder; },
         envs(vars: Record<string, string>) { Object.assign(config.envs, vars); return builder; },
