@@ -213,7 +213,7 @@ Aithy uses `ghcr.io/dosco/aithy-sandbox:latest` as the default Microsandbox imag
 
 When the image is not cached yet, Aithy shows a sandbox image splash with pull progress, byte counts, and filesystem preparation status. If the configured sandbox image cannot be pulled or started while Microsandbox mode is enabled, Aithy keeps the blocking splash visible because agent tools cannot run without a working sandbox. The Runtime Console shows the same setup status stream with logs and service state.
 
-The release workflow publishes the repository `Dockerfile` to GHCR as both `latest` and the release ref tag. GHCR creates new container packages as private by default, so the `aithy-sandbox` package must be made public in GitHub Packages before anonymous Microsandbox pulls can use it. The same Dockerfile builds locally when you want to test changes before publishing.
+The release workflow publishes the repository `Dockerfile` to GHCR as both `latest` and the release ref tag. GHCR creates new container packages as private by default, so the `aithy-sandbox` package must be made public in GitHub Packages before anonymous Microsandbox pulls can use it. A raw browser request to `https://ghcr.io/v2/dosco/aithy-sandbox/manifests/latest` still returns the registry `401` challenge; Aithy configures the default image pull as anonymous so Microsandbox follows the public pull path. The same Dockerfile builds locally when you want to test changes before publishing.
 
 ```bash
 docker build -t aithy-sandbox:local .
