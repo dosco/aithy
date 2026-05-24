@@ -11,6 +11,7 @@ import type {
   RuntimeServiceDto,
 } from "@/server/runtime-console.dto";
 import { ConsoleFilters, LoadMoreRow } from "./console-filters";
+import { SandboxStatusPanel } from "./console-sandbox-status";
 import { SetupStatusList } from "./console-setup-status";
 import { useRuntimeConsole } from "./use-runtime-console";
 
@@ -42,6 +43,8 @@ export function ConsolePage({ initialState }: { initialState: RuntimeConsoleDto 
   const errorLogs = logs.filter((log) => log.level === "error").length;
   const canLoadLogs = state.logs.length >= logLimit && logLimit < MAX_LIMIT;
   const canLoadCommands = state.commands.length >= commandLimit && commandLimit < MAX_LIMIT;
+  const sandboxService = state.services.find((service) => service.role === "sandbox-worker");
+  const sandboxStatus = state.setupStatuses.find((status) => status.key === "sandbox");
 
   return (
     <div className="space-y-5">
@@ -86,6 +89,7 @@ export function ConsolePage({ initialState }: { initialState: RuntimeConsoleDto 
                   <ConsoleMetric icon={ListTree} label="queue depth" value={queueDepth.toString()} />
                   <ConsoleMetric icon={HardDrive} label="errors" value={errorLogs.toString()} tone={errorLogs ? "bad" : "ok"} />
                 </div>
+                <SandboxStatusPanel service={sandboxService} status={sandboxStatus} />
                 <SetupStatusList statuses={state.setupStatuses} />
               </div>
 
@@ -133,11 +137,11 @@ export function ConsolePage({ initialState }: { initialState: RuntimeConsoleDto 
         <TabsContent value="services">
           <TerminalPanel title="ps -o role,state,pid,detail">
             {state.services.map((service) => (
-              <DataRow key={service.role} columns="md:grid-cols-[12rem_8rem_7rem_1fr]">
+              <DataRow key={service.role} columns="md:grid-cols-[12rem_8rem_7rem_minmax(0,1fr)]">
                 <MonoCell>{service.role}</MonoCell>
                 <StatePill label={service.state} tone={toneForState(service.state)} />
                 <MutedCell>{service.pid ? `pid ${service.pid}` : "no pid"}</MutedCell>
-                <MutedCell truncate>{detailText(service.detail) || formatTimestamp(service.lastSeenAt)}</MutedCell>
+                <MutedCell wrap>{detailText(service.detail) || formatTimestamp(service.lastSeenAt)}</MutedCell>
               </DataRow>
             ))}
           </TerminalPanel>
@@ -173,7 +177,7 @@ export function ConsolePage({ initialState }: { initialState: RuntimeConsoleDto 
                 <MonoCell>{queue.id}</MonoCell>
                 <MutedCell>{queue.ownerRole}</MutedCell>
                 <StatePill label={queue.state} tone={toneForState(queue.state)} />
-                <MutedCell truncate>
+                <MutedCell wrap>
                   {queue.blockedReason ?? `depth ${queue.depth ?? 0} / active ${queue.activeCount ?? 0}`}
                 </MutedCell>
               </DataRow>
@@ -267,10 +271,13 @@ function TerminalPanel({ title, children }: { title: string; children: ReactNode
 
 function LogRow({ log }: { log: CollapsedLog }) {
   return (
-    <DataRow columns="md:grid-cols-[5.5rem_9rem_7rem_1fr_4rem]">
-      <MutedCell>{formatTime(log.createdAt)}</MutedCell>
-      <MonoCell>{log.role}</MonoCell>
-      <span className={cn("font-mono text-xs uppercase", logLevelTone(log.level))}>{log.level}</span>
+    <div className="grid gap-1 px-3 py-2.5">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <MutedCell>{formatTime(log.createdAt)}</MutedCell>
+        <span className={cn("font-mono text-xs uppercase", logLevelTone(log.level))}>{log.level}</span>
+        <span className="break-all font-mono text-xs">{log.role}</span>
+        <MutedCell wrap>{log.source ? `src:${log.source}` : "src:-"}</MutedCell>
+      </div>
       <span className="min-w-0 break-words text-sm leading-6">
         {log.message}
         {log.repeatCount > 1 ? (
@@ -279,18 +286,17 @@ function LogRow({ log }: { log: CollapsedLog }) {
           </span>
         ) : null}
       </span>
-      <MutedCell>{log.source ? `src:${log.source}` : "-"}</MutedCell>
-    </DataRow>
+    </div>
   );
 }
 
 function CommandRow({ command }: { command: RuntimeCommandDto }) {
   return (
-    <DataRow columns="md:grid-cols-[12rem_13rem_8rem_1fr]">
-      <MutedCell truncate>{command.id}</MutedCell>
-      <MonoCell>{command.kind}</MonoCell>
+    <DataRow columns="md:grid-cols-[12rem_13rem_8rem_minmax(0,1fr)]">
+      <MutedCell wrap>{command.id}</MutedCell>
+      <span className="min-w-0 break-words font-mono text-xs">{command.kind}</span>
       <StatePill label={command.status} tone={toneForState(command.status)} />
-      <MutedCell truncate>{detailText(command.detail) || command.targetRole}</MutedCell>
+      <MutedCell wrap>{detailText(command.detail) || command.targetRole}</MutedCell>
     </DataRow>
   );
 }
@@ -313,9 +319,9 @@ function MonoCell({ children }: { children: ReactNode }) {
   return <span className="min-w-0 truncate font-mono text-xs">{children}</span>;
 }
 
-function MutedCell({ children, truncate = false }: { children: ReactNode; truncate?: boolean }) {
+function MutedCell({ children, truncate = false, wrap = false }: { children: ReactNode; truncate?: boolean; wrap?: boolean }) {
   return (
-    <span className={cn("min-w-0 font-mono text-xs text-[rgb(var(--muted-foreground))]", truncate && "truncate")}>
+    <span className={cn("min-w-0 font-mono text-xs text-[rgb(var(--muted-foreground))]", truncate && "truncate", wrap && "break-words")}>
       {children}
     </span>
   );
