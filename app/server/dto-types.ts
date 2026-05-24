@@ -177,6 +177,10 @@ export interface LocalInferenceStatusDto {
   binaryPath: string | null;
   binarySource: string | null;
   modelsIniPath: string | null;
+  restartAttempt?: number;
+  restartInMs?: number;
+  lastRouterExitCode?: number;
+  lastRouterExitAt?: string;
   embeddingHealth: LocalEmbeddingHealthDto | null;
 }
 

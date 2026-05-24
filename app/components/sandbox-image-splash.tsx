@@ -23,8 +23,8 @@ export function SandboxImageSplashOverlay({
     <div className="fixed inset-0 z-50 bg-[rgb(var(--background))]">
       <SetupProgressSplash
         eyebrow="Sandbox image"
-        title="Preparing the document sandbox."
-        description="Aithy is downloading and assembling the sandbox image before the first tool run."
+        title="Preparing the secure sandbox."
+        description="Downloading and assembling the secure sandbox image."
         fallbackLabel="Waiting for sandbox image"
         statuses={[status]}
         dangerActionLabel="Retry sandbox"

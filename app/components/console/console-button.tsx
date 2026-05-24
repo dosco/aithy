@@ -5,6 +5,7 @@ import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { SandboxImageSplashOverlay } from "@/components/sandbox-image-splash";
 import { visibleSandboxImageStatus } from "@/components/sandbox-image-splash-model";
+import { serviceIssueSummary } from "./console-service-status";
 import { useRuntimeConsole } from "./use-runtime-console";
 
 export function ConsoleButton() {
@@ -12,6 +13,7 @@ export function ConsoleButton() {
   const [open, setOpen] = useState(false);
   const queue = state.queues.find((item) => item.id === "agent.chat");
   const sandboxImageStatus = visibleSandboxImageStatus(state.setupStatuses);
+  const serviceIssue = state.services.map(serviceIssueSummary).find(Boolean);
   const hasIssue = state.services.some((service) => service.state === "failed" || service.state === "degraded")
     || queue?.state === "blocked";
 
@@ -43,7 +45,7 @@ export function ConsoleButton() {
               <div className="min-w-0 flex-1">
                 <div className="text-sm font-medium">Console</div>
                 <div className="truncate text-[11px] text-[rgb(var(--muted-foreground))]">
-                  {queue?.blockedReason ?? queue?.state ?? "runtime status"}
+                  {queue?.blockedReason ?? serviceIssue ?? queue?.state ?? "runtime status"}
                 </div>
               </div>
               <Link

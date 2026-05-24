@@ -58,6 +58,8 @@
 .dark[data-theme="graphite"] {
   --background: 10 11 12;
   --foreground: 232 232 226;
+  --muted: 30 30 34;
+  --muted-foreground: 166 166 158;
   --panel: 17 18 20;
   --accent: 232 232 226;
   --accent-foreground: 15 15 15;

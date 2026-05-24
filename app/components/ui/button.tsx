@@ -12,10 +12,10 @@ export interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElemen
 }
 
 const variants: Record<ButtonVariant, string> = {
-  default: "bg-[rgb(var(--foreground))] text-[rgb(var(--background))] hover:opacity-90",
-  ghost: "bg-transparent hover:bg-[rgb(var(--muted))]",
-  soft: "bg-[rgb(var(--muted))] hover:brightness-95",
-  danger: "bg-red-100 text-red-700 hover:bg-red-200 dark:bg-red-950 dark:text-red-200",
+  default: "border-[rgb(var(--accent))] bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] hover:brightness-95",
+  ghost: "border-transparent bg-transparent text-[rgb(var(--muted-foreground))] hover:border-[rgb(var(--border))] hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]",
+  soft: "bg-[rgb(var(--muted))] text-[rgb(var(--foreground))] hover:bg-[rgb(var(--muted))]/80",
+  danger: "border-[rgb(var(--danger)/0.38)] bg-[rgb(var(--danger)/0.12)] text-[rgb(var(--danger))] hover:bg-[rgb(var(--danger)/0.18)]",
 };
 
 const sizes: Record<ButtonSize, string> = {
@@ -31,7 +31,7 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <Comp
         ref={ref}
         className={cn(
-          "inline-flex items-center justify-center gap-2 rounded-full border border-[rgb(var(--border))] transition disabled:pointer-events-none disabled:opacity-50",
+          "inline-flex items-center justify-center gap-2 rounded-full border border-[rgb(var(--border))] transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[rgb(var(--foreground))]/30 disabled:pointer-events-none disabled:cursor-not-allowed disabled:border-[rgb(var(--border))] disabled:bg-[rgb(var(--muted))]/50 disabled:text-[rgb(var(--muted-foreground))]",
           variants[variant],
           sizes[size],
           className,

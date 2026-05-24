@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { setupGateStateDto } from "../app/server/web-state.dto";
+import { localInferenceStatusDto, setupGateStateDto } from "../app/server/web-state.dto";
 import { loadConfig } from "../src/config/env";
 import { DEFAULT_LOCAL_AGENT_MODEL_ID, LOCAL_AI_PROVIDER } from "../src/local-inference/manifest";
 import type { RuntimeServiceStatus } from "../src/runtime/protocol/types";
@@ -150,6 +150,42 @@ describe("local inference setup gate", () => {
     expect(state.localInferenceReady).toBe(false);
     expect(state.localInferenceActive).toBe(false);
     expect(state.localInferenceError).toBe("llama-server was not found");
+  });
+
+  test("exposes local inference retry metadata", () => {
+    const status = localInferenceStatusDto(fakeRuntime({
+      config: {
+        ...loadConfig({}),
+        aiProvider: LOCAL_AI_PROVIDER,
+        aiModel: DEFAULT_LOCAL_AGENT_MODEL_ID,
+      },
+      service: {
+        role: "local-inference-worker",
+        state: "degraded",
+        pid: 123,
+        lastSeenAt: new Date().toISOString(),
+        detail: {
+          required: true,
+          ready: false,
+          chatReady: false,
+          modelId: DEFAULT_LOCAL_AGENT_MODEL_ID,
+          error: "llama-server exited with code 0",
+          restartAttempt: 3,
+          restartInMs: 4_000,
+          lastRouterExitCode: 0,
+          lastRouterExitAt: "2026-05-24T01:59:11.601Z",
+        },
+      },
+    }));
+
+    expect(status).toMatchObject({
+      ready: false,
+      error: "llama-server exited with code 0",
+      restartAttempt: 3,
+      restartInMs: 4_000,
+      lastRouterExitCode: 0,
+      lastRouterExitAt: "2026-05-24T01:59:11.601Z",
+    });
   });
 
   test("router readiness is not enough when Local chat is selected", () => {

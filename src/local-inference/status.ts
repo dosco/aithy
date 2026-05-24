@@ -21,6 +21,10 @@ export interface LocalInferenceServiceDetail {
   binarySource?: string;
   modelsIniPath?: string;
   error?: string;
+  restartAttempt?: number;
+  restartInMs?: number;
+  lastRouterExitCode?: number;
+  lastRouterExitAt?: string;
   downloading?: boolean;
   embeddingHealth?: LocalEmbeddingHealth;
 }
@@ -66,6 +70,10 @@ export function localInferenceDetail(
     binarySource: stringValue(detail.binarySource),
     modelsIniPath: stringValue(detail.modelsIniPath),
     error: stringValue(detail.error),
+    restartAttempt: numberValue(detail.restartAttempt),
+    restartInMs: numberValue(detail.restartInMs),
+    lastRouterExitCode: numberValue(detail.lastRouterExitCode),
+    lastRouterExitAt: stringValue(detail.lastRouterExitAt),
     downloading: detail.downloading === true,
     embeddingHealth: embeddingHealth(detail.embeddingHealth),
   };

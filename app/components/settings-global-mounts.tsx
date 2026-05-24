@@ -1,10 +1,8 @@
 import { Plus, X } from "lucide-react";
-import type { ReactNode } from "react";
+import { Section, fieldClass } from "@/components/settings-form-bits";
+import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { GlobalMountDto } from "@/server/dto";
-
-const fieldClass =
-  "h-11 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5 text-sm outline-none transition placeholder:text-[rgb(var(--muted-foreground))] focus:border-[rgb(var(--foreground))]";
 
 export function GlobalMountsSection({
   mounts,
@@ -30,6 +28,7 @@ export function GlobalMountsSection({
     <Section
       title="Global mounts"
       subtitle="Bind-mounted into every sandbox at /mounts/<name>. Read-write. Folders pasted in chat are added here automatically."
+      muted
     >
       <div className="grid gap-2">
         {mounts.length === 0 ? (
@@ -50,14 +49,16 @@ export function GlobalMountsSection({
                   spellCheck={false}
                   onChange={(event) => setAt(index, event.target.value)}
                 />
-                <button
+                <Button
                   type="button"
                   onClick={() => removeAt(index)}
-                  className="flex h-11 w-11 items-center justify-center rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] text-[rgb(var(--muted-foreground))] transition hover:text-[rgb(var(--foreground))]"
+                  variant="ghost"
+                  size="icon"
+                  className="h-11 w-11 shrink-0 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))]"
                   aria-label="Remove mount"
                 >
                   <X className="h-4 w-4" />
-                </button>
+                </Button>
               </div>
               {skipped ? (
                 <p className="text-xs text-[rgb(var(--muted-foreground))]">
@@ -67,36 +68,15 @@ export function GlobalMountsSection({
             </div>
           );
         })}
-        <button
+        <Button
           type="button"
           onClick={() => onChange([...mounts, { hostPath: "" }])}
-          className="flex h-11 items-center justify-center gap-2 rounded-xl border border-dashed border-[rgb(var(--border))] bg-transparent text-sm text-[rgb(var(--muted-foreground))] transition hover:border-[rgb(var(--foreground))] hover:text-[rgb(var(--foreground))]"
+          variant="ghost"
+          className="h-11 w-full rounded-xl border border-dashed border-[rgb(var(--border))] bg-transparent hover:border-[rgb(var(--foreground))]"
         >
           <Plus className="h-4 w-4" /> Add path
-        </button>
+        </Button>
       </div>
     </Section>
-  );
-}
-
-function Section({
-  title,
-  subtitle,
-  children,
-}: {
-  title: string;
-  subtitle?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="grid gap-4 rounded-2xl border border-[rgb(var(--border))] bg-[rgb(var(--muted))]/30 p-5">
-      <header className="grid gap-1">
-        <h3 className="text-sm font-medium tracking-tight">{title}</h3>
-        {subtitle ? (
-          <p className="text-xs text-[rgb(var(--muted-foreground))]">{subtitle}</p>
-        ) : null}
-      </header>
-      {children}
-    </section>
   );
 }

@@ -187,6 +187,11 @@ function ModelSummary({
         {selected?.cached ? selected.path : "Selected managed model will be downloaded into the Hugging Face cache when needed."}
       </p>
       {state.status.error ? <p className="text-xs text-red-500">{state.status.error}</p> : null}
+      {state.status.restartInMs !== undefined ? (
+        <p className="text-xs text-amber-600 dark:text-amber-300">
+          Retrying local inference in {formatDelay(state.status.restartInMs)}.
+        </p>
+      ) : null}
       {state.status.binaryPath ? (
         <p className="break-all text-xs text-[rgb(var(--muted-foreground))]">
           llama-server ({state.status.binarySource ?? "resolved"}): {state.status.binaryPath}
@@ -202,6 +207,11 @@ function localModelOption(model: LocalInferencePageStateDto["localModels"][numbe
     label: model.displayName,
     detail: model.cached ? "cached" : model.managed ? "download needed" : model.filename,
   };
+}
+
+function formatDelay(ms: number): string {
+  if (ms >= 1_000) return `${Math.ceil(ms / 1_000)}s`;
+  return `${ms}ms`;
 }
 
 function ReadOnlyModelSection({

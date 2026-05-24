@@ -1,4 +1,5 @@
 import type { QueueServiceClient } from "../queue/client";
+import type { RuntimeLogLevel } from "../../protocol/types";
 
 export async function captureLines(
   queue: QueueServiceClient,
@@ -38,8 +39,16 @@ function recordLine(queue: QueueServiceClient, source: "stdout" | "stderr", line
   if (!message) return;
   void queue.appendLog({
     role: "local-inference-worker",
-    level: source === "stderr" ? "error" : "info",
+    level: llamaLogLevel(source, message),
     source: `llama-${source}`,
     message,
   });
+}
+
+export function llamaLogLevel(source: "stdout" | "stderr", message: string): RuntimeLogLevel {
+  if (source === "stdout") return "info";
+  if (/\b(error|fatal|panic|exception|failed|failure)\b/i.test(message)) return "error";
+  if (/\b(warn|warning)\b/i.test(message)) return "warn";
+  if (/^\s*(?:\d+\.\d+\.\d+\.\d+\s+)?I\b/.test(message)) return "info";
+  return "warn";
 }

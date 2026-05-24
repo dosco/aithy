@@ -9,6 +9,7 @@ import {
   Field,
   ModelCombobox,
   ProviderSelect,
+  fieldClass,
 } from "@/components/settings-form-bits";
 import { ThemeSync } from "@/components/theme-sync";
 import { Button } from "@/components/ui/button";
@@ -229,7 +230,7 @@ export function SetupPage({
         <div className="grid gap-4">
           <Field label="Your name">
             <input
-              className="h-11 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5 text-sm outline-none transition placeholder:text-[rgb(var(--muted-foreground))] focus:border-[rgb(var(--foreground))]"
+              className={fieldClass}
               value={userName}
               onChange={(event) => setUserName(event.target.value)}
               placeholder="What should Aithy call you?"
@@ -237,7 +238,7 @@ export function SetupPage({
           </Field>
           <Field label="Location (optional)">
             <input
-              className="h-11 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5 text-sm outline-none transition placeholder:text-[rgb(var(--muted-foreground))] focus:border-[rgb(var(--foreground))]"
+              className={fieldClass}
               value={userLocation}
               onChange={(event) => setUserLocation(event.target.value)}
               placeholder="City, region, or timezone"
@@ -279,7 +280,7 @@ export function SetupPage({
                 <div className="sm:col-span-2">
                   <Field label="Base URL">
                     <input
-                      className="h-11 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5 text-sm outline-none transition placeholder:text-[rgb(var(--muted-foreground))] focus:border-[rgb(var(--foreground))]"
+                      className={fieldClass}
                       value={apiUrl}
                       onChange={(event) => setApiUrl(event.target.value)}
                       placeholder="https://api.example.com/v1"

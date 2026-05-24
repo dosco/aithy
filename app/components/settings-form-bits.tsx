@@ -15,10 +15,10 @@ import {
 } from "../../src/agent/ai-providers";
 
 export const fieldClass =
-  "h-11 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5 text-sm outline-none transition placeholder:text-[rgb(var(--muted-foreground))] focus:border-[rgb(var(--foreground))]";
+  "h-11 w-full rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5 text-sm text-[rgb(var(--foreground))] caret-[rgb(var(--foreground))] outline-none transition placeholder:text-[rgb(var(--muted-foreground))] read-only:bg-[rgb(var(--muted))]/35 read-only:text-[rgb(var(--foreground))] disabled:cursor-not-allowed disabled:bg-[rgb(var(--muted))]/50 disabled:text-[rgb(var(--muted-foreground))] focus:border-[rgb(var(--foreground))]";
 
 export const selectClass =
-  `${fieldClass} appearance-none pr-10 bg-no-repeat bg-[right_0.875rem_center] bg-[length:0.75rem_0.75rem] cursor-pointer bg-[image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23888' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'><polyline points='3,6 8,11 13,6'/></svg>")]`;
+  `${fieldClass} appearance-none pr-10 bg-no-repeat bg-[right_0.875rem_center] bg-[length:0.75rem_0.75rem] cursor-pointer bg-[image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='%23888' stroke-width='1.75' stroke-linecap='round' stroke-linejoin='round'><polyline points='3,6 8,11 13,6'/></svg>")] [&>option]:bg-[rgb(var(--panel))] [&>option]:text-[rgb(var(--foreground))] [&>optgroup]:bg-[rgb(var(--panel))] [&>optgroup]:text-[rgb(var(--foreground))]`;
 
 export interface ModelOption {
   value: string;
@@ -97,8 +97,8 @@ export function ApiKeyInput({
   return (
     <div
       className={cn(
-        "flex items-stretch overflow-hidden rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] transition focus-within:border-[rgb(var(--foreground))]",
-        disabled && "opacity-50",
+        "flex items-stretch overflow-hidden rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] text-[rgb(var(--foreground))] transition focus-within:border-[rgb(var(--foreground))]",
+        disabled && "bg-[rgb(var(--muted))]/35 text-[rgb(var(--muted-foreground))]",
       )}
     >
       <span className="flex items-center px-3 text-[rgb(var(--muted-foreground))]">
@@ -111,7 +111,7 @@ export function ApiKeyInput({
         placeholder={placeholder}
         onChange={(event) => onChange(event.target.value)}
         autoComplete="off"
-        className="h-11 w-full bg-transparent pr-3.5 text-sm outline-none placeholder:text-[rgb(var(--muted-foreground))] disabled:cursor-not-allowed"
+        className="h-11 w-full bg-transparent pr-3.5 text-sm text-[rgb(var(--foreground))] caret-[rgb(var(--foreground))] outline-none placeholder:text-[rgb(var(--muted-foreground))] disabled:cursor-not-allowed disabled:text-[rgb(var(--muted-foreground))]"
       />
       {secret?.configured ? (
         <span className="flex shrink-0 items-center gap-1 border-l border-[rgb(var(--border))] px-3 text-[10px] font-medium uppercase tracking-wider text-[rgb(var(--muted-foreground))]">
@@ -177,12 +177,12 @@ export function ModelCombobox({
     >
       <div
         className={cn(
-          "flex items-stretch overflow-hidden rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] transition focus-within:border-[rgb(var(--foreground))]",
-          disabled && "opacity-50",
+          "flex items-stretch overflow-hidden rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] text-[rgb(var(--foreground))] transition focus-within:border-[rgb(var(--foreground))]",
+          disabled && "bg-[rgb(var(--muted))]/35 text-[rgb(var(--muted-foreground))]",
         )}
       >
         <input
-          className="h-11 w-full bg-transparent px-3.5 text-sm outline-none placeholder:text-[rgb(var(--muted-foreground))] disabled:cursor-not-allowed"
+          className="h-11 w-full bg-transparent px-3.5 text-sm text-[rgb(var(--foreground))] caret-[rgb(var(--foreground))] outline-none placeholder:text-[rgb(var(--muted-foreground))] disabled:cursor-not-allowed disabled:text-[rgb(var(--muted-foreground))]"
           value={displayValue}
           disabled={disabled}
           placeholder={placeholder}
@@ -223,8 +223,8 @@ export function ModelCombobox({
                 setFocused(false);
               }}
               className={cn(
-                "flex min-h-10 w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm transition hover:bg-[rgb(var(--muted))] focus:bg-[rgb(var(--muted))] focus:outline-none",
-                model.value === value && "font-medium",
+                "flex min-h-10 w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left text-sm text-[rgb(var(--foreground))] transition hover:bg-[rgb(var(--muted))] focus:bg-[rgb(var(--muted))] focus:outline-none",
+                model.value === value && "bg-[rgb(var(--muted))] font-medium",
               )}
             >
               <span className="min-w-0">
@@ -353,7 +353,7 @@ export function FormTextarea(props: TextareaHTMLAttributes<HTMLTextAreaElement>)
     <Textarea
       {...props}
       className={cn(
-        "rounded-xl border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5 py-2.5 text-sm",
+        "rounded-xl border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5 py-2.5 text-sm text-[rgb(var(--foreground))] caret-[rgb(var(--foreground))]",
         props.className,
       )}
     />

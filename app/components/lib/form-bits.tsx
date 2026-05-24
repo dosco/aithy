@@ -3,7 +3,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 
 export const fieldClass =
-  "h-10 w-full rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3 text-sm outline-none transition placeholder:text-[rgb(var(--muted-foreground))] focus:border-[rgb(var(--foreground))]";
+  "h-10 w-full rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3 text-sm text-[rgb(var(--foreground))] caret-[rgb(var(--foreground))] outline-none transition placeholder:text-[rgb(var(--muted-foreground))] read-only:bg-[rgb(var(--muted))]/35 read-only:text-[rgb(var(--foreground))] disabled:cursor-not-allowed disabled:bg-[rgb(var(--muted))]/50 disabled:text-[rgb(var(--muted-foreground))] focus:border-[rgb(var(--foreground))]";
 
 export function Field({
   label,
@@ -32,7 +32,7 @@ export const FormTextarea = forwardRef<
     ref={ref}
     {...props}
     className={cn(
-      "rounded-lg border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3 py-2 text-sm",
+      "rounded-lg border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3 py-2 text-sm text-[rgb(var(--foreground))] caret-[rgb(var(--foreground))]",
       className,
     )}
   />

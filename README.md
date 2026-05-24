@@ -12,7 +12,7 @@
       ':::'
 ```
 
-Aithy is a local AI agent for real life: private by default, easy to run, polished in the browser, and ready for local models, cloud providers, eligible Grok subscriptions, and Mesh-shared home GPUs.
+Aithy is a private local AI runtime: easy to run, inspectable in the browser, and ready for local models, cloud providers, eligible Grok subscriptions, and Mesh-shared home GPUs.
 
 It is pronounced **ay-thee**. It is named after my cat.
 
@@ -20,7 +20,7 @@ Aithy is useful as a personal agent today, but it is also built for the messy pl
 
 ## Why Aithy
 
-- **Run it locally.** Start Aithy, open the browser, and talk to a real agent UI without wiring an agent framework by hand.
+- **Run it locally.** Start Aithy, open the browser control surface, and use an inspectable agent workspace without wiring an agent framework by hand.
 - **Use the models you already have.** Choose managed local `llama.cpp` models, normal cloud/API providers, custom OpenAI-compatible endpoints, or an eligible Grok subscription.
 - **Make your Grok subscription useful.** Grok subscription sign-in can power chat and `web.search` without pasting an API key into Aithy. For people who already pay for Grok, that can avoid setting up separate per-token API-key billing for supported usage, subject to xAI eligibility and limits.
 - **Share a stronger machine.** Pair Aithy on your laptop with Aithy on a GPU box over LAN Mesh, then use validated family inference/search services without copying secrets around.
@@ -102,7 +102,7 @@ Aithy lets the model source be a runtime choice instead of a project rewrite.
 
 ```mermaid
 flowchart LR
-  User["You"] --> UI["Aithy web UI"]
+  User["You"] --> UI["Aithy browser control surface"]
   UI --> Source{"Model source"}
   Source --> Local["This Aithy: managed llama.cpp"]
   Source --> Grok["This Aithy: eligible Grok subscription"]
@@ -115,6 +115,8 @@ flowchart LR
 ```
 
 Local inference uses a managed `llama.cpp` `llama-server` release pinned in `package.json`, with Qwen GGUF chat models plus local Qwen embedding and reranker models. A saved path to your own compatible `llama-server` can be used instead.
+
+If the Runtime Console shows `local-inference-worker` as `DEGRADED`, the local router for local chat, memory embeddings, or reranking is unavailable or recovering. Cloud-provider chat can still work when Local is not selected, and the console shows the current error plus any automatic retry countdown.
 
 The Grok subscription provider uses OAuth/PKCE sign-in. Tokens stay in local Aithy secrets, and the connected provider can be used for chat and `web.search` when the subscription is eligible for the underlying xAI access.
 

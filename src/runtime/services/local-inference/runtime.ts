@@ -21,7 +21,6 @@ import {
   waitForRouterReady,
   type LlamaRouterProcess,
 } from "../../../local-inference/router";
-import type { LocalInferenceSettings } from "../../../local-inference/settings";
 import { localChatRequired, localInferenceRequired } from "../../../local-inference/status";
 import { assertVecExtensionReady, probeAndConfigureSqlite } from "../../../memory/vec-extension";
 import { SqliteEpisodeStore } from "../../../episodes/episode-store";
@@ -38,6 +37,16 @@ import type { QueueServiceClient } from "../queue/client";
 import { resolveLlamaServerBinary, type LlamaServerBinary } from "../../../local-inference/binary";
 import { emptyIndexCounts, type EmbeddingHealthStats, type TargetIndexCounts } from "../../../retrieval/indexing";
 import { captureLines, delay, streamOrNull } from "./log-streams";
+import { LocalInferenceRecovery } from "./recovery";
+import {
+  localInferenceLoadSettingsKey,
+  objectPayload,
+  optionalStringArray,
+  requiredPath,
+  routerPid,
+  stringArrayField,
+  stringField,
+} from "./runtime-helpers";
 
 const BACKFILL_INTERVAL_MS = 15_000;
 const SHUTDOWN_GRACE_MS = 10_000;
@@ -63,6 +72,7 @@ export class LocalInferenceWorkerRuntime {
   private loadSettingsKey: string | null = null;
   private configurePromise: Promise<void> = Promise.resolve();
   private router: LlamaRouterProcess | null = null;
+  private readonly recovery = new LocalInferenceRecovery();
   private readonly embedder = new LocalLlamaEmbedder(() => this.baseUrl);
   private readonly reranker = new LocalLlamaReranker(() => this.baseUrl);
   private memory!: SqliteMemoryStore;
@@ -71,6 +81,8 @@ export class LocalInferenceWorkerRuntime {
   private lastTargetedIndexAt: string | null = null;
   private lastBackfillAt: string | null = null;
   private lastIndexError: string | null = null;
+  private lastRouterExitCode: number | null = null;
+  private lastRouterExitAt: string | null = null;
 
   private constructor(
     private readonly settings: SqliteSettingsStore,
@@ -150,6 +162,7 @@ export class LocalInferenceWorkerRuntime {
         this.ready = true;
         this.chatReady = false;
         this.error = null;
+        this.recovery.reset();
         this.heartbeat("ready");
         return;
       }
@@ -162,6 +175,8 @@ export class LocalInferenceWorkerRuntime {
       if (this.canReuseRouter(chatRequired ? nextModelId : null, nextLoadSettingsKey)) {
         this.ready = true;
         this.chatReady = chatRequired;
+        this.error = null;
+        this.recovery.reset();
         this.heartbeat("ready");
         return;
       }
@@ -210,6 +225,8 @@ export class LocalInferenceWorkerRuntime {
       this.loadSettingsKey = nextLoadSettingsKey;
       this.ready = true;
       this.chatReady = chatRequired;
+      this.error = null;
+      this.recovery.reset();
       this.heartbeat("ready");
       this.onStatus(readyStatus("local.router", "local inference ready"));
       await this.runBackfill("startup");
@@ -218,7 +235,7 @@ export class LocalInferenceWorkerRuntime {
       this.ready = false;
       this.error = error instanceof Error ? error.message : String(error);
       this.onStatus(failedStatus("local.router", `local inference failed: ${this.error}`));
-      this.heartbeat("degraded");
+      this.scheduleRecovery(this.error);
     }
   }
 
@@ -262,7 +279,8 @@ export class LocalInferenceWorkerRuntime {
 
   private async handleCommand(command: RuntimeCommandRow): Promise<LocalCommandResult> {
     if (command.kind === "local-inference.reload_settings" || command.kind === "embedding.reload_settings") {
-      await this.queueConfigure();
+      const run = this.recovery.runNow(() => this.queueConfigure());
+      if (run) await run;
       return undefined;
     }
     if (command.kind === "local-inference.status") return this.detail();
@@ -355,16 +373,19 @@ export class LocalInferenceWorkerRuntime {
     this.ready = false;
     this.chatReady = false;
     this.error = `llama-server exited with code ${code}`;
+    this.lastRouterExitCode = code;
+    this.lastRouterExitAt = new Date().toISOString();
     this.router = null;
     this.baseUrl = null;
     this.healthUrl = null;
     if (markerPath) void removeLlamaRouterMarker(markerPath, pid);
-    this.heartbeat("degraded");
+    this.scheduleRecovery(this.error);
   }
 
   private async doShutdown(): Promise<void> {
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     if (this.backfillTimer) clearInterval(this.backfillTimer);
+    this.recovery.shutdown();
     this.queue.beginShutdown();
     this.heartbeat("stopping");
     await this.unload();
@@ -377,6 +398,19 @@ export class LocalInferenceWorkerRuntime {
 
   private heartbeat(state: RuntimeServiceState, extra: Record<string, unknown> = {}): void {
     void this.queue.heartbeat("local-inference-worker", state, this.detail(extra));
+  }
+
+  private scheduleRecovery(error: string): void {
+    const retry = this.recovery.schedule(() => void this.queueConfigure());
+    const retryText = retry ? `; retrying in ${formatDelay(retry.restartInMs)}` : "";
+    void this.queue.appendLog({
+      role: "local-inference-worker",
+      level: "warn",
+      source: "recovery",
+      message: `local inference degraded: ${error}${retryText}`,
+      detail: retry ?? undefined,
+    });
+    this.heartbeat("degraded", retry ? { ...retry } : {});
   }
 
   private detail(extra: Record<string, unknown> = {}) {
@@ -401,8 +435,11 @@ export class LocalInferenceWorkerRuntime {
       binaryVersion: this.binary?.version ?? null,
       modelsIniPath: this.modelsIniPath,
       error: this.error,
+      lastRouterExitCode: this.lastRouterExitCode,
+      lastRouterExitAt: this.lastRouterExitAt,
       embeddingHealth: this.embeddingHealth(),
       settings: this.config.localInference,
+      ...this.recovery.pendingDetail(),
       ...extra,
     };
   }
@@ -428,58 +465,7 @@ export class LocalInferenceWorkerRuntime {
   }
 }
 
-function localInferenceLoadSettingsKey(settings: LocalInferenceSettings, modelId: string | null): string {
-  return JSON.stringify({
-    chatModelId: modelId,
-    llamaServerPath: settings.llamaServerPath,
-    contextSize: settings.contextSize,
-    embeddingContextSize: settings.embeddingContextSize,
-    rerankerContextSize: settings.rerankerContextSize,
-    gpuLayers: settings.gpuLayers,
-    flashAttention: settings.flashAttention,
-    batchSize: settings.batchSize,
-    ubatchSize: settings.ubatchSize,
-    modelsMax: settings.modelsMax,
-    kvCacheType: settings.kvCacheType,
-    thinkingMode: settings.thinkingMode,
-  });
-}
-
-function requiredPath(paths: Map<string, string>, role: string): string {
-  const value = paths.get(role);
-  if (!value) throw new Error(`missing local model path for ${role}`);
-  return value;
-}
-
-function routerPid(router: LlamaRouterProcess): number | undefined {
-  const pid = (router.proc as { pid?: unknown }).pid;
-  return typeof pid === "number" ? pid : undefined;
-}
-
-function objectPayload(payload: unknown): Record<string, unknown> {
-  if (!payload || typeof payload !== "object") throw new Error("Invalid local inference command payload");
-  return payload as Record<string, unknown>;
-}
-
-function stringField(value: Record<string, unknown>, key: string): string {
-  const field = value[key];
-  if (typeof field !== "string") throw new Error(`Invalid local inference command field: ${key}`);
-  return field;
-}
-
-function stringArrayField(value: Record<string, unknown>, key: string): string[] {
-  const field = value[key];
-  if (!Array.isArray(field) || !field.every((item) => typeof item === "string")) {
-    throw new Error(`Invalid local inference command field: ${key}`);
-  }
-  return field;
-}
-
-function optionalStringArray(value: Record<string, unknown>, key: string): string[] {
-  const field = value[key];
-  if (field === undefined) return [];
-  if (!Array.isArray(field) || !field.every((item) => typeof item === "string")) {
-    throw new Error(`Invalid local inference command field: ${key}`);
-  }
-  return [...new Set(field.map((item) => item.trim()).filter(Boolean))];
+function formatDelay(ms: number): string {
+  if (ms >= 1_000) return `${Math.ceil(ms / 1_000)}s`;
+  return `${ms}ms`;
 }

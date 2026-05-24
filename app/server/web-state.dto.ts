@@ -181,7 +181,7 @@ export function setupGateStateDto(runtime: AithyRuntime): SetupGateStateDto {
   };
 }
 
-function localInferenceStatusDto(runtime: AithyRuntime): LocalInferenceStatusDto {
+export function localInferenceStatusDto(runtime: AithyRuntime): LocalInferenceStatusDto {
   const chatRequired = localChatRequired(runtime.config);
   const service = runtime.runtimeStore.service("local-inference-worker");
   const detail = localInferenceDetail(service);
@@ -207,6 +207,10 @@ function localInferenceStatusDto(runtime: AithyRuntime): LocalInferenceStatusDto
     binaryPath: detail?.binaryPath ?? null,
     binarySource: detail?.binarySource ?? null,
     modelsIniPath: detail?.modelsIniPath ?? null,
+    restartAttempt: detail?.restartAttempt,
+    restartInMs: detail?.restartInMs,
+    lastRouterExitCode: detail?.lastRouterExitCode,
+    lastRouterExitAt: detail?.lastRouterExitAt,
     embeddingHealth: detail?.embeddingHealth ?? null,
   };
 }
