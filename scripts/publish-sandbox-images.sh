@@ -2,6 +2,8 @@
 set -euo pipefail
 
 owner="$(printf '%s' "${GITHUB_REPOSITORY_OWNER:-dosco}" | tr '[:upper:]' '[:lower:]')"
+repository="${GITHUB_REPOSITORY:-dosco/aithy}"
+revision="${GITHUB_SHA:-local}"
 ref_tag="$(printf '%s' "${AITHY_SANDBOX_REF_TAG:-${GITHUB_REF_NAME:-manual}}" | tr '/:@' '---')"
 include_ref_tag="${AITHY_SANDBOX_INCLUDE_REF_TAG:-0}"
 
@@ -29,20 +31,6 @@ publish_image() {
   local name="$1"
   local dockerfile="$2"
   local image="ghcr.io/$owner/$name"
-  local ref_tags=()
-  if [[ "$include_ref_tag" == "1" ]]; then
-    ref_tags=(-t "$image:$ref_tag")
-  fi
-
-  docker buildx build \
-    --platform linux/amd64,linux/arm64 \
-    --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
-    --label "org.opencontainers.image.revision=$GITHUB_SHA" \
-    -t "$image:latest" \
-    "${ref_tags[@]}" \
-    --push \
-    -f "$dockerfile" \
-    .
 
   for arch in amd64 arm64; do
     local arch_ref_tags=()
@@ -53,8 +41,8 @@ publish_image() {
       --platform "linux/$arch" \
       --provenance=false \
       --sbom=false \
-      --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
-      --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+      --label "org.opencontainers.image.source=https://github.com/$repository" \
+      --label "org.opencontainers.image.revision=$revision" \
       -t "$image:latest-$arch" \
       "${arch_ref_tags[@]}" \
       --push \
@@ -62,6 +50,18 @@ publish_image() {
       .
     verify_public_pull "$name" "latest-$arch"
   done
+
+  docker buildx imagetools create \
+    -t "$image:latest" \
+    "$image:latest-amd64" \
+    "$image:latest-arm64"
+
+  if [[ "$include_ref_tag" == "1" ]]; then
+    docker buildx imagetools create \
+      -t "$image:$ref_tag" \
+      "$image:$ref_tag-amd64" \
+      "$image:$ref_tag-arm64"
+  fi
 }
 
 publish_image "aithy-sandbox" "Dockerfile"

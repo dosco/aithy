@@ -18,7 +18,7 @@ permissions:
 
 concurrency:
   group: sandbox-images-${{ github.ref }}
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   sandbox-image:
