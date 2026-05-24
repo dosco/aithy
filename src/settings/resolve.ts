@@ -3,6 +3,11 @@ import { MAX_PARALLEL_AGENTS } from "../config/limits";
 import { isLocalAiProvider } from "../agent/ai-providers";
 import { selectedLocalAgentModelId } from "../local-inference/manifest";
 import { normalizeLocalInferenceSettings } from "../local-inference/settings";
+import {
+  defaultSandboxImageResolutionContext,
+  resolveSandboxImageConfig,
+  type SandboxImageResolutionContext,
+} from "../sandbox/image-catalog";
 import type { RuntimeSettings } from "./types";
 import { activeSearchProvider, aiProfileFor, providerUsesApiUrl, searchProfileFor } from "./provider-profiles";
 
@@ -12,6 +17,7 @@ export function applyRuntimeSettings(
   apiKey?: string | null,
   fastApiKey?: string | null,
   parallelApiKey?: string | null,
+  sandboxImageContext: SandboxImageResolutionContext = defaultSandboxImageResolutionContext(),
 ): AppConfig {
   const fastProvider = cleanString(settings.fastAiProvider);
   const aiProvider = cleanString(settings.aiProvider) ?? config.aiProvider;
@@ -27,6 +33,7 @@ export function applyRuntimeSettings(
   const aiModel = settings.aiModel === null
     ? undefined
     : cleanString(aiProfile.model ?? undefined) ?? cleanString(settings.aiModel) ?? config.aiModel;
+  const sandboxImage = resolveSandboxImageConfig(settings, sandboxImageContext);
   return {
     ...config,
     aiProvider,
@@ -58,7 +65,11 @@ export function applyRuntimeSettings(
       : undefined,
     fastAiApiKey: fastProvider ? (fastApiKey === null ? undefined : fastApiKey) : undefined,
     sandboxProvider: normalizeSandboxProvider(settings.sandboxProvider) ?? config.sandboxProvider,
-    sandboxImage: normalizeSandboxImage(settings.sandboxImage) ?? config.sandboxImage,
+    sandboxImage: sandboxImage.image,
+    sandboxImageLabel: sandboxImage.label,
+    sandboxImageSelection: sandboxImage.selection,
+    customSandboxImages: sandboxImage.customImages,
+    sandboxImageOptions: sandboxImage.options,
     sandboxCpus: settings.sandboxCpus ?? config.sandboxCpus,
     sandboxMemoryMb: settings.sandboxMemoryMb ?? config.sandboxMemoryMb,
     sandboxNetwork: settings.sandboxNetwork ?? config.sandboxNetwork,
@@ -105,11 +116,6 @@ function normalizeSandboxProvider(value: unknown): AppConfig["sandboxProvider"] 
   if (value === "microsandbox") return "microsandbox";
   if (value === "disabled" || value === "mock") return "disabled";
   return undefined;
-}
-
-function normalizeSandboxImage(value: string | undefined): string | undefined {
-  const image = cleanString(value);
-  return image;
 }
 
 function clampParallelAgents(value: number | undefined): number | undefined {

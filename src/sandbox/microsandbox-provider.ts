@@ -1,7 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import { NetworkPolicy, Sandbox } from "microsandbox";
-import { DEFAULT_SANDBOX_IMAGE } from "../config/env";
+import { INTERNAL_SANDBOX_IMAGES } from "./image-catalog";
 import {
   DEFAULT_BASH_TIMEOUT_MS,
   MAX_BASH_TIMEOUT_MS,
@@ -299,15 +299,17 @@ export class MicrosandboxProvider implements SandboxProvider {
 }
 
 function enablePublicGhcrPull(builder: MicrosandboxBuilder, image: string): MicrosandboxBuilder {
-  if (!isDefaultGhcrImage(image) || typeof builder.registry !== "function") return builder;
+  if (!isAithyGhcrImage(image) || typeof builder.registry !== "function") return builder;
   // Microsandbox calls this "anonymous" registry auth; it is the no-credentials public pull mode.
   return builder.registry((registry) => registry.auth({ kind: "anonymous" })) ?? builder;
 }
 
-function isDefaultGhcrImage(image: string): boolean {
+function isAithyGhcrImage(image: string): boolean {
   const value = image.trim().toLowerCase();
-  const repository = DEFAULT_SANDBOX_IMAGE.replace(/:.+$/, "");
-  return value === repository || value.startsWith(`${repository}:`) || value.startsWith(`${repository}@`);
+  return INTERNAL_SANDBOX_IMAGES.some((entry) => {
+    const repository = entry.repository.toLowerCase();
+    return value === repository || value.startsWith(`${repository}:`) || value.startsWith(`${repository}@`);
+  });
 }
 
 async function ensureHostPath(hostPath: string): Promise<void> {

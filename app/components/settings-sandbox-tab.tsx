@@ -1,9 +1,13 @@
 import type { Dispatch, SetStateAction } from "react";
+import { Plus, Trash2 } from "lucide-react";
 import { Field, Section, fieldClass, selectClass } from "@/components/settings-form-bits";
 import { GlobalMountsSection } from "@/components/settings-global-mounts";
 import { SettingsSaveBar } from "@/components/settings-save-bar";
+import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import type { ConfigDto } from "@/server/dto";
+
+const DEFAULT_IMAGE_SELECTION = { kind: "internal", id: "aithy-sandbox" } satisfies ConfigDto["sandboxImageSelection"];
 
 interface SandboxTabProps {
   config: ConfigDto;
@@ -49,8 +53,25 @@ function MicrosandboxFields({ config, setConfig }: Pick<SandboxTabProps, "config
   return (
     <>
       <Field label="Image">
-        <input className={fieldClass} value={config.sandboxImage} onChange={(event) => setConfigValue(setConfig, "sandboxImage", event.target.value)} />
+        <select className={selectClass} value={selectionValue(config.sandboxImageSelection)} onChange={(event) => selectSandboxImage(setConfig, event.target.value)}>
+          <optgroup label="Aithy images">
+            {config.sandboxImageOptions.filter((image) => image.kind === "internal").map((image) => (
+              <option key={`${image.kind}:${image.id}`} value={`${image.kind}:${image.id}`}>{image.name}</option>
+            ))}
+          </optgroup>
+          {config.sandboxImageOptions.some((image) => image.kind === "custom") ? (
+            <optgroup label="Custom images">
+              {config.sandboxImageOptions.filter((image) => image.kind === "custom").map((image) => (
+                <option key={`${image.kind}:${image.id}`} value={`${image.kind}:${image.id}`}>{image.name}</option>
+              ))}
+            </optgroup>
+          ) : null}
+        </select>
       </Field>
+      <Field label="Resolved image">
+        <input className={fieldClass} value={config.sandboxImage} readOnly />
+      </Field>
+      <CustomImageControls config={config} setConfig={setConfig} />
       <Field label="Network">
         <select value={config.sandboxNetwork} onChange={(event) => setConfigValue(setConfig, "sandboxNetwork", event.target.value)} className={selectClass}>
           <option value="none">none</option>
@@ -67,6 +88,39 @@ function MicrosandboxFields({ config, setConfig }: Pick<SandboxTabProps, "config
         </Field>
       </div>
     </>
+  );
+}
+
+function CustomImageControls({ config, setConfig }: Pick<SandboxTabProps, "config" | "setConfig">) {
+  const selected = config.sandboxImageSelection.kind === "custom"
+    ? config.customSandboxImages.find((image) => image.id === config.sandboxImageSelection.id)
+    : undefined;
+  if (!selected) {
+    return (
+      <div className="sm:col-span-2">
+        <Button type="button" variant="soft" size="sm" onClick={() => addCustomImage(setConfig)}>
+          <Plus className="h-4 w-4" /> Add custom image
+        </Button>
+      </div>
+    );
+  }
+  return (
+    <div className="grid gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--muted)/0.22)] p-3 sm:col-span-2 sm:grid-cols-[1fr_1.4fr_auto]">
+      <Field label="Custom name">
+        <input className={fieldClass} value={selected.name} onChange={(event) => updateCustomImage(setConfig, selected.id, { name: event.target.value })} />
+      </Field>
+      <Field label="Custom image ref">
+        <input className={fieldClass} value={selected.image} onChange={(event) => updateCustomImage(setConfig, selected.id, { image: event.target.value })} />
+      </Field>
+      <div className="flex items-end gap-2">
+        <Button type="button" variant="soft" size="icon" aria-label="Add custom image" title="Add custom image" onClick={() => addCustomImage(setConfig)}>
+          <Plus className="h-4 w-4" />
+        </Button>
+        <Button type="button" variant="danger" size="icon" aria-label="Delete custom image" title="Delete custom image" onClick={() => deleteCustomImage(setConfig, selected.id)}>
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      </div>
+    </div>
   );
 }
 
@@ -108,4 +162,67 @@ function setConfigValue<K extends keyof ConfigDto>(
   value: ConfigDto[K],
 ) {
   setter((current) => ({ ...current, [key]: value }));
+}
+
+function selectionValue(selection: ConfigDto["sandboxImageSelection"]): string {
+  return `${selection.kind}:${selection.id}`;
+}
+
+function selectSandboxImage(setter: Dispatch<SetStateAction<ConfigDto>>, value: string): void {
+  const [kind, id] = value.split(":", 2);
+  if ((kind !== "internal" && kind !== "custom") || !id) return;
+  const selection: ConfigDto["sandboxImageSelection"] = kind === "custom"
+    ? { kind: "custom", id }
+    : id === "aithy-sandbox" || id === "aithy-sandbox-lite"
+      ? { kind: "internal", id }
+      : DEFAULT_IMAGE_SELECTION;
+  setter((current) => ({
+    ...current,
+    sandboxImageSelection: selection,
+    sandboxImage: current.sandboxImageOptions.find((image) => image.kind === kind && image.id === id)?.image ?? current.sandboxImage,
+  }));
+}
+
+function addCustomImage(setter: Dispatch<SetStateAction<ConfigDto>>): void {
+  setter((current) => {
+    const id = `custom-${crypto.randomUUID()}`;
+    const image = { id, name: "Custom image", image: "" };
+    return {
+      ...current,
+      customSandboxImages: [...current.customSandboxImages, image],
+      sandboxImageOptions: [...current.sandboxImageOptions, { kind: "custom", id, name: image.name, image: image.image }],
+      sandboxImageSelection: { kind: "custom", id },
+      sandboxImage: "",
+    };
+  });
+}
+
+function updateCustomImage(
+  setter: Dispatch<SetStateAction<ConfigDto>>,
+  id: string,
+  patch: Partial<ConfigDto["customSandboxImages"][number]>,
+): void {
+  setter((current) => {
+    const customSandboxImages = current.customSandboxImages.map((image) => image.id === id ? { ...image, ...patch } : image);
+    const selected = customSandboxImages.find((image) => image.id === current.sandboxImageSelection.id);
+    return {
+      ...current,
+      customSandboxImages,
+      sandboxImageOptions: current.sandboxImageOptions.map((option) => option.kind === "custom" && option.id === id ? { ...option, ...patch } : option),
+      sandboxImage: current.sandboxImageSelection.kind === "custom" && selected ? selected.image : current.sandboxImage,
+    };
+  });
+}
+
+function deleteCustomImage(setter: Dispatch<SetStateAction<ConfigDto>>, id: string): void {
+  setter((current) => {
+    const internal = current.sandboxImageOptions.find((image) => image.kind === "internal" && image.id === DEFAULT_IMAGE_SELECTION.id);
+    return {
+      ...current,
+      customSandboxImages: current.customSandboxImages.filter((image) => image.id !== id),
+      sandboxImageOptions: current.sandboxImageOptions.filter((image) => image.kind !== "custom" || image.id !== id),
+      sandboxImageSelection: DEFAULT_IMAGE_SELECTION,
+      sandboxImage: internal?.image ?? current.sandboxImage,
+    };
+  });
 }

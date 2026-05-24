@@ -20,6 +20,7 @@ type SandboxWorkerConfig = Awaited<ReturnType<typeof resolveEffectiveConfig>>;
 export class SandboxWorkerRuntime {
   private heartbeatTimer?: Timer;
   private shutdownPromise?: Promise<void>;
+  private activeSessionId: string | null = null;
 
   private constructor(
     private config: SandboxWorkerConfig,
@@ -92,21 +93,25 @@ export class SandboxWorkerRuntime {
   private async runCommand(kind: string, payload: unknown): Promise<SandboxCommand["result"]> {
     if (kind === "sandbox.createSession") {
       const value = objectPayload(payload);
-      return this.provider.createSession(
+      const session = await this.provider.createSession(
         stringField(value, "botId"),
         stringField(value, "hostWorkspacePath"),
         stringField(value, "hostOutboxPath"),
         mountsField(value),
       );
+      this.activeSessionId = session.id;
+      return session;
     }
     if (kind === "sandbox.recreate") {
       const value = objectPayload(payload);
-      return this.provider.recreate(
+      const session = await this.provider.recreate(
         stringField(value, "sessionId"),
         stringField(value, "hostWorkspacePath"),
         stringField(value, "hostOutboxPath"),
         mountsField(value),
       );
+      this.activeSessionId = session.id;
+      return session;
     }
     if (kind === "sandbox.bash") {
       const value = objectPayload(payload);
@@ -145,7 +150,9 @@ export class SandboxWorkerRuntime {
       return undefined;
     }
     if (kind === "sandbox.destroy") {
-      await this.provider.destroy(stringField(objectPayload(payload), "sessionId"));
+      const sessionId = stringField(objectPayload(payload), "sessionId");
+      await this.provider.destroy(sessionId);
+      if (this.activeSessionId === sessionId) this.activeSessionId = null;
       return undefined;
     }
     if (kind === "sandbox.reload_settings") {
@@ -158,10 +165,33 @@ export class SandboxWorkerRuntime {
   private async reloadSettings(): Promise<void> {
     const next = await resolveEffectiveConfig(loadBaseConfig(), this.settings.load());
     const setupStatus = setupStatusReporter(this.events, this.queue);
+    await this.destroyActiveSandboxForReload();
     this.config = next;
     reportSandboxConfig(this.queue, setupStatus, next);
     this.provider = createWorkerProvider(next, setupStatus);
     this.heartbeat("ready", sandboxHeartbeatDetail(next));
+  }
+
+  private async destroyActiveSandboxForReload(): Promise<void> {
+    if (!this.activeSessionId) return;
+    const sessionId = this.activeSessionId;
+    this.activeSessionId = null;
+    try {
+      await this.provider.destroy(sessionId);
+      this.appendLog({
+        role: "sandbox-worker",
+        level: "info",
+        source: "config",
+        message: `destroyed sandbox ${sessionId} before settings reload`,
+      });
+    } catch (error) {
+      this.appendLog({
+        role: "sandbox-worker",
+        level: "warn",
+        source: "config",
+        message: `failed to destroy sandbox ${sessionId} before settings reload: ${error instanceof Error ? error.message : String(error)}`,
+      });
+    }
   }
 
   private async doShutdown(): Promise<void> {
@@ -222,8 +252,12 @@ function reportSandboxConfig(
 function sandboxHeartbeatDetail(config: SandboxWorkerConfig): Record<string, unknown> {
   return {
     provider: config.sandboxProvider,
+    selection: config.sandboxImageSelection,
+    label: config.sandboxImageLabel,
     image: config.sandboxImage,
     network: config.sandboxNetwork,
+    cpus: config.sandboxCpus,
+    memoryMb: config.sandboxMemoryMb,
   };
 }
 

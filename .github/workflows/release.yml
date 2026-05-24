@@ -31,16 +31,48 @@ jobs:
         run: |
           set -euo pipefail
           owner="$(printf '%s' "$GITHUB_REPOSITORY_OWNER" | tr '[:upper:]' '[:lower:]')"
-          image="ghcr.io/$owner/aithy-sandbox"
           ref_tag="$(printf '%s' "${GITHUB_REF_NAME:-manual}" | tr '/:@' '---')"
-          docker buildx build \
-            --platform linux/amd64,linux/arm64 \
-            --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
-            --label "org.opencontainers.image.revision=$GITHUB_SHA" \
-            -t "$image:$ref_tag" \
-            -t "$image:latest" \
-            --push \
-            .
+          publish_image() {
+            name="$1"
+            dockerfile="$2"
+            image="ghcr.io/$owner/$name"
+            docker buildx build \
+              --platform linux/amd64,linux/arm64 \
+              --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+              --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+              -t "$image:$ref_tag" \
+              -t "$image:latest" \
+              --push \
+              -f "$dockerfile" \
+              .
+            for arch in amd64 arm64; do
+              docker buildx build \
+                --platform "linux/$arch" \
+                --label "org.opencontainers.image.source=https://github.com/$GITHUB_REPOSITORY" \
+                --label "org.opencontainers.image.revision=$GITHUB_SHA" \
+                -t "$image:$ref_tag-$arch" \
+                -t "$image:latest-$arch" \
+                --push \
+                -f "$dockerfile" \
+                .
+            done
+            verify_public_pull "$name" "latest-amd64"
+            verify_public_pull "$name" "latest-arm64"
+          }
+          verify_public_pull() {
+            name="$1"
+            tag="$2"
+            scope="repository:$owner/$name:pull"
+            token="$(curl -fsSL "https://ghcr.io/token?service=ghcr.io&scope=$scope" | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')"
+            test -n "$token"
+            curl -fsSL \
+              -H "Authorization: Bearer $token" \
+              -H "Accept: application/vnd.oci.image.manifest.v1+json, application/vnd.docker.distribution.manifest.v2+json" \
+              "https://ghcr.io/v2/$owner/$name/manifests/$tag" \
+              >/dev/null
+          }
+          publish_image "aithy-sandbox" "Dockerfile"
+          publish_image "aithy-sandbox-lite" "Dockerfile.sandbox-lite"
 
   verify:
     name: Verify

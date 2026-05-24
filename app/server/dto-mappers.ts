@@ -26,12 +26,18 @@ import type {
   AutomationRunDto,
 } from "./dto-types";
 import type { StoredSettings } from "../../src/settings/types";
+import { resolveSandboxImageConfig } from "../../src/sandbox/image-catalog";
 
 export function sessionDto(session: BotSessionSummary): SessionSummaryDto {
   return serializableSession(session);
 }
 
 export function configDto(config: AppConfig, settings?: StoredSettings): ConfigDto {
+  const sandboxImage = resolveSandboxImageConfig({
+    sandboxImageSelection: config.sandboxImageSelection,
+    customSandboxImages: config.customSandboxImages,
+    sandboxImage: config.sandboxImage,
+  });
   return {
     aiProvider: config.aiProvider,
     aiApiUrl: config.aiApiUrl ?? "",
@@ -43,6 +49,10 @@ export function configDto(config: AppConfig, settings?: StoredSettings): ConfigD
     fastAiModel: config.fastAiModel ?? "",
     sandboxProvider: config.sandboxProvider,
     sandboxImage: config.sandboxImage,
+    sandboxImageLabel: config.sandboxImageLabel ?? sandboxImage.label,
+    sandboxImageSelection: config.sandboxImageSelection ?? sandboxImage.selection,
+    customSandboxImages: config.customSandboxImages ?? sandboxImage.customImages,
+    sandboxImageOptions: config.sandboxImageOptions ?? sandboxImage.options,
     sandboxCpus: config.sandboxCpus,
     sandboxMemoryMb: config.sandboxMemoryMb,
     sandboxNetwork: config.sandboxNetwork,

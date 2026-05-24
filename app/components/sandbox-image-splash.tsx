@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { SetupProgressSplash } from "@/components/setup-progress-splash";
+import { retrySandboxSetup } from "@/server/console.functions";
 import type { RuntimeSetupStatusDto } from "@/server/runtime-console.dto";
 
 export function SandboxImageSplashOverlay({
@@ -9,6 +10,7 @@ export function SandboxImageSplashOverlay({
   status: RuntimeSetupStatusDto | null;
 }) {
   const [mounted, setMounted] = useState(false);
+  const [retryBusy, setRetryBusy] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -25,6 +27,14 @@ export function SandboxImageSplashOverlay({
         description="Aithy is downloading and assembling the sandbox image before the first tool run."
         fallbackLabel="Waiting for sandbox image"
         statuses={[status]}
+        dangerActionLabel="Retry sandbox"
+        dangerActionBusy={retryBusy}
+        onDangerAction={() => {
+          setRetryBusy(true);
+          void retrySandboxSetup()
+            .catch(() => undefined)
+            .finally(() => setRetryBusy(false));
+        }}
       />
     </div>,
     document.body,

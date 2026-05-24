@@ -1,5 +1,6 @@
 import type { AppConfig, GlobalMount, SandboxProviderKind } from "../config/env";
 import type { LocalInferenceSettings } from "../local-inference/settings";
+import type { CustomSandboxImage, SandboxImageSelection } from "../sandbox/image-catalog";
 
 export type { GlobalMount };
 
@@ -70,6 +71,9 @@ export interface RuntimeSettings {
   searchProvider?: SearchProviderId;
   searchProviderProfiles?: Record<string, SearchProviderProfile>;
   sandboxProvider?: SandboxProviderKind;
+  sandboxImageSelection?: SandboxImageSelection;
+  customSandboxImages?: CustomSandboxImage[];
+  /** Legacy raw image setting. Read for migration only; new saves use sandboxImageSelection. */
   sandboxImage?: string;
   sandboxCpus?: number;
   sandboxMemoryMb?: number;

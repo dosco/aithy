@@ -48,7 +48,14 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
               config.sandboxProvider === "disabled"
                 ? "disabled"
                 : "microsandbox",
-            sandboxImage: config.sandboxImage,
+            sandboxImageSelection: config.sandboxImageSelection,
+            customSandboxImages: config.customSandboxImages
+              .map((image) => ({
+                id: image.id.trim(),
+                name: image.name.trim(),
+                image: image.image.trim(),
+              }))
+              .filter((image) => image.id && image.name && image.image),
             sandboxCpus: Number(config.sandboxCpus),
             sandboxMemoryMb: Number(config.sandboxMemoryMb),
             sandboxNetwork: networkValue(config.sandboxNetwork),

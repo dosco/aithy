@@ -9,6 +9,7 @@ import {
   type StoredSettings,
 } from "./types";
 import { normalizeLocalInferenceSettings } from "../local-inference/settings";
+import { normalizeSandboxImageSettings } from "../sandbox/image-catalog";
 import { activeSearchProvider, normalizeAiProfiles, normalizeSearchProfiles } from "./provider-profiles";
 
 interface MetadataRow {
@@ -107,6 +108,10 @@ function normalizeRuntimeSettings(runtime: StoredSettings["runtime"]): StoredSet
   const sandboxProvider = normalizeSandboxProvider(next.sandboxProvider);
   if (sandboxProvider) next.sandboxProvider = sandboxProvider;
   else delete next.sandboxProvider;
+  const sandboxImages = normalizeSandboxImageSettings(next);
+  next.sandboxImageSelection = sandboxImages.selection;
+  next.customSandboxImages = sandboxImages.customImages;
+  delete next.sandboxImage;
   if (typeof next.systemBashEnabled !== "boolean") {
     delete next.systemBashEnabled;
   }

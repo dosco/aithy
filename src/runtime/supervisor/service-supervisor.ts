@@ -184,6 +184,7 @@ class ServiceProcess {
       env: managedServiceEnv({
         AITHY_SERVICE_ROLE: this.config.role,
         AITHY_SERVICE_PLACEMENT: "process",
+        AITHY_RUNTIME_KIND: this.topology.kind,
         AITHY_QUEUE_URL: this.queueUrl,
         ...this.config.env,
       }),

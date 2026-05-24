@@ -92,14 +92,15 @@ describe("web settings", () => {
     expect(runtimeSandboxChanged(base, next)).toBe(true);
   });
 
-  test("honors explicitly saved legacy sandbox image", () => {
+  test("migrates explicitly saved python slim image to Aithy sandbox", () => {
     const base = loadConfig({});
     const next = applyRuntimeSettings(base, {
       sandboxProvider: "microsandbox",
       sandboxImage: LEGACY_DEFAULT_SANDBOX_IMAGE,
     });
 
-    expect(next.sandboxImage).toBe(LEGACY_DEFAULT_SANDBOX_IMAGE);
+    expect(next.sandboxImageSelection).toEqual({ kind: "internal", id: "aithy-sandbox" });
+    expect(next.sandboxImage).toContain("ghcr.io/dosco/aithy-sandbox:");
   });
 
   test("restores provider-scoped model and URL settings when switching providers", () => {

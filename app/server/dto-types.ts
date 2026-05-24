@@ -1,4 +1,5 @@
 import type { AiProviderProfile, SearchProviderId, SearchProviderProfile, StoredSettings } from "../../src/settings/types";
+import type { CustomSandboxImage, SandboxImageOption, SandboxImageSelection } from "../../src/sandbox/image-catalog";
 import type { LocalInferenceSettings } from "../../src/local-inference/settings";
 import type { MemoryKind } from "../../src/memory/types";
 import type { MemoryRunStatus, MemoryRunTrigger } from "../../src/memory/memory-runs";
@@ -39,6 +40,10 @@ export interface ConfigDto {
   fastAiModel: string;
   sandboxProvider: string;
   sandboxImage: string;
+  sandboxImageLabel: string;
+  sandboxImageSelection: SandboxImageSelection;
+  customSandboxImages: CustomSandboxImage[];
+  sandboxImageOptions: SandboxImageOption[];
   sandboxCpus: number;
   sandboxMemoryMb: number;
   sandboxNetwork: string;

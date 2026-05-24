@@ -1,10 +1,22 @@
 import { z } from "zod";
 import { isMeshSearchProvider } from "../../src/mesh/types";
+import { INTERNAL_SANDBOX_IMAGE_IDS } from "../../src/sandbox/image-catalog";
 
 const searchProviderInput = z.string().refine(
   (value) => value === "parallel" || value === "grok-subscription" || isMeshSearchProvider(value),
   "Invalid search provider.",
 );
+
+const sandboxImageSelectionInput = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("internal"), id: z.enum(INTERNAL_SANDBOX_IMAGE_IDS) }),
+  z.object({ kind: z.literal("custom"), id: z.string().trim().min(1).max(80) }),
+]);
+
+const customSandboxImageInput = z.object({
+  id: z.string().trim().min(1).max(80),
+  name: z.string().trim().min(1).max(120),
+  image: z.string().trim().min(1).max(500),
+});
 
 const localInferenceRuntimeInput = z.object({
   llamaServerPath: z.string().max(2000).optional(),
@@ -109,6 +121,8 @@ export const settingsInput = z.object({
       validation: z.any().optional(),
     })).optional(),
     sandboxProvider: z.enum(["microsandbox", "disabled"]).optional(),
+    sandboxImageSelection: sandboxImageSelectionInput.optional(),
+    customSandboxImages: z.array(customSandboxImageInput).max(20).optional(),
     sandboxImage: z.string().optional(),
     sandboxCpus: z.number().positive().optional(),
     sandboxMemoryMb: z.number().positive().optional(),

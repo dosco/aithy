@@ -1,4 +1,5 @@
 import { loadConfig, type AppConfig } from "../config/env";
+import packageJson from "../../package.json" with { type: "json" };
 import { grokSubscriptionStatus } from "../grok-subscription/store";
 import { activeSearchProvider } from "../settings/provider-profiles";
 import { applyRuntimeSettings } from "../settings/resolve";
@@ -6,6 +7,7 @@ import { readProviderApiKey, readSearchApiKey } from "../settings/secrets";
 import type { StoredSettings } from "../settings/types";
 import { meshProxyUrlFromState } from "../mesh/proxy-url";
 import { isMeshInferenceProvider, isMeshSearchProvider } from "../mesh/types";
+import { currentRuntimeTopology } from "./topology";
 
 export type RuntimeSecretOverrides = {
   apiKey?: string;
@@ -32,7 +34,11 @@ export async function resolveEffectiveConfig(
       ? null
       : secrets.parallelApiKey ?? await readSearchApiKey(activeSearchProvider(settings.runtime), baseConfig.botId) ?? baseConfig.parallelApiKey;
   const grok = await grokSubscriptionStatus(baseConfig.botId, baseConfig.stateDbPath);
-  const applied = applyRuntimeSettings(baseConfig, settings.runtime, apiKey, fastApiKey, parallelApiKey);
+  const applied = applyRuntimeSettings(baseConfig, settings.runtime, apiKey, fastApiKey, parallelApiKey, {
+    runtimeKind: currentRuntimeTopology().kind,
+    arch: process.arch === "arm64" ? "arm64" : "amd64",
+    version: packageVersion(),
+  });
   const meshAiUrl = isMeshInferenceProvider(applied.aiProvider)
     ? meshProxyUrlFromState(baseConfig.stateDbPath, applied.aiProvider)
     : undefined;
@@ -53,4 +59,8 @@ export async function resolveEffectiveConfig(
 
 export function loadBaseConfig(): AppConfig {
   return loadConfig({ traceEnabled: process.argv.includes("--trace") });
+}
+
+function packageVersion(): string {
+  return typeof packageJson.version === "string" ? packageJson.version : "0.0.0";
 }

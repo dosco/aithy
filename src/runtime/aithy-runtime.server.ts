@@ -49,6 +49,7 @@ import { ruleOptionForRequest } from "../security/permission-gate";
 import type { CapabilityMatchKind } from "../security/capability-policy";
 import { MeshRuntime } from "../mesh/runtime";
 import { currentRuntimeTopology } from "./topology";
+import { runtimeReloadCommandsForSettingsChange } from "./settings-reload-commands";
 export interface AithyRuntime {
   config: AppConfig;
   events: EventBus;
@@ -125,9 +126,7 @@ export function getAithyRuntime(): Promise<AithyRuntime> {
 
 export function resetAithyRuntimeSystem(): Promise<AithyRuntime> {
   const state = runtimeState();
-  state.resetPromise ??= doResetAithyRuntimeSystem().finally(() => {
-    state.resetPromise = undefined;
-  });
+  state.resetPromise ??= doResetAithyRuntimeSystem().finally(() => { state.resetPromise = undefined; });
   return state.resetPromise;
 }
 class RuntimeImpl implements AithyRuntime {
@@ -337,14 +336,16 @@ class RuntimeImpl implements AithyRuntime {
   async updateSettings(patch: SettingsPatch, secrets?: RuntimeSecretOverrides): Promise<StoredSettings> {
     const nextSettings = this.settings.save(patch);
     const nextConfig = await resolveEffectiveConfig(loadBaseConfig(), nextSettings, secrets);
+    const reloadCommands = runtimeReloadCommandsForSettingsChange(this.config, nextConfig);
     this.sessions.setTtlMs(nextConfig.sessionTtlMs);
     this.sessions.setIdleParkMs(nextConfig.idleParkMs);
     if (globalMountsChanged(this.config, nextConfig)) {
       this.sessions.setGlobalMounts(nextConfig.globalMounts);
     }
     this.config = nextConfig;
-    await this.queue.submitCommand("agent-worker", "reload_settings");
-    await this.queue.submitCommand("local-inference-worker", "local-inference.reload_settings");
+    for (const command of reloadCommands) {
+      await this.queue.submitCommand(command.role, command.kind);
+    }
     return nextSettings;
   }
 

@@ -10,10 +10,21 @@ import {
 } from "../local-inference/manifest";
 import { DEFAULT_OPENAI_MODEL } from "../agent/ai-providers";
 import { defaultLocalInferenceSettings, type LocalInferenceSettings } from "../local-inference/settings";
+import {
+  DEFAULT_SANDBOX_IMAGE_SELECTION,
+  defaultSandboxImageResolutionContext,
+  resolveSandboxImageConfig,
+  type CustomSandboxImage,
+  type SandboxImageOption,
+  type SandboxImageSelection,
+} from "../sandbox/image-catalog";
 import type { SearchProviderId } from "../settings/types";
 
 export type SandboxProviderKind = "microsandbox" | "disabled";
-export const DEFAULT_SANDBOX_IMAGE = "ghcr.io/dosco/aithy-sandbox:latest";
+export const DEFAULT_SANDBOX_IMAGE = resolveSandboxImageConfig(
+  { sandboxImageSelection: DEFAULT_SANDBOX_IMAGE_SELECTION },
+  defaultSandboxImageResolutionContext(),
+).image;
 export const LEGACY_DEFAULT_SANDBOX_IMAGE = "python:3.11-slim";
 
 export interface GlobalMount {
@@ -33,6 +44,10 @@ export interface AppConfig {
   fastAiModel?: string;
   sandboxProvider: SandboxProviderKind;
   sandboxImage: string;
+  sandboxImageLabel?: string;
+  sandboxImageSelection?: SandboxImageSelection;
+  customSandboxImages?: CustomSandboxImage[];
+  sandboxImageOptions?: SandboxImageOption[];
   sandboxCpus: number;
   sandboxMemoryMb: number;
   sandboxNetwork: "none" | "public" | "allow-all";
@@ -60,6 +75,7 @@ export function loadConfig(
 ): AppConfig {
   const botId = "default";
   const stateDir = expandHome("~/.config/aithy");
+  const sandboxImage = resolveSandboxImageConfig({});
 
   return {
     aiProvider: "openai",
@@ -67,7 +83,11 @@ export function loadConfig(
     localAgentModel: DEFAULT_LOCAL_AGENT_MODEL_ID,
     localInference: defaultLocalInferenceSettings,
     sandboxProvider: "microsandbox",
-    sandboxImage: DEFAULT_SANDBOX_IMAGE,
+    sandboxImage: sandboxImage.image,
+    sandboxImageLabel: sandboxImage.label,
+    sandboxImageSelection: sandboxImage.selection,
+    customSandboxImages: sandboxImage.customImages,
+    sandboxImageOptions: sandboxImage.options,
     sandboxCpus: 1,
     sandboxMemoryMb: 512,
     sandboxNetwork: "none",

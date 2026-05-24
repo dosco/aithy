@@ -1,4 +1,5 @@
 import { LoaderCircle } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { AsciiSplash } from "@/components/ascii-splash";
 import { cn } from "@/lib/utils";
 import type { RuntimeSetupStatusDto } from "@/server/runtime-console.dto";
@@ -9,12 +10,18 @@ export function SetupProgressSplash({
   description,
   fallbackLabel,
   statuses,
+  dangerActionLabel,
+  dangerActionBusy,
+  onDangerAction,
 }: {
   eyebrow: string;
   title: string;
   description: string;
   fallbackLabel: string;
   statuses: RuntimeSetupStatusDto[];
+  dangerActionLabel?: string;
+  dangerActionBusy?: boolean;
+  onDangerAction?: () => void;
 }) {
   const primary = statuses.find((status) => status.tone === "danger")
     ?? statuses.find((status) => status.active)
@@ -76,6 +83,11 @@ export function SetupProgressSplash({
             <p className="mt-2 text-left font-mono text-[11px] text-[rgb(var(--muted-foreground))]">
               {formatBytes(primary.loadedBytes)} / {formatBytes(primary.totalBytes)}
             </p>
+          ) : null}
+          {danger && onDangerAction ? (
+            <Button type="button" variant="soft" className="mt-5" disabled={dangerActionBusy} onClick={onDangerAction}>
+              {dangerActionBusy ? "Retrying..." : dangerActionLabel ?? "Retry"}
+            </Button>
           ) : null}
         </div>
       </div>

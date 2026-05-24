@@ -207,19 +207,21 @@ bun run debug <table> <id>  # inspect a table
 bun run memory <session-id> # reprocess a session
 ```
 
-### Sandbox Image
+### Sandbox Images
 
-Aithy uses `ghcr.io/dosco/aithy-sandbox:latest` as the default Microsandbox image. It is a Wolfi-based image for document-heavy agent work with `bash`, Docling, Poppler, Ghostscript, qpdf, Tesseract English OCR, Noto and Noto CJK fonts, Python 3.13 with pip and virtualenv, common Python data/web libraries, and basic download/archive tools.
+Aithy ships two built-in Microsandbox images. `aithy-sandbox` is the default full document image with `bash`, Docling, Poppler, Ghostscript, qpdf, Tesseract English OCR, Noto and Noto CJK fonts, Python 3.13 with pip and virtualenv, common Python data/web libraries, and basic download/archive tools. `aithy-sandbox-lite` is a smaller core Python shell image with bash, coreutils, CA certificates, curl/wget, Python, pip/virtualenv, and common lightweight Python libraries.
 
-When the image is not cached yet, Microsandbox downloads it directly and Aithy shows a sandbox image splash with pull progress, byte counts, and filesystem preparation status. Users do not need Docker installed for runtime sandbox setup. For the default GHCR image, Aithy selects Microsandbox's public pull mode so the public package downloads without user credentials. If the configured sandbox image cannot be pulled or started while Microsandbox mode is enabled, Aithy keeps the blocking splash visible because agent tools cannot run without a working sandbox. The Runtime Console shows the same setup status stream with logs and service state.
+Settings -> Sandbox stores the selected built-in image by Aithy-owned ID, not by raw registry URL. Packaged releases resolve built-ins to versioned arch-specific GHCR tags such as `ghcr.io/dosco/aithy-sandbox:v0.1.0-arm64`; dev builds resolve them to `latest-arm64` or `latest-amd64`. Custom user images keep their exact user-entered image reference and are not rewritten by Aithy updates.
 
-The release workflow publishes the repository `Dockerfile` to GHCR as both `latest` and the release ref tag. GHCR creates new container packages as private by default, so the `aithy-sandbox` package must be made public in GitHub Packages before Microsandbox can pull it without user credentials. Docker is only needed by the release workflow or by developers who want to build the image locally before publishing.
+When the image is not cached yet, Microsandbox downloads it directly and Aithy shows a sandbox image splash with pull progress, byte counts, and filesystem preparation status. Users do not need Docker installed for runtime sandbox setup. For Aithy GHCR images, Aithy selects Microsandbox's public pull mode so public packages download without user credentials. If the configured sandbox image cannot be pulled or started while Microsandbox mode is enabled, Aithy keeps the blocking splash visible because agent tools cannot run without a working sandbox; the splash and Runtime Console both offer a retry action.
+
+The release workflow publishes `aithy-sandbox` from `Dockerfile` and `aithy-sandbox-lite` from `Dockerfile.sandbox-lite` to GHCR as `latest`, the release ref tag, and arch-specific tags. GHCR creates new container packages as private by default, so both packages must be made public in GitHub Packages before Microsandbox can pull them without user credentials. Docker is only needed by the release workflow or by developers who want to build an image locally before publishing.
 
 ```bash
 docker build -t aithy-sandbox:local .
 ```
 
-Set the sandbox image to `aithy-sandbox:local` in Settings -> Sandbox when you want a local test build instead of the published default.
+Add `aithy-sandbox:local` as a custom image in Settings -> Sandbox when you want a local test build instead of a published Aithy image.
 
 Useful project areas:
 

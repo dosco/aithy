@@ -130,7 +130,7 @@ describe("MicrosandboxProvider", () => {
       DEFAULT_SANDBOX_IMAGE,
     ]);
     expect(fakeFactory.created[0]?.publicPull).toBe(true);
-    expect(statuses.some((label) => label.includes("GHCR denied the default sandbox image pull"))).toBe(true);
+    expect(statuses.some((label) => label.includes("GHCR rejected the anonymous public pull"))).toBe(true);
   });
 });
 
