@@ -33,4 +33,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: echo "$GH_TOKEN" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
       - name: Build and push sandbox images
+        env:
+          AITHY_SANDBOX_PROMOTE_EXISTING_LATEST: "1"
         run: bash scripts/publish-sandbox-images.sh

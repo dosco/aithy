@@ -6,6 +6,7 @@ repository="${GITHUB_REPOSITORY:-dosco/aithy}"
 revision="${GITHUB_SHA:-local}"
 ref_tag="$(printf '%s' "${AITHY_SANDBOX_REF_TAG:-${GITHUB_REF_NAME:-manual}}" | tr '/:@' '---')"
 include_ref_tag="${AITHY_SANDBOX_INCLUDE_REF_TAG:-0}"
+promote_existing_latest="${AITHY_SANDBOX_PROMOTE_EXISTING_LATEST:-0}"
 
 verify_public_pull() {
   local name="$1"
@@ -31,6 +32,10 @@ publish_image() {
   local name="$1"
   local dockerfile="$2"
   local image="ghcr.io/$owner/$name"
+
+  if [[ "$promote_existing_latest" == "1" ]] && promote_latest_arch_tags "$name"; then
+    return
+  fi
 
   for arch in amd64 arm64; do
     local arch_ref_tags=()
@@ -62,6 +67,26 @@ publish_image() {
       "$image:$ref_tag-amd64" \
       "$image:$ref_tag-arm64"
   fi
+}
+
+promote_latest_arch_tags() {
+  local name="$1"
+  local image="ghcr.io/$owner/$name"
+  local raw
+  if ! raw="$(docker buildx imagetools inspect --raw "$image:latest" 2>/dev/null)"; then
+    return 1
+  fi
+  if ! printf '%s' "$raw" | jq -e '.manifests' >/dev/null; then
+    return 1
+  fi
+
+  for arch in amd64 arm64; do
+    local digest
+    digest="$(printf '%s' "$raw" | jq -r --arg arch "$arch" '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest' | head -n 1)"
+    test -n "$digest"
+    docker buildx imagetools create -t "$image:latest-$arch" "$image@$digest"
+    verify_public_pull "$name" "latest-$arch"
+  done
 }
 
 publish_image "aithy-sandbox" "Dockerfile"
