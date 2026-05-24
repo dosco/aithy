@@ -84,7 +84,7 @@ promote_latest_arch_tags() {
     local digest
     digest="$(printf '%s' "$raw" | jq -r --arg arch "$arch" '.manifests[] | select(.platform.os == "linux" and .platform.architecture == $arch) | .digest' | head -n 1)"
     test -n "$digest"
-    docker buildx imagetools create -t "$image:latest-$arch" "$image@$digest"
+    docker buildx imagetools create --prefer-index=false -t "$image:latest-$arch" "$image@$digest"
     verify_public_pull "$name" "latest-$arch"
   done
 }
