@@ -200,11 +200,28 @@ export class MicrosandboxProvider implements SandboxProvider {
     if (!factory?.builder) throw new Error("Microsandbox SDK does not expose Sandbox.builder(...). Install a local no-key microsandbox package.");
 
     try {
-      return await this.createSandboxFromImage(factory, this.options.image, name, hostWorkspacePath, hostOutboxPath, mounts);
+      return await this.createSandboxWithFallback(factory, name, hostWorkspacePath, hostOutboxPath, mounts);
     } catch (error) {
       const message = formatMicrosandboxStartError(error);
       this.options.onStatus?.(failedStatus("sandbox", `sandbox failed: ${message}`));
       throw new Error(`Failed to start Microsandbox microVM: ${message}`);
+    }
+  }
+
+  private async createSandboxWithFallback(
+    factory: MicrosandboxFactory,
+    name: string,
+    hostWorkspacePath: string,
+    hostOutboxPath: string,
+    mounts: SessionMount[],
+  ): Promise<MicrosandboxInstance> {
+    try {
+      return await this.createSandboxFromImage(factory, this.options.image, name, hostWorkspacePath, hostOutboxPath, mounts);
+    } catch (error) {
+      const fallbackImage = internalImageFallbackFor(this.options.image, error);
+      if (!fallbackImage) throw error;
+      this.options.onStatus?.(activeStatus("sandbox", `sandbox image tag missing; retrying ${fallbackImage}`));
+      return this.createSandboxFromImage(factory, fallbackImage, name, hostWorkspacePath, hostOutboxPath, mounts);
     }
   }
 
@@ -310,6 +327,15 @@ function isAithyGhcrImage(image: string): boolean {
     const repository = entry.repository.toLowerCase();
     return value === repository || value.startsWith(`${repository}:`) || value.startsWith(`${repository}@`);
   });
+}
+
+function internalImageFallbackFor(image: string, error: unknown): string | undefined {
+  if (!/manifest unknown|name unknown|not found|404/i.test(formatError(error))) return undefined;
+  const value = image.trim();
+  const entry = INTERNAL_SANDBOX_IMAGES.find((item) => value.toLowerCase().startsWith(`${item.repository.toLowerCase()}:`));
+  if (!entry) return undefined;
+  const tag = value.slice(entry.repository.length + 1);
+  return /^(latest|v[0-9][^:]*?)-(amd64|arm64)$/.test(tag) ? `${entry.repository}:latest` : undefined;
 }
 
 async function ensureHostPath(hostPath: string): Promise<void> {

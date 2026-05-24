@@ -132,6 +132,32 @@ describe("MicrosandboxProvider", () => {
     expect(fakeFactory.created[0]?.publicPull).toBe(true);
     expect(statuses.some((label) => label.includes("GHCR rejected the anonymous public pull"))).toBe(true);
   });
+
+  test("retries Aithy arch tags with latest when GHCR has not published the tag yet", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "aithy-msb-image-fallback-"));
+    const workspacePath = path.join(root, "workspace");
+    const configuredImage = "ghcr.io/dosco/aithy-sandbox:latest-arm64";
+    const statuses: string[] = [];
+    const fakeFactory = createFakeSandboxFactory({
+      failImages: new Map([[configuredImage, "image error: registry error: manifest unknown"]]),
+    });
+    const provider = new MicrosandboxProvider({
+      image: configuredImage,
+      cpus: 1,
+      memoryMb: 512,
+      network: "none",
+      sandboxFactory: fakeFactory as any,
+      onStatus: (status) => statuses.push(status.label),
+    });
+
+    await provider.createSession("image-fallback-bot", workspacePath, []);
+
+    expect(fakeFactory.created.map((item: FakeConfig) => item.image)).toEqual([
+      configuredImage,
+      "ghcr.io/dosco/aithy-sandbox:latest",
+    ]);
+    expect(statuses).toContain("sandbox image tag missing; retrying ghcr.io/dosco/aithy-sandbox:latest");
+  });
 });
 
 interface FakeConfig {
@@ -146,7 +172,7 @@ interface FakeConfig {
   envs: Record<string, string>;
 }
 
-function createFakeSandboxFactory(options: { failImages?: Set<string> } = {}) {
+function createFakeSandboxFactory(options: { failImages?: Set<string> | Map<string, string> } = {}) {
   const created: FakeConfig[] = [];
   const instances: FakeSandbox[] = [];
   const byName = new Map<string, FakeSandbox>();
@@ -213,7 +239,10 @@ function createFakeSandboxFactory(options: { failImages?: Set<string> } = {}) {
         async create() {
           created.push(config);
           if (config.image && options.failImages?.has(config.image)) {
-            throw new Error(`image error: registry error: Not authorized: url https://ghcr.io/v2/dosco/aithy-sandbox/manifests/latest`);
+            const failure = options.failImages instanceof Map
+              ? options.failImages.get(config.image)
+              : "image error: registry error: Not authorized: url https://ghcr.io/v2/dosco/aithy-sandbox/manifests/latest";
+            throw new Error(failure);
           }
           const sandbox = new FakeSandbox(name);
           instances.push(sandbox);
