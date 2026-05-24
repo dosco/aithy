@@ -6,7 +6,7 @@
     <title>Aithy - private local AI runtime</title>
     <meta
       name="description"
-      content="Aithy is a private local AI runtime with local inference, Grok subscription support, sandboxed tools, durable memory, and LAN Mesh sharing for home AI setups."
+      content="Aithy is a private local AI runtime for state-of-the-art agent research, local inference, sandboxed tools, durable memory, and LAN Mesh resource sharing."
     >
     <link rel="stylesheet" href="styles.css">
   </head>
@@ -23,84 +23,72 @@
 
     <main id="top">
       <section class="hero">
-        <div class="hero-copy">
-          <p class="console-line"><span>$</span> aithyctl status --watch</p>
-          <pre class="ascii-logo" aria-label="Aithy ASCII logo"><code>      ..:::::..
-   .:+#########+:.
-  :###=:....:=###:
- .##+  AITHY   +##.
- :##  local AI  ##:
- .##+  //////  +##.
-  :###=::::=###:
-   .:+#####:+.
-      ':::'</code></pre>
-          <h1>A local AI lab for modern agents.</h1>
-          <p class="lede">
-            Aithy is a local-first platform for experimenting with the latest agent research,
-            running private AI workflows, and routing work across your laptop, APIs, and home GPUs.
-          </p>
-          <div class="actions" aria-label="Primary links">
-            <a class="button primary" href="https://github.com/dosco/aithy/releases/latest">Download build</a>
-            <a class="button" href="#start">Start from code</a>
-          </div>
+        <p class="eyebrow">Local-first agent runtime</p>
+        <h1>A state-of-the-<wbr>art agent you can run at home.</h1>
+        <p class="lede">Aithy is a local-first agent for experimenting with the latest research, local and hosted inference, DSPy, RLM, sandboxed tools, durable memory, and agent mesh networks.</p>
+        <div class="actions" aria-label="Primary links">
+          <a class="button primary" href="https://github.com/dosco/aithy/releases/latest">Download build</a>
+          <a class="button" href="#start">Start from code</a>
         </div>
-
         <div class="stack-strip" aria-label="Runtime stack summary">
-          <span>agent-worker</span>
+          <span>Ax Agent</span>
+          <span>checkpointed context</span>
+          <span>sandboxed tools</span>
           <span>local inference</span>
-          <span>sandbox worker</span>
-          <span>queue service</span>
-          <span>Mesh</span>
+          <span>LAN Mesh</span>
         </div>
       </section>
 
-      <figure class="hero-shot terminal-frame">
-        <div class="terminal-bar">
-          <span class="dot red"></span>
-          <span class="dot amber"></span>
-          <span class="dot green"></span>
-          <span>local agent workspace</span>
-        </div>
-        <img src="assets/screenshots/00-chat-hero-light.png" alt="Aithy chat workspace with tool evidence and a browser interface">
+      <figure class="screenshot hero-shot">
+        <a class="screenshot-link" href="assets/screenshots/00-chat-hero-light@2x.png" target="_blank" rel="noopener">
+          <img src="assets/screenshots/00-chat-hero-light.png" srcset="assets/screenshots/00-chat-hero-light.png 1x, assets/screenshots/00-chat-hero-light@2x.png 2x" width="1000" height="733" alt="Aithy chat workspace with tool evidence and a browser interface">
+          <span>View full size</span>
+        </a>
+        <figcaption>A local workspace for long-running chat, files, tools, evidence, and artifacts.</figcaption>
       </figure>
 
-      <p class="note">Aithy is pronounced ay-thee. It is named after my cat.</p>
+      <p class="note">Aithy is pronounced ay-thee.</p>
 
-      <section class="hooks" aria-label="Highlights">
-        <article>
-          <span>READY</span>
-          <h2>Local models when you want them.</h2>
-          <p>
-            Managed llama.cpp runs Qwen chat, embedding, and reranker models so useful agent work
-            can stay on your own machine.
-          </p>
+      <section class="feature-grid" aria-label="Highlights">
+        <article class="feature-card mint">
+          <p class="eyebrow">Local agent</p>
+          <h2>Run private agent work close to your data.</h2>
+          <p>Use Aithy as a personal agent today, with sessions, files, tools, artifacts, and visible runtime evidence in one browser workspace.</p>
         </article>
-        <article>
-          <span>ROUTE</span>
-          <h2>Big or small, local or hosted.</h2>
-          <p>
-            Switch between local inference, cloud providers, custom OpenAI-compatible endpoints,
-            eligible Grok subscriptions, or a family machine over Mesh.
-          </p>
+        <article class="feature-card lavender">
+          <p class="eyebrow">Private runtime</p>
+          <h2>Keep the power visible.</h2>
+          <p>State, memories, skills, settings, usage, permissions, sandbox status, and service health are product surfaces instead of hidden logs.</p>
         </article>
-        <article>
-          <span>TRUST</span>
-          <h2>Power without mystery.</h2>
-          <p>
-            Sessions, memory, skills, artifacts, permissions, usage, queues, logs, and sandbox
-            state are visible parts of the product.
-          </p>
+        <article class="feature-card sky">
+          <p class="eyebrow">Local inference</p>
+          <h2>Small local models, big hosted models.</h2>
+          <p>Use managed llama.cpp models for local chat, embeddings, and reranking, then switch to a stronger provider when a task needs it.</p>
+        </article>
+        <article class="feature-card blue">
+          <p class="eyebrow">Home Mesh</p>
+          <h2>Your laptop can borrow the big machine.</h2>
+          <p>Pair trusted Aithy instances on your LAN so one machine can use validated inference or search services from another.</p>
+        </article>
+        <article class="feature-card peach">
+          <p class="eyebrow">Memory</p>
+          <h2>Long conversations stay useful.</h2>
+          <p>Durable sessions, searchable memories, transcript recall, and task episodes give the agent evidence without stuffing every turn into context.</p>
+        </article>
+        <article class="feature-card stone">
+          <p class="eyebrow">Sandbox</p>
+          <h2>Tools stay behind clear boundaries.</h2>
+          <p>Agent commands run through sandbox and permission gates, with host files exposed through explicit attachments or mounts.</p>
         </article>
       </section>
 
-      <section id="models" class="split">
+      <section id="models" class="story-section">
         <div>
           <p class="eyebrow">Model router</p>
-          <h2>Bring the model stack you actually use.</h2>
+          <h2>Model choice is runtime configuration.</h2>
           <p>
-            Aithy treats model choice as runtime configuration, not a rewrite. Use a small local
-            model for private work, a stronger API model for heavy reasoning, an eligible Grok
-            subscription for chat and web.search, or a LAN machine with more GPU through Mesh.
+            Use local Qwen GGUF models, a normal cloud provider, an OpenAI-compatible endpoint,
+            eligible Grok subscription sign-in, or a family machine discovered through Mesh.
           </p>
           <div class="pills" aria-label="Supported model sources">
             <span>llama.cpp</span>
@@ -110,132 +98,116 @@
             <span>Family Mesh</span>
           </div>
         </div>
-        <figure class="terminal-frame">
-          <div class="terminal-bar">
-            <span class="dot red"></span>
-            <span class="dot amber"></span>
-            <span class="dot green"></span>
-            <span>settings/inference</span>
+        <figure class="screenshot">
+          <a class="screenshot-link" href="assets/screenshots/09-inference-settings-light@2x.png" target="_blank" rel="noopener">
+            <img src="assets/screenshots/09-inference-settings-light.png" srcset="assets/screenshots/09-inference-settings-light.png 1x, assets/screenshots/09-inference-settings-light@2x.png 2x" width="1000" height="833" alt="Aithy inference settings with local and family model choices">
+            <span>View full size</span>
+          </a>
+          <figcaption>Choose local, hosted, subscription, custom, or Mesh-shared model sources.</figcaption>
+        </figure>
+      </section>
+
+      <section id="research" class="flow-section">
+        <div class="section-heading">
+          <p class="eyebrow">Agent architecture</p>
+          <h2>From prompt to proof, every layer stays inspectable.</h2>
+        </div>
+        <div class="flow-diagram" aria-label="Aithy service architecture">
+          <div class="flow-column">
+            <article><strong>Chat + files</strong><span>User intent, uploads, artifacts, and prior sessions</span></article>
+            <article><strong>Skills + memory</strong><span>Searchable workflows, facts, episodes, and transcript evidence</span></article>
           </div>
-          <img src="assets/screenshots/09-inference-settings-light.png" alt="Aithy inference settings with local and family model choices">
+          <div class="flow-node core">
+            <strong>Aithy runtime</strong>
+            <span>Ax Agent loop, context distillation, queues, permissions, and tool traces</span>
+          </div>
+          <div class="flow-column">
+            <article><strong>Sandbox</strong><span>Governed commands, staged attachments, mounts, and published artifacts</span></article>
+            <article><strong>Inference</strong><span>Local models, cloud providers, Grok sign-in, and Mesh family services</span></article>
+          </div>
+        </div>
+      </section>
+
+      <section class="screenshot-stack" aria-label="Product surfaces">
+        <figure class="screenshot">
+          <a class="screenshot-link" href="assets/screenshots/10-local-inference-light@2x.png" target="_blank" rel="noopener">
+            <img src="assets/screenshots/10-local-inference-light.png" srcset="assets/screenshots/10-local-inference-light.png 1x, assets/screenshots/10-local-inference-light@2x.png 2x" width="1000" height="833" alt="Aithy local inference settings">
+            <span>View full size</span>
+          </a>
+          <figcaption>Local inference keeps chat, embeddings, reranking, and retrieval close.</figcaption>
+        </figure>
+        <figure class="screenshot">
+          <a class="screenshot-link" href="assets/screenshots/02-console-runtime-overview-light@2x.png" target="_blank" rel="noopener">
+            <img src="assets/screenshots/02-console-runtime-overview-light.png" srcset="assets/screenshots/02-console-runtime-overview-light.png 1x, assets/screenshots/02-console-runtime-overview-light@2x.png 2x" width="1000" height="833" alt="Aithy runtime console showing services and jobs">
+            <span>View full size</span>
+          </a>
+          <figcaption>The runtime console makes services, queues, jobs, and logs visible.</figcaption>
         </figure>
       </section>
 
-      <section class="gallery" aria-label="Screenshots">
-        <figure class="terminal-frame">
-          <img src="assets/screenshots/10-local-inference-light.png" alt="Aithy local inference settings">
-          <figcaption><span class="status ok"></span> Local chat, embeddings, reranking, and retrieval stay close.</figcaption>
-        </figure>
-        <figure class="terminal-frame">
-          <img src="assets/screenshots/11-xai-oauth-light.png" alt="Aithy Grok subscription OAuth sign-in">
-          <figcaption><span class="status blue"></span> Grok subscription sign-in uses OAuth instead of pasted credentials.</figcaption>
-        </figure>
-        <figure class="terminal-frame">
-          <img src="assets/screenshots/02-console-runtime-overview-light.png" alt="Aithy runtime console showing services and jobs">
-          <figcaption><span class="status amber"></span> The runtime console exposes services, queues, jobs, and logs.</figcaption>
-        </figure>
-      </section>
-
-      <section id="homelab" class="homelab">
+      <section id="homelab" class="story-section reverse">
         <div>
           <p class="eyebrow">Home lab Mesh</p>
-          <h2>Your laptop can borrow the big machine.</h2>
+          <h2>Share local compute without copying secrets around.</h2>
           <p>
-            Run Aithy where you work, run Aithy on the GPU box, pair them on the Mesh page, and mark
-            both sides as family. Your laptop can then select live validated inference or search
-            services through a local OpenAI-compatible proxy.
+            Mesh discovery is LAN-only and advertises identity and connection metadata, not API
+            keys, prompts, sessions, memories, model lists, provider URLs, or service catalogs.
           </p>
           <p>
-            Discovery does not advertise API keys, Grok credentials, provider URLs, prompts,
-            sessions, memories, model lists, or service catalogs. Catalogs and requests move only
-            after explicit pairing and mutual family trust.
+            Catalogs and requests move only after explicit pairing and mutual family trust, so a
+            laptop can borrow selected services from a stronger nearby machine.
           </p>
         </div>
-        <figure class="terminal-frame">
-          <div class="terminal-bar">
-            <span class="dot red"></span>
-            <span class="dot amber"></span>
-            <span class="dot green"></span>
-            <span>mesh/pairing</span>
-          </div>
-          <img src="assets/screenshots/08-mesh-pairing-light.png" alt="Aithy Mesh pairing and trusted services page">
+        <figure class="screenshot">
+          <a class="screenshot-link" href="assets/screenshots/08-mesh-pairing-light@2x.png" target="_blank" rel="noopener">
+            <img src="assets/screenshots/08-mesh-pairing-light.png" srcset="assets/screenshots/08-mesh-pairing-light.png 1x, assets/screenshots/08-mesh-pairing-light@2x.png 2x" width="1000" height="833" alt="Aithy Mesh pairing and trusted services page">
+            <span>View full size</span>
+          </a>
+          <figcaption>Pair trusted local Aithy instances and share selected services over your LAN.</figcaption>
         </figure>
       </section>
 
-      <section id="research" class="research">
-        <p class="eyebrow">Agent engineering</p>
-        <h2>Ax and Ax Agent are the engine under the shell.</h2>
-        <p>
-          Aithy is built on <a href="https://axllm.dev/">Ax</a>, the TypeScript DSPy system for
-          typed signatures, validation, streaming, providers, and optimization. Instead of one giant
-          improvised prompt, Aithy can describe model work as structured inputs and outputs that are
-          easier to check, route, and run across different providers.
-        </p>
-        <p>
-          The agent loop uses <a href="https://axllm.dev/ax-agent/">Ax Agent</a>, an RLM-style
-          harness where the model can produce code or tool calls, a controlled JavaScript runtime
-          executes deterministic work, and context policy keeps long sessions useful without loading
-          every old turn into every new prompt.
-        </p>
-        <p>
-          That architecture is why Aithy can be flexible without turning into a pile of ad hoc tool
-          prompts: local models can handle narrow work, larger hosted models can take harder turns,
-          and the runtime keeps memory, retrieval, permissions, artifacts, and services inspectable.
-        </p>
-        <div class="facts">
-          <p><strong>Ax</strong><span>typed signatures, validation, streaming, providers, optimization</span></p>
-          <p><strong>Ax Agent</strong><span>RLM loop, controlled JS runtime, context policies, functions, child agents</span></p>
-          <p><strong>Runtime</strong><span>web, queue-service, agent-worker, sandbox-worker, local-inference-worker</span></p>
-          <p><strong>Trust</strong><span>SQLite state, Bun secrets, permission prompts, sandboxing, pinned Mesh transport</span></p>
-          <p><strong>Inference</strong><span>managed llama.cpp, Qwen chat models, local embeddings, local reranking</span></p>
+      <section class="story-section">
+        <div>
+          <p class="eyebrow">Grok subscription</p>
+          <h2>Use OAuth instead of pasted credentials.</h2>
+          <p>
+            Eligible Grok subscription sign-in can power chat and web.search without pasting an
+            API key into Aithy, subject to xAI eligibility and limits.
+          </p>
         </div>
+        <figure class="screenshot">
+          <a class="screenshot-link" href="assets/screenshots/11-xai-oauth-light@2x.png" target="_blank" rel="noopener">
+            <img src="assets/screenshots/11-xai-oauth-light.png" srcset="assets/screenshots/11-xai-oauth-light.png 1x, assets/screenshots/11-xai-oauth-light@2x.png 2x" width="1000" height="833" alt="Aithy Grok subscription OAuth sign-in">
+            <span>View full size</span>
+          </a>
+          <figcaption>Connected provider settings stay visible in the local product surface.</figcaption>
+        </figure>
       </section>
 
       <section id="start" class="start">
-        <p class="eyebrow">Quick start</p>
-        <h2>Download a build or run from source.</h2>
+        <div class="section-heading">
+          <p class="eyebrow">Quick start</p>
+          <h2>Download a build or run from source.</h2>
+        </div>
         <div class="start-grid">
-          <article class="terminal-panel">
-            <div class="terminal-bar">
-              <span class="dot red"></span>
-              <span class="dot amber"></span>
-              <span class="dot green"></span>
-              <span>release install</span>
-            </div>
+          <article class="start-step">
             <h3>Download a build</h3>
-            <p>
-              Grab the latest archive from GitHub Releases, unpack it, run the Aithy executable,
-              then open the local browser control surface.
-            </p>
+            <p>Grab the latest archive from GitHub Releases, unpack it, run Aithy, then open the local browser control surface.</p>
             <pre><code>gh release download --repo dosco/aithy --pattern 'aithy-*-darwin-arm64.tar.gz'
 tar -xzf aithy-*-darwin-arm64.tar.gz
 cd aithy-*-darwin-arm64
 ./aithy</code></pre>
-            <p>
-              Change the pattern for Linux or Apple Silicon macOS. The local UI listens on
-              <code>http://127.0.0.1:3000</code> by default.
-            </p>
             <a href="https://github.com/dosco/aithy/releases/latest">github.com/dosco/aithy/releases/latest</a>
           </article>
-          <article class="terminal-panel">
-            <div class="terminal-bar">
-              <span class="dot red"></span>
-              <span class="dot amber"></span>
-              <span class="dot green"></span>
-              <span>source install</span>
-            </div>
+          <article class="start-step">
             <h3>Start from code</h3>
-            <p>
-              Use the source path if you want to hack on the runtime, follow the repo directly, or
-              inspect the whole stack while it runs. You need Bun 1.3.14 or newer.
-            </p>
+            <p>Use the source path if you want to hack on the runtime or inspect the whole stack while it runs. You need Bun 1.3.14 or newer.</p>
             <pre><code>git clone https://github.com/dosco/aithy.git
 cd aithy
 bun install
 bun run start</code></pre>
-            <p>
-              Local state defaults to <code>~/.config/aithy/default/</code>.
-            </p>
+            <p>Local state defaults to <code>~/.config/aithy/default/</code>.</p>
           </article>
         </div>
       </section>
