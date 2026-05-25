@@ -16,13 +16,13 @@ import {
   upsertMemory,
 } from "@/server/skills-memory.functions";
 import type { MemoriesCursor, MemoryDto, MemoryPageStateDto } from "@/server/dto";
-import type { MemoryKind } from "../../src/memory/types";
+import type { MemoryKind, MemorySubject } from "../../src/memory/types";
 import { LivenessRibbon } from "./mind/liveness-ribbon";
 import { MemoryLattice } from "./mind/memory-lattice";
 import { MemoryDrawer, type MemoryDrawerMode } from "./mind/memory-drawer";
 import { emptyMemoryForm, type MemoryForm } from "./mind/memory-tile";
 import { KIND_GLYPH, KIND_TINT_TEXT } from "./mind/kind-glyph";
-import { MEMORY_KINDS } from "../../src/memory/types";
+import { MEMORY_KINDS, MEMORY_SUBJECTS } from "../../src/memory/types";
 
 export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto }) {
   const [drawerMode, setDrawerMode] = useState<MemoryDrawerMode | null>(null);
@@ -31,6 +31,7 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [kindFilter, setKindFilter] = useState<MemoryKind | "all">("all");
+  const [subjectFilter, setSubjectFilter] = useState<MemorySubject | "all">("all");
   const [sort, setSort] = useState<"recent" | "retrieved">("recent");
   const [memoriesCount, setMemoriesCount] = useState(initialState.memoriesCount);
   const [filteredCount, setFilteredCount] = useState(initialState.memoriesCount);
@@ -42,8 +43,9 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
   const debouncedFilter = useDebouncedValue(filter, 200);
   const queryArg = debouncedFilter.trim();
   const kindArg = kindFilter === "all" ? undefined : kindFilter;
-  const filtering = !!queryArg || kindFilter !== "all";
-  const resetKey = `${queryArg}|${kindFilter}|${sort}|${refreshToken}`;
+  const subjectArg = subjectFilter === "all" ? undefined : subjectFilter;
+  const filtering = !!queryArg || kindFilter !== "all" || subjectFilter !== "all";
+  const resetKey = `${queryArg}|${kindFilter}|${subjectFilter}|${sort}|${refreshToken}`;
 
   const fetchPage = useCallback(
     async (cursor: MemoriesCursor | null) => {
@@ -52,6 +54,7 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
           cursor,
           query: queryArg || undefined,
           kind: kindArg,
+          subject: subjectArg,
           sort,
         },
       });
@@ -60,7 +63,7 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
       }
       return { items: res.items, nextCursor: res.nextCursor };
     },
-    [queryArg, kindArg, sort],
+    [queryArg, kindArg, subjectArg, sort],
   );
 
   const {
@@ -118,6 +121,10 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
         data: {
           id: editing ? openId : undefined,
           kind: form.kind,
+          subject: form.subject,
+          scopeKind: form.scopeKind,
+          scopeRef: form.scopeRef || null,
+          guidance: form.guidance,
           title: form.title.trim(),
           body: form.body,
           validFrom: form.validFrom || null,
@@ -187,8 +194,10 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
           </Button>
           <MemoryViewMenu
             kind={kindFilter}
+            subject={subjectFilter}
             sort={sort}
             onKindChange={setKindFilter}
+            onSubjectChange={setSubjectFilter}
             onSortChange={setSort}
           />
         </div>
@@ -227,6 +236,10 @@ export function MemoryPage({ initialState }: { initialState: MemoryPageStateDto 
 function memoryToForm(entry: MemoryDto): MemoryForm {
   return {
     kind: entry.kind,
+    subject: entry.subject,
+    scopeKind: entry.scopeKind,
+    scopeRef: entry.scopeRef ?? "",
+    guidance: entry.guidance,
     title: entry.title,
     body: entry.body,
     validFrom: entry.validFrom ?? "",
@@ -261,13 +274,17 @@ function todayLocalDate(): string {
 
 function MemoryViewMenu({
   kind,
+  subject,
   sort,
   onKindChange,
+  onSubjectChange,
   onSortChange,
 }: {
   kind: MemoryKind | "all";
+  subject: MemorySubject | "all";
   sort: "recent" | "retrieved";
   onKindChange: (value: MemoryKind | "all") => void;
+  onSubjectChange: (value: MemorySubject | "all") => void;
   onSortChange: (value: "recent" | "retrieved") => void;
 }) {
   const sortItems = [
@@ -277,6 +294,8 @@ function MemoryViewMenu({
   const kindItems: Array<MemoryKind | "all"> = ["all", ...MEMORY_KINDS];
   const kindLabel = kind === "all" ? "All types" : kind.replace("_", " ");
   const sortLabel = sort === "recent" ? "Recent" : "Most recalled";
+  const subjectItems: Array<MemorySubject | "all"> = ["all", ...MEMORY_SUBJECTS];
+  const subjectLabel = subject === "all" ? "All subjects" : subject;
 
   return (
     <Popover.Root>
@@ -288,7 +307,7 @@ function MemoryViewMenu({
           <SlidersHorizontal className="h-4 w-4 text-[rgb(var(--muted-foreground))]" />
           <span>Filters</span>
           <span className="hidden text-[rgb(var(--muted-foreground))] lg:inline">
-            {kindLabel} · {sortLabel}
+            {subjectLabel} · {kindLabel} · {sortLabel}
           </span>
           <ChevronDown className="h-3.5 w-3.5 text-[rgb(var(--muted-foreground))]" />
         </button>
@@ -319,6 +338,28 @@ function MemoryViewMenu({
                 >
                   <Icon className="h-4 w-4 text-[rgb(var(--muted-foreground))]" />
                   <span className="flex-1">{item.label}</span>
+                  {active ? <Check className="h-4 w-4" /> : null}
+                </button>
+              );
+            })}
+          </div>
+          <div className="mt-2 border-t border-[rgb(var(--border))] px-2 pb-1 pt-3 text-[11px] font-medium text-[rgb(var(--muted-foreground))]">
+            Subject
+          </div>
+          <div className="grid gap-1">
+            {subjectItems.map((item) => {
+              const active = subject === item;
+              return (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => onSubjectChange(item)}
+                  className={cn(
+                    "flex items-center gap-2 rounded-xl px-2.5 py-2 text-left text-sm capitalize transition",
+                    active ? "bg-[rgb(var(--muted))]" : "hover:bg-[rgb(var(--muted))]/60",
+                  )}
+                >
+                  <span className="flex-1">{item === "all" ? "All subjects" : item}</span>
                   {active ? <Check className="h-4 w-4" /> : null}
                 </button>
               );

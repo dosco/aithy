@@ -2,12 +2,16 @@ import { motion } from "framer-motion";
 import { CalendarDays, Repeat2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { MemoryDto } from "@/server/dto";
-import type { MemoryKind } from "../../../src/memory/types";
+import type { MemoryGuidance, MemoryKind, MemoryScopeKind, MemorySubject } from "../../../src/memory/types";
 import { MemoryEvidencePill } from "./memory-evidence";
 import { KIND_TINT_BORDER, KindGlyph } from "./kind-glyph";
 
 export interface MemoryForm {
   kind: MemoryKind;
+  subject: MemorySubject;
+  scopeKind: MemoryScopeKind;
+  scopeRef: string;
+  guidance: MemoryGuidance;
   title: string;
   body: string;
   validFrom: string;
@@ -19,6 +23,10 @@ export interface MemoryForm {
 
 export const emptyMemoryForm: MemoryForm = {
   kind: "fact",
+  subject: "user",
+  scopeKind: "global",
+  scopeRef: "",
+  guidance: "context",
   title: "",
   body: "",
   validFrom: "",
@@ -83,21 +91,28 @@ export function MemoryTile({
           <h3 className="mt-3 truncate text-base font-medium leading-snug sm:text-lg">{entry.title}</h3>
         </div>
 
-        {metadata.length > 0 || entry.evidence ? (
-          <div className="pointer-events-none relative z-10 mt-3 flex min-w-0 flex-wrap gap-1.5">
-            {metadata.slice(0, 2).map((item) => (
-              <span
-                key={item.key}
-                className="inline-flex max-w-full items-center gap-1 rounded-full bg-[rgb(var(--muted))]/70 px-2 py-0.5 text-[11px] text-[rgb(var(--muted-foreground))]"
-                title={item.title}
-              >
-                <item.icon className="h-3 w-3 shrink-0" />
-                <span className="truncate">{item.text}</span>
-              </span>
-            ))}
-            <MemoryEvidencePill evidence={entry.evidence} />
-          </div>
-        ) : null}
+        <div className="pointer-events-none relative z-10 mt-3 flex min-w-0 flex-wrap gap-1.5">
+          <span className="rounded-full bg-[rgb(var(--muted))]/70 px-2 py-0.5 text-[11px] text-[rgb(var(--muted-foreground))]">
+            {entry.subject}
+          </span>
+          <span className="rounded-full bg-[rgb(var(--muted))]/70 px-2 py-0.5 text-[11px] text-[rgb(var(--muted-foreground))]">
+            {scopeLabel(entry)}
+          </span>
+          <span className="rounded-full bg-[rgb(var(--muted))]/70 px-2 py-0.5 text-[11px] text-[rgb(var(--muted-foreground))]">
+            {entry.guidance.replace("_", " ")}
+          </span>
+          {metadata.slice(0, 2).map((item) => (
+            <span
+              key={item.key}
+              className="inline-flex max-w-full items-center gap-1 rounded-full bg-[rgb(var(--muted))]/70 px-2 py-0.5 text-[11px] text-[rgb(var(--muted-foreground))]"
+              title={item.title}
+            >
+              <item.icon className="h-3 w-3 shrink-0" />
+              <span className="truncate">{item.text}</span>
+            </span>
+          ))}
+          <MemoryEvidencePill evidence={entry.evidence} />
+        </div>
 
         <p className="pointer-events-none relative z-10 mt-3 line-clamp-2 whitespace-pre-wrap text-sm leading-5 text-[rgb(var(--muted-foreground))]">
           {entry.body}
@@ -140,6 +155,10 @@ function memoryMetadata(entry: MemoryDto): Array<{
     items.push({ key: "frequency", text: entry.frequency, title: `frequency: ${entry.frequency}`, icon: Repeat2 });
   }
   return items;
+}
+
+function scopeLabel(entry: MemoryDto): string {
+  return entry.scopeKind === "global" ? "global" : entry.scopeKind;
 }
 
 function validLabel(entry: MemoryDto): string {

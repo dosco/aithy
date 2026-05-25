@@ -30,6 +30,8 @@ describe("memory agents", () => {
     expect(generatorDescription(program)).toContain("0.3-0.45 for tentative interests");
     expect(generatorDescription(program)).toContain("'project_context'");
     expect(generatorDescription(program)).toContain("'vocabulary'");
+    expect(generatorDescription(program)).toContain("subject='agent'");
+    expect(generatorDescription(program)).toContain("guidance='standing_request'");
     expect(generatorDescription(program)).not.toContain("LABELS:");
     memory.close();
   });
@@ -159,6 +161,40 @@ describe("memory agents", () => {
       body: "This should not persist.",
     })).rejects.toThrow("Invalid memory kind");
     expect(memory.count()).toBe(0);
+    memory.close();
+  });
+
+  test("write tool stores and validates memory metadata", async () => {
+    const { config, memory } = await fixture();
+    const write = buildMemoryAgentTools({
+      config,
+      memory,
+      dedupeWrites: false,
+    }).find((tool) => tool.name === "write") as any;
+
+    const saved = await write.func({
+      kind: "lesson",
+      subject: "agent",
+      scopeKind: "workspace",
+      scopeRef: config.workspaceRoot,
+      guidance: "context",
+      title: "test strategy",
+      body: "Run focused tests before broad suites.",
+    });
+
+    expect(memory.get(saved.id)).toMatchObject({
+      kind: "lesson",
+      subject: "agent",
+      scopeKind: "workspace",
+      scopeRef: config.workspaceRoot,
+      guidance: "context",
+    });
+    await expect(write.func({
+      kind: "lesson",
+      subject: "robot",
+      title: "bad subject",
+      body: "This should not persist.",
+    })).rejects.toThrow("Invalid memory subject");
     memory.close();
   });
 });

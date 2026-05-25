@@ -202,6 +202,7 @@ export class AgentWorkerRuntime {
     const dreamQueue = new DreamQueue({
       config,
       episodes,
+      memory,
       runtimeStore,
       tasks,
       onTaskStatus: publishTask,

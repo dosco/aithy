@@ -5,6 +5,7 @@ import type { RuntimeStore } from "../runtime/runtime-store";
 import { createAxDedupeDecider, dedupeExtractedItems } from "../conversation-analysis";
 import { assertIsoDate, isExpired, normalizeMemoryTiming } from "./time-bound";
 import type { SqliteMemoryStore } from "./memory-store";
+import { assertMemoryGuidance, assertMemoryScopeKind, assertMemorySubject } from "./metadata";
 import { MEMORY_KINDS, type MemoryEntry, type MemoryKind, type MemoryUpsert } from "./types";
 
 const KIND_DESC = `Memory kind, one of: ${MEMORY_KINDS.join(", ")}.`;
@@ -28,6 +29,10 @@ export function buildMemoryAgentTools(deps: MemoryAgentToolDeps): AxAgentFunctio
       .namespace("memory")
       .description("Persist a new memory. Body under ~4 KB (about 500 words). Searches existing memories first and skips duplicates.")
       .arg("kind", f.string(KIND_DESC))
+      .arg("subject", f.string("Optional memory subject: user, agent, or project.").optional())
+      .arg("scopeKind", f.string("Optional memory scope: global, workspace, or session.").optional())
+      .arg("scopeRef", f.string("Optional scope reference, such as a workspace path or session id.").optional())
+      .arg("guidance", f.string("Optional guidance strength: context or standing_request.").optional())
       .arg("title", f.string("Short descriptive label"))
       .arg("body", f.string("The memory content"))
       .arg("validFrom", f.string("Optional ISO date (YYYY-MM-DD) when this memory starts being true.").optional())
@@ -39,9 +44,13 @@ export function buildMemoryAgentTools(deps: MemoryAgentToolDeps): AxAgentFunctio
       .returnsField("id", f.string("New memory id, or existing memory id when deduped"))
       .returnsField("deduped", f.boolean("True when an equivalent memory already existed and no new row was written"))
       .returnsField("expired", f.boolean("True when validUntil is before today and no row was written"))
-      .handler(async ({ kind, title, body, validFrom, validUntil, durationDays, evidence, frequency, importance }) => {
+      .handler(async ({ kind, subject, scopeKind, scopeRef, guidance, title, body, validFrom, validUntil, durationDays, evidence, frequency, importance }) => {
         const candidate: MemoryUpsert = {
           kind: assertKind(kind),
+          subject: assertMemorySubject(subject),
+          scopeKind: assertMemoryScopeKind(scopeKind),
+          scopeRef,
+          guidance: assertMemoryGuidance(guidance),
           title,
           body,
           validFrom: assertIsoDate(validFrom, "validFrom"),
@@ -67,6 +76,10 @@ export function buildMemoryAgentTools(deps: MemoryAgentToolDeps): AxAgentFunctio
       .description("Replace an outdated/incorrect memory with a corrected one.")
       .arg("oldId", f.string("Id being replaced"))
       .arg("kind", f.string(KIND_DESC))
+      .arg("subject", f.string("Optional memory subject: user, agent, or project.").optional())
+      .arg("scopeKind", f.string("Optional memory scope: global, workspace, or session.").optional())
+      .arg("scopeRef", f.string("Optional scope reference, such as a workspace path or session id.").optional())
+      .arg("guidance", f.string("Optional guidance strength: context or standing_request.").optional())
       .arg("title", f.string("Short label"))
       .arg("body", f.string("Corrected body"))
       .arg("validFrom", f.string("Optional ISO date (YYYY-MM-DD) when this memory starts being true.").optional())
@@ -76,9 +89,13 @@ export function buildMemoryAgentTools(deps: MemoryAgentToolDeps): AxAgentFunctio
       .arg("frequency", f.string("Optional natural-language recurrence, e.g. 'every weekday morning'.").optional())
       .arg("importance", f.number("0..1, default 0.5").optional())
       .returnsField("id", f.string("Id of the replacement"))
-      .handler(({ oldId, kind, title, body, validFrom, validUntil, durationDays, evidence, frequency, importance }) => {
+      .handler(({ oldId, kind, subject, scopeKind, scopeRef, guidance, title, body, validFrom, validUntil, durationDays, evidence, frequency, importance }) => {
         const entry = memory.supersede(oldId, {
           kind: assertKind(kind),
+          subject: assertMemorySubject(subject),
+          scopeKind: assertMemoryScopeKind(scopeKind),
+          scopeRef,
+          guidance: assertMemoryGuidance(guidance),
           title,
           body,
           validFrom: assertIsoDate(validFrom, "validFrom"),
@@ -162,6 +179,9 @@ function createMemoryDedupeDecider(deps: Pick<MemoryAgentToolDeps, "config" | "r
 function formatCandidateMemory(item: MemoryUpsert): string {
   return [
     `kind: ${item.kind}`,
+    item.subject ? `subject: ${item.subject}` : null,
+    item.scopeKind ? `scope: ${item.scopeKind}${item.scopeRef ? ` ${item.scopeRef}` : ""}` : null,
+    item.guidance ? `guidance: ${item.guidance}` : null,
     `title: ${item.title}`,
     `body: ${item.body}`,
     item.frequency ? `frequency: ${item.frequency}` : null,
@@ -175,6 +195,9 @@ function formatExistingMemory(item: MemoryEntry): string {
   return [
     `id: ${item.id}`,
     `kind: ${item.kind}`,
+    `subject: ${item.subject}`,
+    `scope: ${item.scopeKind}${item.scopeRef ? ` ${item.scopeRef}` : ""}`,
+    `guidance: ${item.guidance}`,
     `title: ${item.title}`,
     `body: ${item.body}`,
     item.frequency ? `frequency: ${item.frequency}` : null,

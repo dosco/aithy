@@ -7,6 +7,10 @@ import type { EmbeddingHealthStats, TargetIndexCounts, TargetIndexStatus } from 
 interface MemoryRow {
   id: string;
   rowid: number;
+  subject?: string | null;
+  scopeKind?: string | null;
+  scopeRef?: string | null;
+  guidance?: string | null;
   title: string;
   body: string;
   validFrom?: string | null;
@@ -68,6 +72,8 @@ export async function backfillEmbeddings(
   const rows = db
     .query(
       `SELECT m.rowid AS rowid, m.id AS id, m.title AS title, m.body AS body
+              , m.subject AS subject, m.scope_kind AS scopeKind, m.scope_ref AS scopeRef
+              , m.guidance AS guidance
               , m.valid_from AS validFrom, m.valid_until AS validUntil, m.duration_days AS durationDays
               , m.evidence AS evidence, m.frequency AS frequency
          FROM memories m
@@ -125,6 +131,8 @@ export function memoryEmbeddingStats(
   const rows = db
     .query(
       `SELECT m.id AS id, m.title AS title, m.body AS body,
+              m.subject AS subject, m.scope_kind AS scopeKind, m.scope_ref AS scopeRef,
+              m.guidance AS guidance,
               m.valid_from AS validFrom, m.valid_until AS validUntil,
               m.duration_days AS durationDays, m.evidence AS evidence,
               m.frequency AS frequency, meta.body_hash AS bodyHash,

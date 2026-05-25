@@ -2,7 +2,7 @@
 name: Document Conversion (Docling)
 description: Convert a single mixed document into clean Markdown, JSON, HTML, or text using Docling first.
 when_to_use: Use when the user asks to process one PDF, Office document, image, or other document into Markdown, JSON, HTML, or plain text.
-tools: Bash(docling:*) Bash(pdftotext:*) Bash(pdfinfo:*) Read Write
+tools: Bash(docling:*) Bash(pdftotext:*) Bash(pdfinfo:*) Bash(tesseract:*) Read Write
 tags: builtin documents docling conversion markdown json html pdf office image
 ---
 
@@ -30,4 +30,5 @@ Workflow:
 Fallbacks:
 
 - `pdftotext INPUT.pdf -` is acceptable for fast digital-PDF text extraction.
+- `tesseract INPUT stdout -l eng` is available for single-image English OCR fallback.
 - Tesseract is English-only in the default image unless more language packs are installed.

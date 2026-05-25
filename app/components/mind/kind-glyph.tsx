@@ -14,6 +14,8 @@ export const KIND_GLYPH: Record<MemoryKind, string> = {
   resource: "⌁",
   constraint: "⊢",
   vocabulary: "Aa",
+  lesson: "↗",
+  failure_mode: "!",
   note: "·",
 };
 
@@ -30,6 +32,8 @@ export const KIND_TINT_TEXT: Record<MemoryKind, string> = {
   resource: "text-teal-700 dark:text-teal-300",
   constraint: "text-red-600 dark:text-red-400",
   vocabulary: "text-stone-700 dark:text-stone-300",
+  lesson: "text-blue-700 dark:text-blue-300",
+  failure_mode: "text-orange-700 dark:text-orange-300",
   note: "text-slate-600 dark:text-slate-400",
 };
 
@@ -46,6 +50,8 @@ export const KIND_TINT_BG: Record<MemoryKind, string> = {
   resource: "bg-teal-500/[0.06]",
   constraint: "bg-red-500/[0.06]",
   vocabulary: "bg-stone-500/[0.06]",
+  lesson: "bg-blue-500/[0.06]",
+  failure_mode: "bg-orange-500/[0.06]",
   note: "bg-slate-500/[0.06]",
 };
 
@@ -62,6 +68,8 @@ export const KIND_TINT_BORDER: Record<MemoryKind, string> = {
   resource: "border-teal-500/25",
   constraint: "border-red-500/25",
   vocabulary: "border-stone-500/25",
+  lesson: "border-blue-500/25",
+  failure_mode: "border-orange-500/25",
   note: "border-slate-500/25",
 };
 
@@ -78,6 +86,8 @@ export const KIND_TINT_RING: Record<MemoryKind, string> = {
   resource: "ring-teal-500/40",
   constraint: "ring-red-500/40",
   vocabulary: "ring-stone-500/40",
+  lesson: "ring-blue-500/40",
+  failure_mode: "ring-orange-500/40",
   note: "ring-slate-500/40",
 };
 

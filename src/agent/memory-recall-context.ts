@@ -22,6 +22,8 @@ export async function recallForAgent(input: {
   episodeStore?: SqliteEpisodeStore;
   transcriptStore?: SqliteTranscriptRecallStore;
   sessions: SessionManager;
+  workspaceRoot?: string;
+  conversationId?: string;
   source: "preload" | "recall";
   limit: number;
   beforeCreatedAt?: string;
@@ -43,6 +45,13 @@ export async function recallForAgent(input: {
     beforeCreatedAt: input.beforeCreatedAt,
     limit: input.limit,
     source: input.source,
+    memorySearchOptions: {
+      scope: {
+        includeGlobal: true,
+        workspaceRef: input.workspaceRoot,
+        sessionRef: input.conversationId,
+      },
+    },
   });
   const memories = budgetFormattedMemories(
     await Promise.all(result.hits.map((hit) => recallMemoryResult(input.sessions, hit, input.source))),

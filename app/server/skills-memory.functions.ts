@@ -1,7 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
 import { z } from "zod";
-import { MEMORY_KINDS } from "../../src/memory/types";
+import { MEMORY_GUIDANCE_VALUES, MEMORY_KINDS, MEMORY_SCOPE_KINDS, MEMORY_SUBJECTS } from "../../src/memory/types";
 import { assertLoopbackRequest } from "../../src/settings/localhost";
 import { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import { diffSkillBundle, parseSkillBundleFiles } from "../../src/skills/bundle";
@@ -183,10 +183,17 @@ export const listSkillsPaged = createServerFn({ method: "GET" })
   });
 
 const memoryKindSchema = z.enum(MEMORY_KINDS as [string, ...string[]]);
+const memorySubjectSchema = z.enum(MEMORY_SUBJECTS as [string, ...string[]]);
+const memoryScopeKindSchema = z.enum(MEMORY_SCOPE_KINDS as [string, ...string[]]);
+const memoryGuidanceSchema = z.enum(MEMORY_GUIDANCE_VALUES as [string, ...string[]]);
 
 const memoryUpsertInput = z.object({
   id: z.string().min(1).max(120).optional(),
   kind: memoryKindSchema,
+  subject: memorySubjectSchema.optional(),
+  scopeKind: memoryScopeKindSchema.optional(),
+  scopeRef: z.string().max(500).nullable().optional(),
+  guidance: memoryGuidanceSchema.optional(),
   title: z.string().min(1).max(200),
   body: z.string().min(1).max(8_000),
   validFrom: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).nullable().optional(),
@@ -205,6 +212,10 @@ export const upsertMemory = createServerFn({ method: "POST" })
     const entry = runtime.memory.upsert({
       id: data.id,
       kind: data.kind as never,
+      subject: data.subject as never,
+      scopeKind: data.scopeKind as never,
+      scopeRef: data.scopeRef,
+      guidance: data.guidance as never,
       title: data.title.trim(),
       body: data.body,
       validFrom: data.validFrom,
@@ -247,6 +258,9 @@ const memoriesPageInput = z.object({
   }).nullable().optional(),
   query: z.string().max(200).optional(),
   kind: memoryKindSchema.optional(),
+  subject: memorySubjectSchema.optional(),
+  guidance: memoryGuidanceSchema.optional(),
+  scopeKind: memoryScopeKindSchema.optional(),
   limit: z.number().int().positive().max(200).optional(),
   sort: z.enum(["recent", "retrieved"]).optional(),
 });
@@ -261,6 +275,9 @@ export const listMemoriesPaged = createServerFn({ method: "GET" })
       limit,
       query: data.query,
       kind: data.kind as never,
+      subject: data.subject as never,
+      guidance: data.guidance as never,
+      scopeKind: data.scopeKind as never,
       sort: data.sort,
     });
     return {
@@ -268,6 +285,12 @@ export const listMemoriesPaged = createServerFn({ method: "GET" })
       nextCursor: result.nextCursor,
       total: data.cursor
         ? null
-        : runtime.memory.count({ query: data.query, kind: data.kind as never }),
+        : runtime.memory.count({
+            query: data.query,
+            kind: data.kind as never,
+            subject: data.subject as never,
+            guidance: data.guidance as never,
+            scopeKind: data.scopeKind as never,
+          }),
     };
   });

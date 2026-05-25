@@ -2,7 +2,7 @@
 name: Scanned Document OCR
 description: OCR scanned PDFs and images using Docling or Tesseract with extraction quality checks.
 when_to_use: Use when a PDF or image appears scanned, text extraction is empty, or the user asks for OCR.
-tools: Bash(docling:*) Bash(tesseract:*) Bash(pdftoppm:*) Bash(pdfinfo:*) Read Write
+tools: Bash(docling:*) Bash(pdftotext:*) Bash(tesseract:*) Bash(pdftoppm:*) Bash(pdfinfo:*) Read Write
 tags: builtin ocr scanned pdf image tesseract docling english
 ---
 
@@ -12,7 +12,7 @@ Use OCR only when needed. Try normal text extraction first for PDFs.
 
 Workflow:
 
-1. Check if the file already has embedded text.
+1. For PDFs, check for embedded text with `pdftotext INPUT.pdf -` before OCR.
 2. For scanned PDFs, use Docling OCR first.
 3. For individual images, use `tesseract INPUT stdout -l eng`.
 4. For PDF page images, rasterize with Poppler when needed, then OCR page by page.

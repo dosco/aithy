@@ -4,7 +4,7 @@ import type { AgentEpisodeEntry } from "../episodes/types";
 import { embedText as memoryEmbedText } from "../memory/embed-text";
 import type { SqliteMemoryStore } from "../memory/memory-store";
 import type { Reranker } from "../memory/rerank";
-import type { MemoryEntry } from "../memory/types";
+import type { MemoryEntry, MemorySearchOptions } from "../memory/types";
 import type { TranscriptRecallEntry, SqliteTranscriptRecallStore } from "./transcript-recall";
 import {
   combineRetrievalMode,
@@ -52,6 +52,7 @@ export interface UnifiedRecallOptions {
   limit?: number;
   markRecalled?: boolean;
   source?: "preload" | "recall";
+  memorySearchOptions?: MemorySearchOptions;
 }
 
 const DEFAULT_LIMIT = 8;
@@ -80,6 +81,7 @@ export async function unifiedMemoryRecall(opts: UnifiedRecallOptions): Promise<U
 
   const [memoryResult, episodeResult, transcriptResult] = await Promise.all([
     opts.memory ? searchMemory(opts.memory, queries, {
+      ...opts.memorySearchOptions,
       limit: candidateLimit,
       excludeIds: opts.excludeMemoryIds,
       markRecalled: false,
@@ -149,7 +151,7 @@ export async function unifiedMemoryRecall(opts: UnifiedRecallOptions): Promise<U
 async function searchMemory(
   store: SqliteMemoryStore,
   queries: readonly string[],
-  opts: { limit: number; excludeIds?: readonly string[]; markRecalled: boolean },
+  opts: MemorySearchOptions & { limit: number; excludeIds?: readonly string[]; markRecalled: boolean },
 ): Promise<{ entries: MemoryEntry[]; diagnostics: RetrievalDiagnostics }> {
   if (store.searchDetailed) return store.searchDetailed(queries, opts);
   const startedAt = performance.now();

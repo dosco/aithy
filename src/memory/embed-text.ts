@@ -1,6 +1,10 @@
 import { createHash } from "node:crypto";
 
 export interface EmbedTextInput {
+  subject?: string | null;
+  scopeKind?: string | null;
+  scopeRef?: string | null;
+  guidance?: string | null;
   title: string;
   body: string;
   validFrom?: string | null;
@@ -16,7 +20,13 @@ export interface EmbedTextInput {
  * to re-embed (bump the model_id sentinel to force it).
  */
 export function embedText(entry: EmbedTextInput): string {
-  const parts = [entry.title.trim(), entry.body.trim()];
+  const parts = [
+    entry.title.trim(),
+    entry.subject ? `subject: ${entry.subject}` : null,
+    entry.scopeKind ? `scope: ${entry.scopeKind}${entry.scopeRef ? ` ${entry.scopeRef}` : ""}` : null,
+    entry.guidance ? `guidance: ${entry.guidance}` : null,
+    entry.body.trim(),
+  ].filter((part): part is string => Boolean(part));
   if (entry.frequency) parts.push(`frequency: ${entry.frequency}`);
   if (entry.validFrom || entry.validUntil) {
     parts.push(`valid: ${entry.validFrom ?? "unknown"} to ${entry.validUntil ?? "unknown"}`);

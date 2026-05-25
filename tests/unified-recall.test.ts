@@ -83,6 +83,40 @@ describe("unified memory recall", () => {
     expect(result.diagnostics.withheldMatches).toBeGreaterThan(0);
   });
 
+  test("memory search options enforce scoped recall", async () => {
+    const dbPath = await tempDbPath();
+    const memory = new SqliteMemoryStore(dbPath);
+    memory.upsert({ kind: "fact", title: "global bun", body: "global bun note" });
+    memory.upsert({
+      kind: "lesson",
+      subject: "agent",
+      scopeKind: "workspace",
+      scopeRef: "/repo/a",
+      title: "repo a bun",
+      body: "repo a bun note",
+    });
+    memory.upsert({
+      kind: "lesson",
+      subject: "agent",
+      scopeKind: "workspace",
+      scopeRef: "/repo/b",
+      title: "repo b bun",
+      body: "repo b bun note",
+    });
+
+    const result = await unifiedMemoryRecall({
+      memory,
+      queries: ["bun note"],
+      limit: 5,
+      memorySearchOptions: {
+        scope: { includeGlobal: true, workspaceRef: "/repo/a" },
+      },
+    });
+
+    expect(result.hits.filter((hit) => hit.source === "memory").map((hit) => hit.memory.title).sort())
+      .toEqual(["global bun", "repo a bun"]);
+  });
+
   test("anchor queries drop semantic-only hits that do not contain the anchor", async () => {
     const dbPath = await tempDbPath();
     const embedder = new MockEmbedder([["SOUL.md", "persona configuration"]]);

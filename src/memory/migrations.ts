@@ -1,5 +1,6 @@
 import type { Database } from "bun:sqlite";
 import type { SqliteMigration } from "../sqlite/migrations";
+import { memoryMetadataMigration } from "./metadata-migration";
 
 const MEMORY_KIND_VALUES = [
   "'fact'",
@@ -14,6 +15,8 @@ const MEMORY_KIND_VALUES = [
   "'resource'",
   "'constraint'",
   "'vocabulary'",
+  "'lesson'",
+  "'failure_mode'",
   "'note'",
 ].join(", ");
 
@@ -372,6 +375,7 @@ export const memoryMigrations: readonly SqliteMigration[] = [
         ON memory_embed_meta(model_id, dim);
     `,
   },
+  memoryMetadataMigration(MEMORY_KIND_VALUES),
 ];
 
 function memoryColumns(db: Database): Array<{ name: string }> {

@@ -135,8 +135,19 @@ describe("built-in skills", () => {
     expect(store.search(["pdf"], 30).map((skill) => skill.id)).not.toContain(builtIn.id);
   });
 
+  test("media built-in advertises full sandbox media tools", () => {
+    const source = builtInSkillSources.find((item) => item.sourceId === "media-inspection-extraction");
+    expect(source).toBeTruthy();
+    const { frontmatter } = parseSkillMarkdown(source!.raw);
+    const tools = frontmatterString(frontmatter, ["tools"]) ?? "";
+
+    expect(tools).toContain("Bash(ffmpeg:*)");
+    expect(tools).toContain("Bash(ffprobe:*)");
+    expect(tools).toContain("Bash(mediainfo:*)");
+  });
+
   test("every bundled skill parses cleanly and avoids unavailable tool claims", () => {
-    expect(builtInSkillSources).toHaveLength(24);
+    expect(builtInSkillSources).toHaveLength(25);
     for (const source of builtInSkillSources) {
       const { frontmatter, body } = parseSkillMarkdown(source.raw);
       const description = frontmatterString(frontmatter, ["description"]);

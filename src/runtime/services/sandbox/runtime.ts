@@ -11,6 +11,7 @@ import { LiveEventHub } from "../../../web/live-events";
 import { SqliteSettingsStore } from "../../../settings/store";
 import { assertSupportedBunVersion } from "../../bun-version";
 import { loadBaseConfig, resolveEffectiveConfig } from "../../resolve-effective-config";
+import type { AppConfig } from "../../../config/env";
 import type { SandboxCommand } from "../../protocol/types";
 import type { RuntimeCommandRow } from "../../runtime-store";
 import type { QueueServiceClient } from "../queue/client";
@@ -23,6 +24,7 @@ export class SandboxWorkerRuntime {
   private activeSessionId: string | null = null;
 
   private constructor(
+    private readonly baseConfig: AppConfig,
     private config: SandboxWorkerConfig,
     private readonly settings: SqliteSettingsStore,
     private readonly queue: QueueServiceClient,
@@ -43,7 +45,7 @@ export class SandboxWorkerRuntime {
     const setupStatus = setupStatusReporter(events, queue);
     reportSandboxConfig(queue, setupStatus, config);
     const provider = createWorkerProvider(config, setupStatus);
-    return new SandboxWorkerRuntime(config, settings, queue, events, live, provider);
+    return new SandboxWorkerRuntime(baseConfig, config, settings, queue, events, live, provider);
   }
 
   start(): void {
@@ -163,7 +165,7 @@ export class SandboxWorkerRuntime {
   }
 
   private async reloadSettings(): Promise<void> {
-    const next = await resolveEffectiveConfig(loadBaseConfig(), this.settings.load());
+    const next = await resolveEffectiveConfig(this.baseConfig, this.settings.load());
     const setupStatus = setupStatusReporter(this.events, this.queue);
     await this.destroyActiveSandboxForReload();
     this.config = next;

@@ -4,7 +4,16 @@ import { Button } from "@/components/ui/button";
 import { Field, FormError, FormTextarea, fieldClass } from "@/components/lib/form-bits";
 import { cn } from "@/lib/utils";
 import type { MemoryDto } from "@/server/dto";
-import { MEMORY_KINDS, type MemoryKind } from "../../../src/memory/types";
+import {
+  MEMORY_GUIDANCE_VALUES,
+  MEMORY_KINDS,
+  MEMORY_SCOPE_KINDS,
+  MEMORY_SUBJECTS,
+  type MemoryGuidance,
+  type MemoryKind,
+  type MemoryScopeKind,
+  type MemorySubject,
+} from "../../../src/memory/types";
 import { MemoryEvidenceBlock, parseMemoryEvidence } from "./memory-evidence";
 import { buildMemoryHelp } from "./memory-help";
 import type { MemoryForm } from "./memory-tile";
@@ -114,6 +123,10 @@ function MemoryEditor({
   const duration = durationPreview(form.validFrom, form.validUntil);
   const help = buildMemoryHelp({
     kind: form.kind,
+    subject: form.subject,
+    scopeKind: form.scopeKind,
+    scopeRef: form.scopeRef || null,
+    guidance: form.guidance,
     validFrom: form.validFrom || null,
     validUntil: form.validUntil || null,
     evidence: form.evidence || null,
@@ -142,7 +155,10 @@ function MemoryEditor({
               <select
                 className={cn(fieldClass, "pr-8")}
                 value={form.kind}
-                onChange={(event) => onChange({ ...form, kind: event.target.value as MemoryKind })}
+                onChange={(event) => {
+                  const kind = event.target.value as MemoryKind;
+                  onChange({ ...form, kind, guidance: kind === "instruction" ? "standing_request" : form.guidance });
+                }}
               >
                 {MEMORY_KINDS.map((kind) => (
                   <option key={kind} value={kind}>{kind.replace("_", " ")}</option>
@@ -161,6 +177,56 @@ function MemoryEditor({
               />
             </Field>
           </div>
+        </section>
+
+        <section className="mt-5 border-t border-[rgb(var(--border))] pt-4">
+          <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-[rgb(var(--muted-foreground))]">
+            Context
+          </h3>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <Field label="Subject">
+              <select
+                className={cn(fieldClass, "pr-8")}
+                value={form.subject}
+                onChange={(event) => onChange({ ...form, subject: event.target.value as MemorySubject })}
+              >
+                {MEMORY_SUBJECTS.map((subject) => (
+                  <option key={subject} value={subject}>{subject}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Scope">
+              <select
+                className={cn(fieldClass, "pr-8")}
+                value={form.scopeKind}
+                onChange={(event) => onChange({ ...form, scopeKind: event.target.value as MemoryScopeKind })}
+              >
+                {MEMORY_SCOPE_KINDS.map((scope) => (
+                  <option key={scope} value={scope}>{scope}</option>
+                ))}
+              </select>
+            </Field>
+            <Field label="Guidance">
+              <select
+                className={cn(fieldClass, "pr-8")}
+                value={form.guidance}
+                onChange={(event) => onChange({ ...form, guidance: event.target.value as MemoryGuidance })}
+              >
+                {MEMORY_GUIDANCE_VALUES.map((guidance) => (
+                  <option key={guidance} value={guidance}>{guidance.replace("_", " ")}</option>
+                ))}
+              </select>
+            </Field>
+          </div>
+          {form.scopeKind !== "global" ? (
+            <Field label="Scope reference" className="mt-3">
+              <input
+                className={fieldClass}
+                value={form.scopeRef}
+                onChange={(event) => onChange({ ...form, scopeRef: event.target.value })}
+              />
+            </Field>
+          ) : null}
         </section>
 
         <section className="mt-5 border-t border-[rgb(var(--border))] pt-4">

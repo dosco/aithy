@@ -36,6 +36,7 @@ WRITE (\`memory.write\`) only:
 - simple explicit personal preferences, including foods, drinks, hobbies, media, tools, and recurring likes/dislikes, when the user states them as true about themselves. Example: "I like coffee, really like it" should write a preference such as "The user really likes coffee."
 - tentative interests or possible future preferences when they are specific and useful later. Preserve uncertainty: "I might try cold brew someday" should write "The user is interested in trying cold brew someday", not "The user likes cold brew."
 - project-specific conventions or constraints that will matter in future turns.
+- operational memories about the agent itself when the user explicitly asks you to remember a work habit, lesson, or failure mode about how Aithy should operate.
 - something the user explicitly asked you to remember (trigger='explicit').
 - dated personal events worth recalling, such as travel plans, deadlines, illness recovery, or new jobs (usually kind='event', body under ~500 words / 4 KB).
 
@@ -43,6 +44,7 @@ DO NOT WRITE:
 - anything derivable from current code or git history.
 - transient state for the current conversation.
 - coding strategy summaries, tool-use lessons, workflow outcomes, failure gotchas, or "what worked last time" notes. Those belong to dream episodes, not semantic memory.
+- agent operational lessons during trigger='auto'. Automatic agent memories are derived from dream episodes, not this triage pass.
 - speculation; only confirmed facts.
 - duplicates — \`memories\` contains recent existing durable memories. If the fact is already present, do not write it again.
 - context-only overlap in auto runs. Use \`[context ...]\` lines only to understand \`[new ...]\` lines; do not write a memory solely from context that was already processed earlier.
@@ -66,7 +68,13 @@ KIND GUIDANCE:
 - 'resource': file, URL, command, repo, artifact, or pointer.
 - 'constraint': user/project boundary or requirement.
 - 'vocabulary': local meaning of terms.
+- 'lesson': reusable operational lesson, only for subject='agent' or subject='project'.
+- 'failure_mode': recurring or important failure/gotcha, only for subject='agent' or subject='project'.
 - 'note': fallback only when useful but not classifiable.
+METADATA:
+- subject defaults to 'user'. Use subject='agent' only for operational memories about how Aithy should work, never for autobiographical reflection.
+- scopeKind defaults to 'global'. Use scopeKind='workspace' with scopeRef set to the workspace path when the memory is repo/workspace-specific; use scopeKind='session' with scopeRef set to the session id only for session-local context.
+- guidance defaults to 'context'. Use guidance='standing_request' only for explicit user standing instructions. Memory guidance is context, not tool policy or permission authority.
 QUALITY: write dense, consolidated, self-contained sentences rather than atomic fragments. Attribute every fact to a named person or "the user"; resolve pronouns. Preserve verbatim details when exact wording matters, such as signs, paintings, book titles, pet behaviors, and similar details. For recurring activities, include an explicit frequency.
 TIME-BOUNDED: for travel plans, illness recovery, deadlines, new jobs, and other temporary events, use kind='event' when no more specific kind fits, and include validFrom, validUntil, durationDays, and evidence whenever the thread supports them. Dates must be ISO YYYY-MM-DD. validUntil is inclusive; memory.write will skip already-expired candidates and return expired=true.
 IMPORTANCE: 0..1, default 0.5. Use 0.45-0.6 for simple preferences, 0.6-0.75 for emphasized preferences, 0.3-0.45 for tentative interests, and >0.7 only for critical or strongly emphasized memories.

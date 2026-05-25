@@ -11,6 +11,8 @@ export type MemoryKind =
   | "resource"
   | "constraint"
   | "vocabulary"
+  | "lesson"
+  | "failure_mode"
   | "note";
 
 export const MEMORY_KINDS: readonly MemoryKind[] = [
@@ -26,12 +28,41 @@ export const MEMORY_KINDS: readonly MemoryKind[] = [
   "resource",
   "constraint",
   "vocabulary",
+  "lesson",
+  "failure_mode",
   "note",
+];
+
+export type MemorySubject = "user" | "agent" | "project";
+
+export const MEMORY_SUBJECTS: readonly MemorySubject[] = [
+  "user",
+  "agent",
+  "project",
+];
+
+export type MemoryScopeKind = "global" | "workspace" | "session";
+
+export const MEMORY_SCOPE_KINDS: readonly MemoryScopeKind[] = [
+  "global",
+  "workspace",
+  "session",
+];
+
+export type MemoryGuidance = "context" | "standing_request";
+
+export const MEMORY_GUIDANCE_VALUES: readonly MemoryGuidance[] = [
+  "context",
+  "standing_request",
 ];
 
 export interface MemoryEntry {
   id: string;
   kind: MemoryKind;
+  subject: MemorySubject;
+  scopeKind: MemoryScopeKind;
+  scopeRef: string | null;
+  guidance: MemoryGuidance;
   title: string;
   body: string;
   validFrom: string | null;
@@ -52,6 +83,10 @@ export interface MemoryEntry {
 export interface MemoryUpsert {
   id?: string;
   kind: MemoryKind;
+  subject?: MemorySubject;
+  scopeKind?: MemoryScopeKind;
+  scopeRef?: string | null;
+  guidance?: MemoryGuidance;
   title: string;
   body: string;
   validFrom?: string | null;
@@ -70,6 +105,9 @@ export type MemoryTimingInput = Pick<
 
 export interface MemorySearchOptions {
   kinds?: readonly MemoryKind[];
+  subjects?: readonly MemorySubject[];
+  guidance?: readonly MemoryGuidance[];
+  scope?: MemoryScopeSearch;
   limit?: number;
   /**
    * Memory IDs to exclude from results. Use this when the agent has already
@@ -80,4 +118,10 @@ export interface MemorySearchOptions {
   excludeIds?: readonly string[];
   /** Skip recall/retrieval counter updates for internal lookups such as dedupe. */
   markRecalled?: boolean;
+}
+
+export interface MemoryScopeSearch {
+  includeGlobal?: boolean;
+  workspaceRef?: string | null;
+  sessionRef?: string | null;
 }

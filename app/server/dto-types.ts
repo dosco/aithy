@@ -1,7 +1,7 @@
 import type { AiProviderProfile, SearchProviderId, SearchProviderProfile, StoredSettings } from "../../src/settings/types";
 import type { CustomSandboxImage, SandboxImageOption, SandboxImageSelection } from "../../src/sandbox/image-catalog";
 import type { LocalInferenceSettings } from "../../src/local-inference/settings";
-import type { MemoryKind } from "../../src/memory/types";
+import type { MemoryGuidance, MemoryKind, MemoryScopeKind, MemorySubject } from "../../src/memory/types";
 import type { MemoryRunStatus, MemoryRunTrigger } from "../../src/memory/memory-runs";
 import type { NotificationKind } from "../../src/notifications/types";
 import type { UsagePurpose } from "../../src/usage/types";
@@ -262,6 +262,10 @@ export interface MemoryRunDto {
 export interface MemoryDto {
   id: string;
   kind: MemoryKind;
+  subject: MemorySubject;
+  scopeKind: MemoryScopeKind;
+  scopeRef: string | null;
+  guidance: MemoryGuidance;
   title: string;
   body: string;
   validFrom: string | null;

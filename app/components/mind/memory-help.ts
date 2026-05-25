@@ -1,7 +1,11 @@
-import type { MemoryKind } from "../../../src/memory/types";
+import type { MemoryGuidance, MemoryKind, MemoryScopeKind, MemorySubject } from "../../../src/memory/types";
 
 export interface MemoryHelpInput {
   kind: MemoryKind;
+  subject: MemorySubject;
+  scopeKind: MemoryScopeKind;
+  scopeRef: string | null;
+  guidance: MemoryGuidance;
   validFrom: string | null;
   validUntil: string | null;
   evidence: string | null;
@@ -29,14 +33,27 @@ const KIND_CONTEXT: Record<MemoryKind, string> = {
   constraint: "constraint context",
   vocabulary: "vocabulary context",
   note: "general context",
+  lesson: "operational lesson",
+  failure_mode: "failure mode",
 };
 
 export function buildMemoryHelp(input: MemoryHelpInput): MemoryHelp {
-  const summary = `Can be recalled as ${KIND_CONTEXT[input.kind]} when a related request matches it.`;
-  const details = [recallDetail(input), ...timingDetails(input)];
+  const summary = `Can be recalled as ${input.subject} ${KIND_CONTEXT[input.kind]} when a related request and scope match it.`;
+  const details = [recallDetail(input), scopeDetail(input), guidanceDetail(input), ...timingDetails(input)];
   if (input.frequency?.trim()) details.push(`Frequency: ${input.frequency.trim()}`);
   if (input.evidence?.trim()) details.push("Supported by saved evidence");
   return { summary, details };
+}
+
+function scopeDetail(input: MemoryHelpInput): string {
+  if (input.scopeKind === "global") return "Global scope";
+  return `${input.scopeKind === "workspace" ? "Workspace" : "Session"} scope${input.scopeRef ? `: ${input.scopeRef}` : ""}`;
+}
+
+function guidanceDetail(input: MemoryHelpInput): string {
+  return input.guidance === "standing_request"
+    ? "Standing user request; still below tool and safety policy"
+    : "Advisory context";
 }
 
 function recallDetail(input: MemoryHelpInput): string {

@@ -13,11 +13,21 @@ describe("SandboxWorkerRuntime", () => {
   test("destroys the active sandbox before reloading settings", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "aithy-sandbox-worker-"));
     const destroyed: string[] = [];
-    const settings = new SqliteSettingsStore(path.join(root, "state.db"));
+    const stateDbPath = path.join(root, "state.db");
+    const settings = new SqliteSettingsStore(stateDbPath);
     const queue = fakeQueue();
     const provider = fakeProvider(destroyed);
+    const config = {
+      ...loadConfig({}),
+      stateDir: root,
+      stateDbPath,
+      workspaceRoot: path.join(root, "workspace"),
+      outboxRoot: path.join(root, "outbox"),
+      tracesDir: path.join(root, "traces"),
+    };
     const runtime = new (SandboxWorkerRuntime as any)(
-      loadConfig({}),
+      config,
+      config,
       settings,
       queue,
       new EventBus(),

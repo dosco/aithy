@@ -3,14 +3,19 @@ import type { Embedder } from "./embed";
 import { embedText, vecToBlob } from "./embed-text";
 import { score } from "./ranking";
 import type { Reranker } from "./rerank";
-import type { MemoryEntry, MemoryKind, MemorySearchOptions } from "./types";
+import type { MemoryEntry, MemoryGuidance, MemoryKind, MemoryScopeKind, MemorySearchOptions, MemorySubject } from "./types";
 import { sourceStats, type RetrievalSourceStats } from "../retrieval/diagnostics";
 import { addFusedHit, sortedFused, type FusedCandidate } from "../retrieval/fusion";
 import type { LexicalSearchQuery, RetrievalLane } from "../retrieval/query-plan";
+import { buildMemorySearchFilters, rowToEntry } from "./store-row";
 
 interface MemoryRow {
   id: string;
   kind: MemoryKind;
+  subject: MemorySubject;
+  scope_kind: MemoryScopeKind;
+  scope_ref: string | null;
+  guidance: MemoryGuidance;
   title: string;
   body: string;
   valid_from: string | null;
@@ -62,16 +67,16 @@ export async function hybridSearch(
   deps: HybridSearchDeps,
 ): Promise<{ entries: MemoryEntry[]; recallIds: string[]; stats: RetrievalSourceStats; reranked: boolean }> {
   const { db, embedder, reranker, rawQueries, ftsQueries, opts, perQueryLimit } = deps;
-  const kindFilter = buildKindFilter(opts.kinds);
+  const filters = buildMemorySearchFilters(opts);
   const excludeFilter = buildExcludeFilter(opts.excludeIds);
 
   // Stage 1: candidate retrieval — FTS5 + vec KNN per query, in parallel.
   const [ftsGroups, vecGroups] = await Promise.all([
-    Promise.all(ftsQueries.map((query) => Promise.resolve(runFts(db, query, kindFilter, excludeFilter)))),
+    Promise.all(ftsQueries.map((query) => Promise.resolve(runFts(db, query, filters, excludeFilter)))),
     Promise.all(rawQueries.map((raw) =>
       embedder
         .embedQuery(raw)
-        .then((vec) => runVec(db, vec, kindFilter, excludeFilter))
+        .then((vec) => runVec(db, vec, filters, excludeFilter))
         .catch(() => [] as RankedHit[]),
     )),
   ]);
@@ -150,14 +155,7 @@ async function tryRerank(
   candidates: readonly FusedCandidate<MemoryRow & { rowid: number }>[],
 ): Promise<Array<FusedCandidate<MemoryRow & { rowid: number }> & { score: number }> | null> {
   const top = candidates.slice(0, RERANK_CANDIDATE_LIMIT);
-  const docs = top.map((c) => embedText({
-    ...c.item,
-    validFrom: c.item.valid_from,
-    validUntil: c.item.valid_until,
-    durationDays: c.item.duration_days,
-    evidence: c.item.evidence,
-    frequency: c.item.frequency,
-  }));
+  const docs = top.map((c) => embedText(rowToEntry(c.item)));
 
   const perQueryScores = await Promise.all(
     queries.map((q) =>
@@ -183,19 +181,6 @@ async function tryRerank(
     .sort((a, b) => b.score - a.score);
 }
 
-function buildKindFilter(kinds: readonly MemoryKind[] | undefined): {
-  sql: string;
-  params: Record<string, MemoryKind>;
-} {
-  if (!kinds?.length) return { sql: "", params: {} };
-  const placeholders = kinds.map((_, i) => `$kind${i}`).join(", ");
-  const params: Record<string, MemoryKind> = {};
-  kinds.forEach((kind, i) => {
-    params[`$kind${i}`] = kind;
-  });
-  return { sql: ` AND m.kind IN (${placeholders})`, params };
-}
-
 function buildExcludeFilter(excludeIds: readonly string[] | undefined): {
   sql: string;
   params: Record<string, string>;
@@ -217,7 +202,7 @@ function buildExcludeFilter(excludeIds: readonly string[] | undefined): {
 function runFts(
   db: Database,
   query: LexicalSearchQuery,
-  kindFilter: ReturnType<typeof buildKindFilter>,
+  filters: ReturnType<typeof buildMemorySearchFilters>,
   excludeFilter: ReturnType<typeof buildExcludeFilter>,
 ): RankedHit[] {
   const rows = db
@@ -227,7 +212,7 @@ function runFts(
          JOIN memories m ON m.rowid = f.rowid
         WHERE memories_fts MATCH $match
           AND m.superseded_by IS NULL
-          ${kindFilter.sql}
+          ${filters.sql}
           ${excludeFilter.sql}
         ORDER BY rank
         LIMIT $limit`,
@@ -235,7 +220,7 @@ function runFts(
     .all({
       $match: query.expression,
       $limit: PER_RANKER_LIMIT,
-      ...kindFilter.params,
+      ...filters.params,
       ...excludeFilter.params,
     } as never) as FtsRow[];
   return rows.map((row, rank) => ({ row, rank, lane: query.lane }));
@@ -244,14 +229,14 @@ function runFts(
 function runVec(
   db: Database,
   embedding: Float32Array,
-  kindFilter: ReturnType<typeof buildKindFilter>,
+  filters: ReturnType<typeof buildMemorySearchFilters>,
   excludeFilter: ReturnType<typeof buildExcludeFilter>,
 ): RankedHit[] {
   // sqlite-vec applies KNN BEFORE the SQL WHERE filters, so we ask for extra
   // candidates and let the JOIN drop ones that don't match. We over-fetch by
   // (kind safety factor) + (exclude list size) to avoid coming up short.
   const k =
-    PER_RANKER_LIMIT * (kindFilter.sql ? 2 : 1) + excludeFilter.count;
+    PER_RANKER_LIMIT * (filters.filtered ? 3 : 1) + excludeFilter.count;
   const rows = db
     .query(
       `SELECT m.rowid AS rowid, m.*, v.distance
@@ -260,14 +245,14 @@ function runVec(
         WHERE v.embedding MATCH $vec
           AND k = $k
           AND m.superseded_by IS NULL
-          ${kindFilter.sql}
+          ${filters.sql}
           ${excludeFilter.sql}
         ORDER BY v.distance`,
     )
     .all({
       $vec: vecToBlob(embedding),
       $k: k,
-      ...kindFilter.params,
+      ...filters.params,
       ...excludeFilter.params,
     } as never) as VecRow[];
   return rows.slice(0, PER_RANKER_LIMIT).map((row, rank) => ({ row, rank, lane: "semantic" }));
@@ -280,26 +265,4 @@ function addToFusion(
   for (const { row, rank, lane } of hits) {
     addFusedHit(fused, row.rowid, row, lane, rank);
   }
-}
-
-function rowToEntry(row: MemoryRow): MemoryEntry {
-  return {
-    id: row.id,
-    kind: row.kind,
-    title: row.title,
-    body: row.body,
-    validFrom: row.valid_from,
-    validUntil: row.valid_until,
-    durationDays: row.duration_days,
-    evidence: row.evidence,
-    frequency: row.frequency,
-    source: row.source,
-    importance: row.importance,
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-    lastRecalledAt: row.last_recalled_at,
-    recallCount: row.recall_count,
-    retrievedCount: row.retrieved_count,
-    supersededBy: row.superseded_by,
-  };
 }

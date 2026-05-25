@@ -142,6 +142,10 @@ export function memoryDto(entry: MemoryEntry): MemoryDto {
   return {
     id: entry.id,
     kind: entry.kind,
+    subject: entry.subject,
+    scopeKind: entry.scopeKind,
+    scopeRef: entry.scopeRef,
+    guidance: entry.guidance,
     title: entry.title,
     body: entry.body,
     validFrom: entry.validFrom,

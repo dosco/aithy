@@ -24,6 +24,10 @@ describe("SqliteMemoryStore", () => {
     });
     expect(entry.id).toBeTruthy();
     expect(entry.kind).toBe("fact");
+    expect(entry.subject).toBe("user");
+    expect(entry.scopeKind).toBe("global");
+    expect(entry.scopeRef).toBeNull();
+    expect(entry.guidance).toBe("context");
     expect(entry.importance).toBe(0.7);
     expect(store.count()).toBe(1);
 
@@ -72,6 +76,41 @@ describe("SqliteMemoryStore", () => {
 
     const facts = await store.search(["bun"], { kinds: ["fact"] });
     expect(facts.map((h) => h.kind)).toEqual(["fact"]);
+  });
+
+  test("stores and filters memory metadata", async () => {
+    const store = new SqliteMemoryStore(await tempDbPath());
+    const agent = store.upsert({
+      kind: "lesson",
+      subject: "agent",
+      scopeKind: "workspace",
+      scopeRef: "/workspace/a",
+      guidance: "context",
+      title: "targeted tests",
+      body: "Run targeted tests before the broad suite.",
+    });
+    store.upsert({
+      kind: "lesson",
+      subject: "agent",
+      scopeKind: "workspace",
+      scopeRef: "/workspace/b",
+      title: "other workspace",
+      body: "Use a different setup.",
+    });
+    store.upsert({
+      kind: "instruction",
+      title: "preferred tone",
+      body: "The user prefers direct answers.",
+    });
+
+    expect(store.get(agent.id)?.guidance).toBe("context");
+    expect(store.count({ subject: "agent" })).toBe(2);
+    expect(store.count({ guidance: "standing_request" })).toBe(1);
+    const scoped = await store.search(["tests"], {
+      subjects: ["agent"],
+      scope: { includeGlobal: true, workspaceRef: "/workspace/a" },
+    });
+    expect(scoped.map((memory) => memory.title)).toEqual(["targeted tests"]);
   });
 
   test("stores and filters every memory kind", async () => {
@@ -308,9 +347,9 @@ describe("SqliteMemoryStore", () => {
       );
       INSERT INTO memories (
         id, kind, title, body, tags, source, importance, created_at, updated_at
-      ) VALUES (
-        'm1', 'episode', 'Tokyo trip', 'The user plans a Tokyo trip.', 'travel project misc', 'test', 0.6, '2026-01-01', '2026-01-01'
-      );
+      ) VALUES
+        ('m1', 'episode', 'Tokyo trip', 'The user plans a Tokyo trip.', 'travel project misc', 'test', 0.6, '2026-01-01', '2026-01-01'),
+        ('m2', 'instruction', 'Tone', 'The user prefers direct answers.', '', 'test', 0.6, '2026-01-01', '2026-01-01');
     `);
     db.close();
 
@@ -318,6 +357,10 @@ describe("SqliteMemoryStore", () => {
     const migrated = store.get("m1");
 
     expect(migrated?.kind).toBe("event");
+    expect(migrated?.subject).toBe("user");
+    expect(migrated?.scopeKind).toBe("global");
+    expect(migrated?.guidance).toBe("context");
+    expect(store.get("m2")?.guidance).toBe("standing_request");
     expect(migrated?.validUntil).toBeNull();
     expect(await store.search(["travel"])).toEqual([]);
     store.close();

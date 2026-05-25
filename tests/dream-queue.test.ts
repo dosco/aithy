@@ -6,6 +6,7 @@ import { shutdownManager } from "bunqueue/client";
 import type { AppConfig } from "../src/config/env";
 import { DreamQueue, type DreamJobData } from "../src/episodes/dream-queue";
 import { SqliteEpisodeStore } from "../src/episodes/episode-store";
+import { SqliteMemoryStore } from "../src/memory/memory-store";
 import type { DreamDetection, DreamDetector } from "../src/episodes/dream-detector";
 import { SqliteSessionStateStore } from "../src/session/sqlite-state-store";
 import type { AssistantToolCallMessage, BotMessage, UserMessage } from "../src/session/types";
@@ -30,23 +31,25 @@ afterEach(async () => {
   } catch {}
 });
 
-async function setup(detector: DreamDetector) {
+async function setup(detector: DreamDetector, opts: { workspaceRoot?: string } = {}) {
   const dir = await mkdtemp(path.join(tmpdir(), "aithy-dream-queue-"));
   const stateDbPath = path.join(dir, "state.db");
   const state = new SqliteSessionStateStore(stateDbPath);
   const episodes = new SqliteEpisodeStore(stateDbPath);
+  const memory = new SqliteMemoryStore(stateDbPath);
   const tasks = new SqliteTaskStore(stateDbPath);
   const errors: string[] = [];
   const queue = new DreamQueue({
-    config: { stateDbPath } as AppConfig,
+    config: { stateDbPath, workspaceRoot: opts.workspaceRoot } as AppConfig,
     episodes,
+    memory,
     tasks,
     detector,
     onQueueError: (message) => errors.push(message),
   });
   queues.push(queue);
-  stores.push(state, episodes, tasks);
-  return { state, episodes, tasks, queue, errors, now: Date.now() };
+  stores.push(state, episodes, memory, tasks);
+  return { state, episodes, memory, tasks, queue, errors, now: Date.now() };
 }
 
 describe("DreamQueue", () => {
@@ -165,6 +168,50 @@ describe("DreamQueue", () => {
       status: "completed",
       resultSummary: "inspected 1, episodes 1, failed 0",
     });
+  });
+
+  test("stores dream-derived operational agent memories", async () => {
+    const fx = await setup(detector(async () => [episode("Debug postgres tests")]), {
+      workspaceRoot: "/repo",
+    });
+    ensureSession(fx.state, "main");
+    fx.state.appendMessages("main", [tool("sandbox.bash", { command: "bun test" }, 0, fx.now)]);
+
+    const result = await runProcess(fx.queue, { triggeredAt: new Date().toISOString() });
+
+    expect(result.episodes).toBe(1);
+    const memories = await fx.memory.search(["targeted tool calls"], {
+      subjects: ["agent"],
+      scope: { workspaceRef: "/repo" },
+    });
+    expect(memories).toHaveLength(1);
+    expect(memories[0]).toMatchObject({
+      kind: "lesson",
+      subject: "agent",
+      scopeKind: "workspace",
+      scopeRef: "/repo",
+      guidance: "context",
+      source: "dream",
+    });
+  });
+
+  test("stores failed dream episodes as failure modes", async () => {
+    const fx = await setup(detector(async () => [{
+      ...episode("Run flaky suite"),
+      outcome: "failure",
+      error: "race detected",
+      notes: "",
+    }]), { workspaceRoot: "/repo" });
+    ensureSession(fx.state, "main");
+    fx.state.appendMessages("main", [tool("sandbox.bash", { command: "bun test" }, 1, fx.now)]);
+
+    await runProcess(fx.queue, { triggeredAt: new Date().toISOString() });
+
+    const memories = await fx.memory.search(["race detected"], {
+      subjects: ["agent"],
+      scope: { workspaceRef: "/repo" },
+    });
+    expect(memories[0]).toMatchObject({ kind: "failure_mode", subject: "agent" });
   });
 });
 

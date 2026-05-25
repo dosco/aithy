@@ -10,6 +10,7 @@ import downloadAndStageFiles from "../../config/skills/builtin/download-and-stag
 import htmlTableExtraction from "../../config/skills/builtin/html-table-extraction.md" with { type: "text" };
 import imagePrepForOcr from "../../config/skills/builtin/image-prep-for-ocr.md" with { type: "text" };
 import knowledgeBasePrep from "../../config/skills/builtin/knowledge-base-prep.md" with { type: "text" };
+import mediaInspectionExtraction from "../../config/skills/builtin/media-inspection-extraction.md" with { type: "text" };
 import officeDocumentExtraction from "../../config/skills/builtin/office-document-extraction.md" with { type: "text" };
 import pdfFastTextExtraction from "../../config/skills/builtin/pdf-fast-text-extraction.md" with { type: "text" };
 import pdfOptimizationPrint from "../../config/skills/builtin/pdf-optimization-print.md" with { type: "text" };
@@ -26,7 +27,7 @@ import webPageToMarkdown from "../../config/skills/builtin/web-page-to-markdown.
 import { frontmatterString, parseSkillMarkdown } from "./frontmatter";
 import type { SqliteSkillsStore, SkillUpsert } from "./skills-store";
 
-export const BUILT_IN_SKILL_SOURCE_VERSION = "2026.05-document-sandbox";
+export const BUILT_IN_SKILL_SOURCE_VERSION = "2026.05-document-media-sandbox";
 
 export interface BuiltInSkillSource {
   sourceId: string;
@@ -51,6 +52,7 @@ export const builtInSkillSources: BuiltInSkillSource[] = [
   source("pdf-optimization-print", pdfOptimizationPrint),
   source("pdf-page-images-assets", pdfPageImagesAssets),
   source("pdf-security-inspection", pdfSecurityInspection),
+  source("media-inspection-extraction", mediaInspectionExtraction),
   source("spreadsheet-data-analysis", spreadsheetDataAnalysis),
   source("spreadsheet-workbook-editing", spreadsheetWorkbookEditing),
   source("csv-json-cleaning", csvJsonCleaning),

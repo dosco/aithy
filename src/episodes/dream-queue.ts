@@ -14,6 +14,8 @@ import { captureProgramUsage, usageAttributionForConfig } from "../usage/capture
 import { detectionToUpsert, createDreamDetector, type DreamDetector } from "./dream-detector";
 import type { SqliteEpisodeStore } from "./episode-store";
 import type { RuntimeStore } from "../runtime/runtime-store";
+import type { SqliteMemoryStore } from "../memory/memory-store";
+import type { AgentEpisodeEntry } from "./types";
 
 export const DREAM_BATCH_DELAY_MS = 5 * 60_000;
 export const DREAM_DEDUP_TTL_MS = 10 * 60_000;
@@ -47,6 +49,7 @@ interface MessageRow {
 export interface DreamQueueDeps {
   config: AppConfig;
   episodes: SqliteEpisodeStore;
+  memory?: SqliteMemoryStore;
   runtimeStore?: RuntimeStore;
   tasks?: SqliteTaskStore;
   usage?: SqliteUsageStore;
@@ -273,13 +276,14 @@ export class DreamQueue {
     const fallbackEnd = newRows.at(-1)!.id;
     let stored = 0;
     for (const detection of detections) {
-      this.deps.episodes.upsert(detectionToUpsert(
+      const episode = this.deps.episodes.upsert(detectionToUpsert(
         detection,
         sessionId,
         fallbackStart,
         fallbackEnd,
         evidenceIds,
       ));
+      writeAgentOperationalMemory(this.deps.memory, this.deps.config, episode);
       stored += 1;
     }
     return stored;
@@ -312,6 +316,48 @@ export class DreamQueue {
     const task = this.deps.tasks.update(taskId, patch);
     if (task) this.deps.onTaskStatus?.(task);
   }
+}
+
+export function writeAgentOperationalMemory(
+  memory: SqliteMemoryStore | undefined,
+  config: Pick<AppConfig, "workspaceRoot">,
+  episode: AgentEpisodeEntry,
+): boolean {
+  if (!memory) return false;
+  const workspaceRoot = config.workspaceRoot?.trim();
+  if (!workspaceRoot) return false;
+  if (!isActionableAgentMemory(episode)) return false;
+  const failure = episode.outcome !== "success" || Boolean(episode.error);
+  memory.upsert({
+    id: `agent-memory:${episode.id}`,
+    kind: failure ? "failure_mode" : "lesson",
+    subject: "agent",
+    scopeKind: "workspace",
+    scopeRef: workspaceRoot,
+    guidance: "context",
+    title: `${failure ? "Failure mode" : "Lesson"}: ${episode.task}`.slice(0, 200),
+    body: agentMemoryBody(episode),
+    evidence: `episode:${episode.id}; session ${episode.sourceSessionId}; messages #${episode.evidenceStartMessageId}-#${episode.evidenceEndMessageId}`,
+    source: "dream",
+    importance: failure ? Math.min(1, episode.importance + 0.1) : episode.importance,
+  });
+  return true;
+}
+
+function isActionableAgentMemory(episode: AgentEpisodeEntry): boolean {
+  if (episode.outcome !== "success" || episode.error) return true;
+  return episode.notes.trim().length >= 20;
+}
+
+function agentMemoryBody(episode: AgentEpisodeEntry): string {
+  return [
+    `Task: ${episode.task}`,
+    `Approach: ${episode.approach}`,
+    `Outcome: ${episode.outcome}`,
+    episode.notes ? `Notes: ${episode.notes}` : null,
+    episode.error ? `Error: ${episode.error}` : null,
+    episode.toolNames.length > 0 ? `Tools: ${episode.toolNames.join(", ")}` : null,
+  ].filter(Boolean).join("\n");
 }
 
 export function shouldInspectDreamSegment(rows: readonly MessageRow[]): boolean {

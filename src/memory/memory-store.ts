@@ -10,7 +10,8 @@ import { hybridSearch } from "./hybrid-search";
 import type { Reranker } from "./rerank";
 import { tryLoadVecExtension } from "./vec-extension";
 import { normalizeMemoryTiming } from "./time-bound";
-import { buildPageWhere, rowToEntry, type MemoryRow } from "./store-row";
+import { buildMemorySearchFilters, buildPageWhere, rowToEntry, type MemoryRow } from "./store-row";
+import { normalizeMemoryMetadata } from "./metadata";
 import {
   retrievalDiagnostics,
   sourceStats,
@@ -19,17 +20,10 @@ import {
 import { addFusedHit, sortedFused, type FusedCandidate } from "../retrieval/fusion";
 import { buildRetrievalQueryPlan, type LexicalSearchQuery } from "../retrieval/query-plan";
 import type { EmbeddingHealthStats, TargetIndexCounts } from "../retrieval/indexing";
-import type {
-  MemoryEntry,
-  MemoryKind,
-  MemorySearchOptions,
-  MemoryUpsert,
-} from "./types";
+import type { MemoryEntry, MemoryGuidance, MemoryKind, MemorySearchOptions, MemoryScopeKind, MemorySubject, MemoryUpsert } from "./types";
 import { capBody, clamp01 } from "./store-utils";
 
-interface SearchRow extends MemoryRow {
-  bm25: number;
-}
+type SearchRow = MemoryRow & { bm25: number };
 
 const DEFAULT_PER_QUERY_LIMIT = 5;
 
@@ -88,19 +82,26 @@ export class SqliteMemoryStore {
     const body = capBody(input.body);
     const importance = clamp01(input.importance ?? 0.5);
     const timing = normalizeMemoryTiming(input);
+    const metadata = normalizeMemoryMetadata(input);
     this.db
       .query(
         `
           INSERT INTO memories (
-            id, kind, title, body, valid_from, valid_until, duration_days, evidence, frequency,
+            id, kind, subject, scope_kind, scope_ref, guidance,
+            title, body, valid_from, valid_until, duration_days, evidence, frequency,
             source, importance, created_at, updated_at
           )
           VALUES (
-            $id, $kind, $title, $body, $validFrom, $validUntil, $durationDays, $evidence,
+            $id, $kind, $subject, $scopeKind, $scopeRef, $guidance,
+            $title, $body, $validFrom, $validUntil, $durationDays, $evidence,
             $frequency, $source, $importance, $now, $now
           )
           ON CONFLICT(id) DO UPDATE SET
             kind = excluded.kind,
+            subject = excluded.subject,
+            scope_kind = excluded.scope_kind,
+            scope_ref = excluded.scope_ref,
+            guidance = excluded.guidance,
             title = excluded.title,
             body = excluded.body,
             valid_from = excluded.valid_from,
@@ -116,6 +117,10 @@ export class SqliteMemoryStore {
       .run({
         $id: id,
         $kind: input.kind,
+        $subject: metadata.subject,
+        $scopeKind: metadata.scopeKind,
+        $scopeRef: metadata.scopeRef,
+        $guidance: metadata.guidance,
         $title: input.title,
         $body: body,
         $validFrom: timing.validFrom,
@@ -185,8 +190,14 @@ export class SqliteMemoryStore {
     return row ? rowToEntry(row) : null;
   }
 
-  count(opts: { query?: string; kind?: MemoryKind } = {}): number {
-    const where = buildPageWhere({ query: opts.query, kind: opts.kind, cursor: null });
+  count(opts: {
+    query?: string;
+    kind?: MemoryKind;
+    subject?: MemorySubject;
+    guidance?: MemoryGuidance;
+    scopeKind?: MemoryScopeKind;
+  } = {}): number {
+    const where = buildPageWhere({ ...opts, cursor: null });
     const row = this.db
       .query(`SELECT COUNT(*) AS c FROM memories ${where.sql}`)
       .get(where.params as never) as { c: number } | undefined;
@@ -210,6 +221,9 @@ export class SqliteMemoryStore {
     limit: number;
     query?: string;
     kind?: MemoryKind;
+    subject?: MemorySubject;
+    guidance?: MemoryGuidance;
+    scopeKind?: MemoryScopeKind;
     sort?: "recent" | "retrieved";
   }): { items: MemoryEntry[]; nextCursor: { updatedAt: string; id: string; retrievedCount?: number } | null } {
     const limit = Math.max(1, opts.limit);
@@ -217,6 +231,9 @@ export class SqliteMemoryStore {
     const where = buildPageWhere({
       query: opts.query,
       kind: opts.kind,
+      subject: opts.subject,
+      guidance: opts.guidance,
+      scopeKind: opts.scopeKind,
       cursor: opts.cursor,
       sort,
     });
@@ -334,17 +351,12 @@ export class SqliteMemoryStore {
     queryCount: number,
     startedAt: number,
   ): { entries: MemoryEntry[]; diagnostics: RetrievalDiagnostics } {
-    const kindFilter = opts.kinds?.length
-      ? ` AND m.kind IN (${opts.kinds.map((_, i) => `$kind${i}`).join(", ")})`
-      : "";
+    const filters = buildMemorySearchFilters(opts);
     const excludeFilter = opts.excludeIds?.length
       ? ` AND m.id NOT IN (${opts.excludeIds.map((_, i) => `$excl${i}`).join(", ")})`
       : "";
 
-    const params: Record<string, SQLQueryBindings> = {};
-    opts.kinds?.forEach((kind, i) => {
-      params[`$kind${i}`] = kind;
-    });
+    const params: Record<string, SQLQueryBindings> = { ...filters.params };
     opts.excludeIds?.forEach((id, i) => {
       params[`$excl${i}`] = id;
     });
@@ -359,7 +371,7 @@ export class SqliteMemoryStore {
            JOIN memories m ON m.rowid = f.rowid
            WHERE memories_fts MATCH $match
              AND m.superseded_by IS NULL
-             ${kindFilter}
+             ${filters.sql}
              ${excludeFilter}
            ORDER BY rank
            LIMIT $limit`,

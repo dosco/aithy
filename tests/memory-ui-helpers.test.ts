@@ -16,6 +16,10 @@ describe("memory UI helpers", () => {
   test("buildMemoryHelp explains recall, type, validity, and evidence", () => {
     const help = buildMemoryHelp({
       kind: "preference",
+      subject: "user",
+      scopeKind: "global",
+      scopeRef: null,
+      guidance: "context",
       validFrom: "2026-05-01",
       validUntil: "2026-05-31",
       evidence: "The user said they prefer documentaries.",
@@ -25,9 +29,11 @@ describe("memory UI helpers", () => {
     });
 
     expect(help.summary).toBe(
-      "Can be recalled as preference context when a related request matches it.",
+      "Can be recalled as user preference context when a related request and scope match it.",
     );
     expect(help.details).toContain("Recalled 3 times; last recalled 2026-05-17");
+    expect(help.details).toContain("Global scope");
+    expect(help.details).toContain("Advisory context");
     expect(help.details).toContain("Applies 2026-05-01 through 2026-05-31");
     expect(help.details).toContain("Supported by saved evidence");
   });
@@ -35,6 +41,10 @@ describe("memory UI helpers", () => {
   test("buildMemoryHelp is honest when a memory has not been recalled", () => {
     const help = buildMemoryHelp({
       kind: "fact",
+      subject: "user",
+      scopeKind: "global",
+      scopeRef: null,
+      guidance: "context",
       validFrom: null,
       validUntil: null,
       evidence: null,
@@ -44,15 +54,19 @@ describe("memory UI helpers", () => {
     });
 
     expect(help.summary).toBe(
-      "Can be recalled as factual context when a related request matches it.",
+      "Can be recalled as user factual context when a related request and scope match it.",
     );
-    expect(help.details).toEqual(["Not recalled yet"]);
+    expect(help.details).toEqual(["Not recalled yet", "Global scope", "Advisory context"]);
   });
 
   test("buildMemoryHelp handles every memory kind", () => {
     for (const kind of MEMORY_KINDS) {
       const help = buildMemoryHelp({
         kind,
+        subject: "user",
+        scopeKind: "global",
+        scopeRef: null,
+        guidance: "context",
         validFrom: null,
         validUntil: null,
         evidence: null,
@@ -60,7 +74,7 @@ describe("memory UI helpers", () => {
         retrievedCount: 0,
         lastRecalledAt: null,
       });
-      expect(help.summary).toContain("when a related request matches it");
+      expect(help.summary).toContain("when a related request and scope match it");
     }
   });
 
