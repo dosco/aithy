@@ -3,6 +3,7 @@ name: Media Inspection And Extraction
 description: Inspect audio/video files and perform basic local extraction, thumbnails, transcoding, and normalization with ffmpeg tools.
 when_to_use: Use when the user asks about audio or video metadata, streams, codecs, durations, audio extraction, frame thumbnails, or simple local media conversion.
 tools: Bash(ffmpeg:*) Bash(ffprobe:*) Bash(mediainfo:*) Bash(python3:*) Read Write
+required_sandbox_capabilities: media
 tags: builtin media audio video ffmpeg ffprobe mediainfo metadata extraction transcode
 ---
 

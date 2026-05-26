@@ -146,6 +146,11 @@ export type WebLiveEvent =
         title: string;
         body: string | null;
         link: string | null;
+        read?: boolean;
+        conversationId?: string | null;
+        actionStatus?: "none" | "pending" | "resolved" | "expired";
+        actionExpiresAt?: string | null;
+        resolvedAt?: string | null;
         createdAt: string;
       };
     }
@@ -177,6 +182,22 @@ export type WebLiveEvent =
       createdAt: string;
       streamId?: string;
     } & RuntimeServiceStatus)
+  | {
+      type: "sandbox-command";
+      id: string;
+      createdAt: string;
+      streamId?: string;
+      commandId: string;
+      sessionId: string;
+      phase: "started" | "stdout" | "stderr" | "completed" | "failed" | "timed-out";
+      command?: string;
+      cwd?: string;
+      timeoutProfile?: string;
+      chunk?: string;
+      exitCode?: number;
+      timedOut?: boolean;
+      error?: string;
+    }
   | {
       type: "queue-status";
       id: string;

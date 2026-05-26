@@ -10,11 +10,18 @@ import {
   FileVideo,
   Image as ImageIcon,
 } from "lucide-react";
+import type { LayoutName } from "../../src/settings/types";
 import type { SerializableBotMessage } from "../../src/web/live-events";
 
 type ArtifactMessage = Extract<SerializableBotMessage, { kind: "artifact" }>;
 
-export function ArtifactCard({ artifact }: { artifact: ArtifactMessage }) {
+export function ArtifactCard({
+  artifact,
+  layout = "chat",
+}: {
+  artifact: ArtifactMessage;
+  layout?: LayoutName;
+}) {
   const [expanded, setExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
   const Icon = iconForArtifact(artifact);
@@ -31,7 +38,8 @@ export function ArtifactCard({ artifact }: { artifact: ArtifactMessage }) {
     }
   }
 
-  return (
+  if (layout === "work") {
+    return (
     <div className="app-chat-bubble-frame w-fit max-w-[min(62%,30rem)] overflow-hidden rounded-lg border border-[rgb(var(--border)/0.42)] bg-[rgb(var(--panel))] text-sm shadow-[0_2px_8px_rgba(24,24,27,0.05)]">
       <div className="flex items-start gap-3 px-4 py-3">
         <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-[rgb(var(--muted))] text-[rgb(var(--muted-foreground))]">
@@ -97,6 +105,74 @@ export function ArtifactCard({ artifact }: { artifact: ArtifactMessage }) {
       </div>
 
       {expanded && hasPreview ? <ArtifactPreview artifact={artifact} detailsId={detailsId} /> : null}
+    </div>
+    );
+  }
+
+  return (
+    <div className="app-chat-bubble-frame w-fit max-w-[min(62%,34rem)]">
+      <div className="app-chat-bubble app-chat-bubble-assistant overflow-hidden rounded-[12px] border border-[rgb(var(--border)/0.36)] bg-[rgb(var(--bubble-bot))] text-sm shadow-[0_1px_2px_rgb(0_0_0/0.05)]">
+        <div className="flex items-start gap-2.5 px-3 py-2.5">
+          <div className="mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md bg-[rgb(var(--muted)/0.72)] text-[rgb(var(--muted-foreground))]">
+            <Icon className="h-3.5 w-3.5" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="font-mono text-[10px] uppercase tracking-[0.16em] text-[rgb(var(--muted-foreground))]">
+              artifact
+            </div>
+            <div className="mt-0.5 truncate text-[0.95rem] font-medium leading-6">{artifact.title}</div>
+            {artifact.description ? (
+              <div className="truncate text-xs leading-5 text-[rgb(var(--muted-foreground))]">{artifact.description}</div>
+            ) : null}
+            <div className="truncate font-mono text-[10px] text-[rgb(var(--muted-foreground))]">
+              {artifact.filename} · {formatBytes(artifact.sizeBytes)}
+            </div>
+          </div>
+          <div className="-mr-1 flex shrink-0 items-center gap-0.5">
+            <button
+              type="button"
+              aria-label={copied ? "Sandbox path copied" : "Copy sandbox path"}
+              title={copied ? "Sandbox path copied" : "Copy sandbox path"}
+              className="grid h-7 w-7 place-items-center rounded-md text-[rgb(var(--muted-foreground))] transition-colors hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
+              onClick={copyPath}
+            >
+              {copied ? <Check className="h-3.5 w-3.5" /> : <Clipboard className="h-3.5 w-3.5" />}
+            </button>
+            <a
+              href={artifact.openUrl}
+              target="_blank"
+              rel="noreferrer"
+              aria-label="Open artifact"
+              title="Open artifact"
+              className="grid h-7 w-7 place-items-center rounded-md text-[rgb(var(--muted-foreground))] transition-colors hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
+            >
+              <ExternalLink className="h-3.5 w-3.5" />
+            </a>
+            <a
+              href={artifact.downloadUrl}
+              aria-label="Download artifact"
+              title="Download artifact"
+              className="grid h-7 w-7 place-items-center rounded-md text-[rgb(var(--muted-foreground))] transition-colors hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
+            >
+              <Download className="h-3.5 w-3.5" />
+            </a>
+            {hasPreview ? (
+              <button
+                type="button"
+                aria-expanded={expanded}
+                aria-controls={detailsId}
+                aria-label={expanded ? "Collapse artifact preview" : "Expand artifact preview"}
+                title={expanded ? "Collapse artifact preview" : "Expand artifact preview"}
+                className="grid h-7 w-7 place-items-center rounded-md text-[rgb(var(--muted-foreground))] transition-colors hover:bg-[rgb(var(--muted))] hover:text-[rgb(var(--foreground))]"
+                onClick={() => setExpanded((value) => !value)}
+              >
+                <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
+              </button>
+            ) : null}
+          </div>
+        </div>
+        {expanded && hasPreview ? <ArtifactPreview artifact={artifact} detailsId={detailsId} /> : null}
+      </div>
     </div>
   );
 }

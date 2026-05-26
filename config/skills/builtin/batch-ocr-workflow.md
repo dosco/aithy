@@ -3,6 +3,7 @@ name: Batch OCR Workflow
 description: OCR many PDFs or images with per-file logs, page markers, failures, and summary outputs.
 when_to_use: Use when the user asks to OCR a folder, archive, or multiple scanned files.
 tools: Bash(find:*) Bash(docling:*) Bash(pdftotext:*) Bash(tesseract:*) Bash(pdftoppm:*) Bash(python3:*) Read Write
+required_sandbox_capabilities: document
 tags: builtin batch ocr scanned documents logs
 ---
 

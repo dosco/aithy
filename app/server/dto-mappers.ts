@@ -7,6 +7,7 @@ import type { MemoryEntry } from "../../src/memory/types";
 import type { MemoryRun } from "../../src/memory/memory-runs";
 import type { NotificationEntry } from "../../src/notifications/types";
 import type { UsageBucket } from "../../src/usage/types";
+import type { TrainingDataSummary } from "../../src/training-data/types";
 import type { AutomationRecord, AutomationRunRecord } from "../../src/automations/types";
 import type { SqliteAutomationStore } from "../../src/automations/store";
 import { serializableSession } from "../../src/web/live-events";
@@ -14,7 +15,6 @@ import type {
   ConfigDto,
   MemoryDto,
   MemoryRunDto,
-  NotificationDto,
   ProfileDto,
   ProfileImageDto,
   RuntimeCapabilitiesDto,
@@ -25,8 +25,11 @@ import type {
   AutomationDto,
   AutomationRunDto,
 } from "./dto-types";
+import type { NotificationDto } from "./notification.dto-types";
+import type { TrainingDataSummaryDto } from "./training-data.dto";
 import type { StoredSettings } from "../../src/settings/types";
 import { resolveSandboxImageConfig } from "../../src/sandbox/image-catalog";
+import type { RuntimeServiceStatus } from "../../src/runtime/protocol/types";
 
 export function sessionDto(session: BotSessionSummary): SessionSummaryDto {
   return serializableSession(session);
@@ -53,6 +56,7 @@ export function configDto(config: AppConfig, settings?: StoredSettings): ConfigD
     sandboxImageSelection: config.sandboxImageSelection ?? sandboxImage.selection,
     customSandboxImages: config.customSandboxImages ?? sandboxImage.customImages,
     sandboxImageOptions: config.sandboxImageOptions ?? sandboxImage.options,
+    sandboxHealth: null,
     sandboxCpus: config.sandboxCpus,
     sandboxMemoryMb: config.sandboxMemoryMb,
     sandboxNetwork: config.sandboxNetwork,
@@ -63,14 +67,22 @@ export function configDto(config: AppConfig, settings?: StoredSettings): ConfigD
     parallelSearchMcpUrl: config.parallelSearchMcpUrl,
     grokSubscriptionConnected: config.grokSubscriptionConnected ?? false,
     systemBashEnabled: config.systemBashEnabled,
+    trainingDataCaptureEnabled: config.trainingDataCaptureEnabled,
     traceEnabled: config.traceEnabled,
     botId: config.botId,
     stateDbPath: config.stateDbPath,
     workspaceRoot: config.workspaceRoot,
-    globalMounts: (config.globalMounts ?? []).map((m) => ({ hostPath: m.hostPath })),
+    globalMounts: (config.globalMounts ?? []).map((m) => ({ hostPath: m.hostPath, mode: m.mode ?? "read-only" })),
     aiProviderProfiles: settings?.runtime.aiProviderProfiles ?? {},
     searchProviderProfiles: settings?.runtime.searchProviderProfiles ?? {},
   };
+}
+
+export function sandboxHealthFromService(service: RuntimeServiceStatus | null | undefined): ConfigDto["sandboxHealth"] {
+  const detail = service?.detail;
+  if (!detail || typeof detail !== "object") return null;
+  const health = (detail as { health?: unknown }).health;
+  return health && typeof health === "object" ? health as ConfigDto["sandboxHealth"] : null;
 }
 
 export function soulDto(soul: SoulProfile): SoulDto {
@@ -134,6 +146,16 @@ export function usageBucketDto(bucket: UsageBucket): UsageBucketDto {
   return { ...bucket };
 }
 
+export function trainingDataSummaryDto(
+  summary: TrainingDataSummary,
+  captureEnabled: boolean,
+): TrainingDataSummaryDto {
+  return {
+    captureEnabled,
+    ...summary,
+  };
+}
+
 export function memoryRunDto(run: MemoryRun): MemoryRunDto {
   return { ...run };
 }
@@ -171,6 +193,7 @@ export function skillDto(skill: SkillEntry): SkillDto {
     whenToUse: skill.when_to_use,
     body: skill.body,
     allowedTools: skill.allowed_tools,
+    requiredSandboxCapabilities: skill.required_sandbox_capabilities,
     tags: skill.tags,
     disableModelInvocation: skill.disable_model_invocation,
     userInvocable: skill.user_invocable,

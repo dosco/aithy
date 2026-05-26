@@ -44,4 +44,20 @@ export const usageMigrations: readonly SqliteMigration[] = [
         ADD COLUMN cache_read_tokens INTEGER NOT NULL DEFAULT 0;
     `,
   },
+  {
+    version: 4,
+    sql: `
+      ALTER TABLE llm_usage
+        ADD COLUMN component TEXT NOT NULL DEFAULT 'other';
+
+      ALTER TABLE llm_usage
+        ADD COLUMN stage TEXT;
+
+      UPDATE llm_usage SET component = purpose WHERE component = 'other';
+
+      DROP INDEX IF EXISTS llm_usage_day_idx;
+      CREATE INDEX llm_usage_day_component_idx
+        ON llm_usage(date(occurred_at), provider, model, purpose, component, stage);
+    `,
+  },
 ];

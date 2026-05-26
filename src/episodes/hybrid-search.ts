@@ -6,7 +6,7 @@ import type { Reranker } from "../memory/rerank";
 import { sourceStats, type RetrievalSourceStats } from "../retrieval/diagnostics";
 import { addFusedHit, sortedFused, type FusedCandidate } from "../retrieval/fusion";
 import type { LexicalSearchQuery, RetrievalLane } from "../retrieval/query-plan";
-import { episodeEmbedText } from "./embed-text";
+import { episodeEmbedText, episodeHash } from "./embed-text";
 import type { AgentEpisodeEntry, EpisodeOutcome, EpisodeSearchOptions } from "./types";
 
 interface EpisodeRow {
@@ -39,6 +39,9 @@ interface FtsRow extends EpisodeRow {
 interface VecRow extends EpisodeRow {
   rowid: number;
   distance: number;
+  body_hash: string;
+  model_id: string;
+  dim: number;
 }
 
 interface RankedHit {
@@ -72,7 +75,7 @@ export async function episodeHybridSearch(
     Promise.all(rawQueries.map((raw) =>
       embedder
         .embedQuery(raw)
-        .then((vec) => runVec(db, vec, excludeFilter))
+        .then((vec) => runVec(db, embedder, vec, excludeFilter))
         .catch(() => [] as RankedHit[]),
     )),
   ]);
@@ -200,6 +203,7 @@ function runFts(
 
 function runVec(
   db: Database,
+  embedder: Embedder,
   embedding: Float32Array,
   excludeFilter: ReturnType<typeof buildExcludeFilter>,
 ): RankedHit[] {
@@ -207,19 +211,28 @@ function runVec(
   const rows = db
     .query(
       `SELECT e.rowid AS rowid, e.*, v.distance
+              , meta.body_hash, meta.model_id, meta.dim
          FROM agent_episodes_vec v
          JOIN agent_episodes e ON e.rowid = v.rowid
+         JOIN agent_episode_embed_meta meta ON meta.episode_id = e.id
         WHERE v.embedding MATCH $vec
           AND k = $k
+          AND meta.model_id = $modelId
+          AND meta.dim = $dim
           ${excludeFilter.sql}
         ORDER BY v.distance`,
     )
     .all({
       $vec: vecToBlob(embedding),
       $k: k,
+      $modelId: embedder.modelId,
+      $dim: embedder.dim,
       ...excludeFilter.params,
     } as never) as VecRow[];
-  return rows.slice(0, PER_RANKER_LIMIT).map((row, rank) => ({ row, rank, lane: "semantic" }));
+  return rows
+    .filter((row) => row.body_hash === episodeHash(episodeEmbedText(rowToEpisode(row))))
+    .slice(0, PER_RANKER_LIMIT)
+    .map((row, rank) => ({ row, rank, lane: "semantic" }));
 }
 
 function addToFusion(

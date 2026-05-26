@@ -12,7 +12,7 @@ interface SkillChunkHit {
 
 export function replaceSkillSearchChunks(
   db: Database,
-  skill: Pick<SkillUpsert, "id" | "name" | "description" | "whenToUse" | "allowedTools" | "tags" | "body">,
+  skill: Pick<SkillUpsert, "id" | "name" | "description" | "whenToUse" | "allowedTools" | "requiredSandboxCapabilities" | "tags" | "body">,
   files: readonly SkillFileInput[],
   updatedAt: string,
 ): void {
@@ -39,6 +39,7 @@ export function backfillSkillSearchChunks(db: Database, skills: readonly SkillEn
       description: skill.description,
       whenToUse: skill.when_to_use,
       allowedTools: skill.allowed_tools,
+      requiredSandboxCapabilities: skill.required_sandbox_capabilities,
       tags: skill.tags,
       body: skill.body,
     }, skill.files, now);
@@ -78,7 +79,7 @@ export function searchSkillChunkIds(
 }
 
 function skillSearchChunks(
-  skill: Pick<SkillUpsert, "id" | "name" | "description" | "whenToUse" | "allowedTools" | "tags" | "body">,
+  skill: Pick<SkillUpsert, "id" | "name" | "description" | "whenToUse" | "allowedTools" | "requiredSandboxCapabilities" | "tags" | "body">,
   files: readonly SkillFileInput[],
 ): Array<{ key: string; text: string }> {
   const card = [
@@ -87,6 +88,7 @@ function skillSearchChunks(
     skill.whenToUse ? `when to use: ${skill.whenToUse}` : null,
     skill.tags ? `tags: ${skill.tags}` : null,
     skill.allowedTools ? `tools: ${skill.allowedTools}` : null,
+    skill.requiredSandboxCapabilities ? `requires sandbox capabilities: ${skill.requiredSandboxCapabilities}` : null,
   ].filter(Boolean).join("\n");
   return [
     { key: "card", text: card },

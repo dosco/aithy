@@ -14,21 +14,33 @@ import type {
   UserMessage,
 } from "../session/types";
 import type { RunMessageDeps } from "./run-message";
-import type { TurnTraceChatLog } from "./trace-writer";
+import type { AxChatLogEntry } from "@ax-llm/ax";
 
-export function safeGetChatLog(program: unknown): TurnTraceChatLog {
-  const empty: TurnTraceChatLog = { actor: [], responder: [] };
+export function safeGetChatLog(program: unknown): readonly AxChatLogEntry[] {
   const fn = (program as { getChatLog?: () => unknown })?.getChatLog;
-  if (typeof fn !== "function") return empty;
+  if (typeof fn !== "function") return [];
   try {
-    const log = fn.call(program) as Partial<TurnTraceChatLog> | null | undefined;
-    return {
-      actor: Array.isArray(log?.actor) ? log.actor : [],
-      responder: Array.isArray(log?.responder) ? log.responder : [],
-    };
+    return normalizeChatLogShape(fn.call(program));
   } catch {
-    return empty;
+    return [];
   }
+}
+
+function normalizeChatLogShape(value: unknown): readonly AxChatLogEntry[] {
+  if (Array.isArray(value)) return value.filter(isChatLogEntry);
+  if (!value || typeof value !== "object") return [];
+  const split = value as { actor?: unknown; responder?: unknown };
+  return [
+    ...(Array.isArray(split.actor) ? split.actor.filter(isChatLogEntry) : []),
+    ...(Array.isArray(split.responder) ? split.responder.filter(isChatLogEntry) : []),
+  ];
+}
+
+function isChatLogEntry(value: unknown): value is AxChatLogEntry {
+  return Boolean(value)
+    && typeof value === "object"
+    && typeof (value as { model?: unknown }).model === "string"
+    && Array.isArray((value as { messages?: unknown }).messages);
 }
 
 export function toChannelContext(message: ChannelMessage) {
@@ -77,6 +89,7 @@ export function wrapSkillsSearch(
   inner: AxAgentSkillsSearchFn | undefined,
   sink: AssistantToolCallMessage[],
   onMessage?: (message: AssistantToolCallMessage) => void,
+  logRetrieval?: (message: string, detail?: unknown) => void,
 ): AxAgentSkillsSearchFn | undefined {
   if (!inner) return undefined;
   return async (queries) => {
@@ -100,6 +113,7 @@ export function wrapSkillsSearch(
     };
     sink.push(message);
     onMessage?.(message);
+    logRetrieval?.("skills search", message.toolResult);
     return results;
   };
 }

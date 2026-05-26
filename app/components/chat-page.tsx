@@ -69,12 +69,15 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
       <div className={`${chat.activeSession?.parentSessionId ? "mt-5 " : ""}app-chat-timeline flex flex-1 flex-col gap-5`}>
         <ChatTimeline
           messages={chat.messages}
+          tasks={chat.tasks}
           activities={chat.activities}
           permissionRequests={chat.permissionRequests}
           retryableTasks={chat.retryableChatTasks}
           retryingTaskIds={chat.retryingTaskIds}
           details={details}
           sending={chat.sessionBusy}
+          localTurnPhase={chat.localTurnPhase}
+          layout={initialState.settings.ui.layout}
           retryDisabled={chat.sessionBusy}
           resetKey={chat.activeSessionId}
           hasMoreBefore={chat.hasMoreBefore}

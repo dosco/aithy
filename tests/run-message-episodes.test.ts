@@ -122,7 +122,7 @@ describe("runMessage episode recall", () => {
             matches: expect.arrayContaining([
               expect.objectContaining({
                 id: "episode:ep-1",
-                contentPreview: expect.stringContaining("Raw transcript excerpt: #1 user: please debug the postgres tests"),
+                contentPreview: expect.stringContaining("Evidence excerpt: #1 user: please debug the postgres tests"),
               }),
             ]),
           }),
@@ -186,7 +186,7 @@ describe("runMessage episode recall", () => {
             matches: [
               expect.objectContaining({
                 id: "episode:ep-1",
-                contentPreview: expect.not.stringContaining("Raw transcript excerpt"),
+                contentPreview: expect.not.stringContaining("Evidence excerpt"),
               }),
             ],
           }),

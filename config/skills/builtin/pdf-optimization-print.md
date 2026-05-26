@@ -3,6 +3,7 @@ name: PDF Optimization And Print Output
 description: Compress, linearize, and prepare PDFs for sharing or print using Ghostscript and qpdf.
 when_to_use: Use when the user asks to reduce PDF size, optimize for web, linearize, or create print-friendly output.
 tools: Bash(gs:*) Bash(qpdf:*) Bash(pdfinfo:*) Read Write
+required_sandbox_capabilities: document
 tags: builtin pdf ghostscript qpdf optimize compress print
 ---
 

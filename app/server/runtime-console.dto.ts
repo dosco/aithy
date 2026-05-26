@@ -37,6 +37,7 @@ export interface RuntimeCommandDto {
   createdAt: string;
   claimedAt: string | null;
   completedAt: string | null;
+  payload: JsonValue | null;
   detail: JsonValue | null;
 }
 
@@ -175,6 +176,7 @@ function runtimeCommandDto(row: RuntimeCommandRow): RuntimeCommandDto {
     createdAt: row.createdAt,
     claimedAt: row.claimedAt,
     completedAt: row.completedAt,
+    payload: serializableDetail(row.payload),
     detail: serializableDetail(row.detail),
   };
 }

@@ -5,11 +5,14 @@ import { AsciiSplash } from "@/components/ascii-splash";
 import {
   displayToolName,
   TimelineItem,
-  TypingIndicator,
+  WorkingIndicator,
   type TimelineEntry,
 } from "@/components/chat-timeline-entry";
+import { deriveWorkingLabel } from "@/components/chat-working-status";
 import type { SessionSummaryDto, TaskDto } from "@/server/dto";
+import type { LayoutName } from "../../src/settings/types";
 import type { SerializableBotMessage, SerializableSystemPermissionRequest, WebLiveEvent } from "../../src/web/live-events";
+import type { LocalChatTurnPhase } from "./chat-turn-model";
 
 type ActivityEvent = Extract<WebLiveEvent, { type: "activity" }>;
 
@@ -26,6 +29,7 @@ const VIRTUALIZE_AFTER_ITEMS = 60;
 
 export function ChatTimeline({
   messages,
+  tasks,
   subSessions,
   activities,
   permissionRequests,
@@ -33,6 +37,8 @@ export function ChatTimeline({
   retryingTaskIds,
   details,
   sending,
+  localTurnPhase,
+  layout,
   retryDisabled,
   resetKey,
   hasMoreBefore,
@@ -44,6 +50,7 @@ export function ChatTimeline({
   onRetryTask,
 }: {
   messages: ChatMessageItem[];
+  tasks: TaskDto[];
   subSessions: SessionSummaryDto[];
   activities: ActivityEvent[];
   permissionRequests: SerializableSystemPermissionRequest[];
@@ -51,6 +58,8 @@ export function ChatTimeline({
   retryingTaskIds: Set<string>;
   details: boolean;
   sending: boolean;
+  localTurnPhase: LocalChatTurnPhase;
+  layout: LayoutName;
   retryDisabled: boolean;
   resetKey: string | null;
   hasMoreBefore: boolean;
@@ -69,6 +78,7 @@ export function ChatTimeline({
   const timeline = useMemo(
     () => buildTimeline({
       messages,
+      tasks,
       subSessions,
       activities,
       permissionRequests,
@@ -77,9 +87,11 @@ export function ChatTimeline({
       retryDisabled,
       details,
       sending,
+      localTurnPhase,
     }),
     [
       messages,
+      tasks,
       subSessions,
       activities,
       permissionRequests,
@@ -88,6 +100,7 @@ export function ChatTimeline({
       retryDisabled,
       details,
       sending,
+      localTurnPhase,
     ],
   );
 
@@ -167,10 +180,11 @@ export function ChatTimeline({
         {renderedItems.map((item) => (
           <MeasuredRow key={item.key} itemKey={item.key} onHeight={recordHeight}>
             {item.kind === "typing"
-              ? <TypingIndicator />
+              ? <WorkingIndicator label={item.label} />
               : (
                   <TimelineItem
                     item={item}
+                    layout={layout}
                     onOpenSession={onOpenSession}
                     onPermissionDecision={onPermissionDecision}
                     onPermissionRetry={onPermissionRetry}
@@ -201,6 +215,7 @@ export function countDebugItems(
 
 export function buildTimeline(input: {
   messages: ChatMessageItem[];
+  tasks: TaskDto[];
   subSessions: SessionSummaryDto[];
   activities: ActivityEvent[];
   permissionRequests: SerializableSystemPermissionRequest[];
@@ -209,6 +224,7 @@ export function buildTimeline(input: {
   retryDisabled: boolean;
   details: boolean;
   sending: boolean;
+  localTurnPhase?: LocalChatTurnPhase;
 }): TimelineEntry[] {
   const entries: Array<{ at: string; entry: TimelineEntry }> = [];
   const messageDayKeys = new Set<string>();
@@ -283,7 +299,13 @@ export function buildTimeline(input: {
   }
   entries.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
   const out = withDayDividers(entries, messageDayKeys);
-  if (input.sending) out.push({ kind: "typing", key: "__typing__" });
+  if (input.sending) {
+    out.push({
+      kind: "typing",
+      key: "__typing__",
+      label: deriveWorkingLabel(input),
+    });
+  }
   return out;
 }
 

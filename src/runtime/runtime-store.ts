@@ -46,6 +46,7 @@ import {
   createPermissionRequest as createRuntimePermissionRequest,
   decidePermissionRequest as decideRuntimePermissionRequest,
   maintainPermissionRequests as maintainRuntimePermissionRequests,
+  pendingPermissionRequestsAll as pendingRuntimePermissionRequestsAll,
   pendingPermissionRequests as pendingRuntimePermissionRequests,
   permissionRequest as runtimePermissionRequest,
   type CreateSystemPermissionRequestInput,
@@ -245,6 +246,10 @@ export class RuntimeStore {
 
   pendingPermissionRequests(conversationId: string): SystemPermissionRequest[] {
     return pendingRuntimePermissionRequests(this.db, conversationId);
+  }
+
+  pendingPermissionRequestsAll(): SystemPermissionRequest[] {
+    return pendingRuntimePermissionRequestsAll(this.db);
   }
 
   maintainPermissionRequests(now = new Date()): { expired: number; pruned: number } {

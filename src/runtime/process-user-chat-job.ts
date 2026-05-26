@@ -13,14 +13,16 @@ import type { SqliteTranscriptRecallStore } from "../retrieval/transcript-recall
 import type { DreamQueue } from "../episodes/dream-queue";
 import type { SkillCandidateQueue } from "../skills/candidate-queue";
 import type { NotificationCreate, NotificationEntry } from "../notifications/types";
+import type { SqliteNotificationStore } from "../notifications/notification-store";
 import type { UserProfile } from "../profile/types";
 import type { SandboxProvider } from "../sandbox/provider";
 import type { CapabilityBroker } from "../security/capability-broker";
 import type { SessionManager } from "../session/session-manager";
 import type { SoulProfile } from "../soul/types";
-import { formatSkillContent, formatSkillSearchContent, type SkillMatchKind } from "../skills/skills-store";
+import { formatSkillContent, type SkillMatchKind } from "../skills/skills-store";
 import type { SkillResolvedMatch, SqliteSkillsStore } from "../skills/skills-store";
 import type { SqliteUsageStore } from "../usage/usage-store";
+import type { SqliteTrainingDataStore } from "../training-data/store";
 import type { RuntimeStore } from "./runtime-store";
 import type { SqliteTaskStore } from "../tasks/task-store";
 import type { AutomationToolActions } from "../automations/tool-actions";
@@ -41,6 +43,7 @@ interface RuntimeForUserChat {
   dreamQueue?: DreamQueue;
   skillCandidateQueue?: SkillCandidateQueue;
   usage: SqliteUsageStore;
+  trainingData: SqliteTrainingDataStore;
   activeRuns: ActiveRunRegistry;
   skills: SqliteSkillsStore;
   capabilities?: CapabilityBroker;
@@ -49,6 +52,7 @@ interface RuntimeForUserChat {
   automationActions?: AutomationToolActions;
   logRetrieval?(message: string, detail?: unknown): void;
   notify(input: NotificationCreate): NotificationEntry;
+  notifications: SqliteNotificationStore;
   flushSessionState?(): Promise<void>;
 }
 
@@ -81,6 +85,7 @@ export async function processUserChatJob(
     artifacts: runtime.artifacts,
     memoryQueue: runtime.memoryQueue,
     usage: runtime.usage,
+    trainingData: runtime.trainingData,
     activeRuns: runtime.activeRuns,
     capabilities: runtime.capabilities,
     runtimeStore: runtime.runtimeStore,
@@ -88,6 +93,7 @@ export async function processUserChatJob(
     automations: runtime.automationActions,
     taskId: data.taskId,
     notify: (input) => runtime.notify(input),
+    resolveNotificationActions: (input) => runtime.notifications.resolvePendingActions(input),
     flushSessionState: runtime.flushSessionState ? () => runtime.flushSessionState?.() ?? Promise.resolve() : undefined,
     skills: trackedSkills.skills,
     skillsStore: runtime.skills,
@@ -195,12 +201,12 @@ export function createTrackedSkills(
         const startedAt = performance.now();
         const matches = store.resolveSearchQueries(queries);
         recordLoaded(matches);
-        const results = matches.map(({ skill }) => ({ id: skill.id, name: skill.name, content: formatSkillSearchContent(skill) }));
+        const results = matches.map(({ skill }) => ({ id: skill.id, name: skill.name, content: formatSkillContent(skill) }));
         return Object.assign(results, { diagnostics: [retrievalDiagnostics({ source: "skills", mode: "fts-only", queryCount: queries.length, startedAt, sources: [] })] });
       }
       return store.resolveSearchQueriesSemantic(queries).then((matches) => {
         recordLoaded(matches);
-        const results = matches.map(({ skill }) => ({ id: skill.id, name: skill.name, content: formatSkillSearchContent(skill) }));
+        const results = matches.map(({ skill }) => ({ id: skill.id, name: skill.name, content: formatSkillContent(skill) }));
         return Object.assign(results, (matches as { diagnostics?: unknown }).diagnostics ? { diagnostics: (matches as { diagnostics?: unknown }).diagnostics } : {});
       });
     },

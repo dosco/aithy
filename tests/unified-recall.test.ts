@@ -70,6 +70,23 @@ describe("unified memory recall", () => {
     expect(result.diagnostics.sources.map((source) => source.source).sort()).toEqual(["episodes", "memories"]);
   });
 
+  test("episode-only recall does not update memory counters with an empty id list", async () => {
+    const dbPath = await tempDbPath();
+    const memory = new SqliteMemoryStore(dbPath);
+    const episodes = new SqliteEpisodeStore(dbPath);
+    episodes.upsert({
+      task: "Investigate sqlite recall",
+      approach: "Use an episode with no matching memory.",
+      outcome: "success",
+      sourceSessionId: "s1",
+      evidenceStartMessageId: 1,
+      evidenceEndMessageId: 2,
+    });
+
+    const result = await unifiedMemoryRecall({ memory, episodes, queries: ["sqlite recall"], limit: 1 });
+    expect(result.hits.map((hit) => hit.source)).toEqual(["episode"]);
+  });
+
   test("preload recall injects a sparse evidence pack", async () => {
     const dbPath = await tempDbPath();
     const memory = new SqliteMemoryStore(dbPath);

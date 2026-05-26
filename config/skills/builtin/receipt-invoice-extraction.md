@@ -3,6 +3,7 @@ name: Receipt And Invoice Extraction
 description: Extract structured fields and line items from receipts, invoices, and simple forms into CSV or JSON.
 when_to_use: Use for receipts, invoices, purchase orders, bills, statements, or form-like scanned documents.
 tools: Bash(docling:*) Bash(tesseract:*) Bash(python3:*) Read Write
+required_sandbox_capabilities: document
 tags: builtin receipts invoices forms ocr csv json
 ---
 

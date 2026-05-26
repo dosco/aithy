@@ -115,8 +115,19 @@ function normalizeRuntimeSettings(runtime: StoredSettings["runtime"]): StoredSet
   if (typeof next.systemBashEnabled !== "boolean") {
     delete next.systemBashEnabled;
   }
+  if (typeof next.trainingDataCaptureEnabled !== "boolean") {
+    delete next.trainingDataCaptureEnabled;
+  } else {
+    delete next.traceEnabled;
+  }
+  if (typeof next.traceEnabled !== "boolean") {
+    delete next.traceEnabled;
+  }
   if (next.localInference !== undefined) {
     next.localInference = normalizeLocalInferenceSettings(next.localInference);
+  }
+  if (next.globalMounts !== undefined) {
+    next.globalMounts = normalizeGlobalMounts(next.globalMounts);
   }
   return next;
 }
@@ -125,4 +136,15 @@ function normalizeSandboxProvider(value: unknown): StoredSettings["runtime"]["sa
   if (value === "microsandbox") return "microsandbox";
   if (value === "disabled" || value === "mock") return "disabled";
   return undefined;
+}
+
+function normalizeGlobalMounts(value: unknown): StoredSettings["runtime"]["globalMounts"] {
+  if (!Array.isArray(value)) return undefined;
+  return value
+    .filter((item): item is { hostPath?: unknown; mode?: unknown } => Boolean(item) && typeof item === "object")
+    .map((item) => ({
+      hostPath: typeof item.hostPath === "string" ? item.hostPath : "",
+      mode: item.mode === "read-write" ? "read-write" as const : "read-only" as const,
+    }))
+    .filter((item) => item.hostPath.trim());
 }

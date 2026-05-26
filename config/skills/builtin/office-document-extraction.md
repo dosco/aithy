@@ -3,6 +3,7 @@ name: Office Document Extraction
 description: Extract text, tables, slides, and workbook data from DOCX, PPTX, and XLSX files.
 when_to_use: Use when the user specifically provides Office files or asks to extract content from Word, PowerPoint, or Excel.
 tools: Bash(docling:*) Bash(python3:*) Read Write
+required_sandbox_capabilities: document
 tags: builtin office docx pptx xlsx docling openpyxl pandas
 ---
 

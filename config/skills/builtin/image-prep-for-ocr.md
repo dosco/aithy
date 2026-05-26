@@ -3,6 +3,7 @@ name: Image Prep For OCR
 description: Prepare images for OCR with Pillow-based cleanup, resizing, grayscale, contrast, crop, and thresholding.
 when_to_use: Use when OCR is poor because the source image is skewed, low contrast, too small, noisy, or oddly cropped.
 tools: Bash(python3:*) Bash(tesseract:*) Read Write
+required_sandbox_capabilities: document
 tags: builtin image ocr pillow preprocessing tesseract
 ---
 

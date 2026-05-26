@@ -16,6 +16,7 @@ export function skillEntryFromRow(db: Database, row: SkillRow): SkillEntry {
     description: row.description,
     when_to_use: row.when_to_use,
     allowed_tools: row.allowed_tools,
+    required_sandbox_capabilities: row.required_sandbox_capabilities,
     tags: row.tags,
     body: shiftHeadingsToAtLeastH4(row.content),
     files: skillFiles(db, row.id),

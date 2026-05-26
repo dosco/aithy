@@ -11,6 +11,8 @@ export interface UsageRecord {
   provider: string;
   model: string;
   purpose: UsagePurpose;
+  component: string;
+  stage: "ctx" | "task" | null;
   inputTokens: number;
   outputTokens: number;
   thoughtTokens: number;
@@ -26,6 +28,8 @@ export interface UsageInsert {
   provider: string;
   model: string;
   purpose: UsagePurpose;
+  component?: string | null;
+  stage?: "ctx" | "task" | null;
   inputTokens: number;
   outputTokens: number;
   thoughtTokens?: number;
@@ -41,6 +45,8 @@ export interface UsageBucket {
   provider: string;
   model: string;
   purpose: UsagePurpose;
+  component: string;
+  stage: "ctx" | "task" | null;
   inputTokens: number;
   outputTokens: number;
   thoughtTokens: number;

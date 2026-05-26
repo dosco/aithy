@@ -14,6 +14,9 @@ function formatSkill(skill: SkillEntry, options: { maxBodyChars?: number } = {})
   if (skill.when_to_use) parts.push(`**When to use:** ${skill.when_to_use}`);
   if (skill.tags) parts.push(`**Tags:** ${skill.tags}`);
   if (skill.allowed_tools) parts.push(`**Allowed tools:** ${skill.allowed_tools}`);
+  if (skill.required_sandbox_capabilities) {
+    parts.push(`**Required sandbox capabilities:** ${skill.required_sandbox_capabilities}`);
+  }
   if (skill.links.length > 0) parts.push(`**Related skills:** ${skill.links.join(", ")}`);
   if (skill.files.length > 0) {
     parts.push([

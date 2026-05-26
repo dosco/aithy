@@ -131,6 +131,7 @@ export const settingsInput = z.object({
     parallelAgents: z.number().int().min(1).max(8).optional(),
     parallelSearchMcpUrl: z.string().max(500).optional().nullable(),
     systemBashEnabled: z.boolean().optional(),
+    trainingDataCaptureEnabled: z.boolean().optional(),
     traceEnabled: z.boolean().optional(),
     globalMounts: z.array(z.object({ hostPath: z.string().min(1) })).optional(),
   }).optional(),
@@ -216,3 +217,16 @@ export const soulInput = z.object({
 export const notificationIdInput = z.object({ id: z.number().int().positive() });
 
 export const usageInput = z.object({ days: z.number().int().min(1).max(365).optional() });
+
+export const usageAdvisorInput = z.object({
+  days: z.number().int().min(1).max(365).optional(),
+  component: z.string().min(1).optional(),
+});
+
+export const trainingDataExportInput = z.object({
+  format: z.enum(["sft", "dpo"]),
+});
+
+export const trainingDataClearInput = z.object({
+  confirmation: z.literal("Yes, delete training data"),
+});

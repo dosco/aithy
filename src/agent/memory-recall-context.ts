@@ -96,7 +96,7 @@ export function preRecallQueries(session: BotSession, message: ChannelMessage): 
 
 export function memoryContextText(memories: readonly { id: string; content: string }[]): string | undefined {
   if (memories.length === 0) return undefined;
-  return memories.map((memory) => `ID: \`${memory.id}\`\n${memory.content}`).join("\n\n");
+  return memories.map((memory) => memory.content).join("\n\n");
 }
 
 async function recallMemoryResult(

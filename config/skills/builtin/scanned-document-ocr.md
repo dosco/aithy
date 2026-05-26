@@ -3,6 +3,7 @@ name: Scanned Document OCR
 description: OCR scanned PDFs and images using Docling or Tesseract with extraction quality checks.
 when_to_use: Use when a PDF or image appears scanned, text extraction is empty, or the user asks for OCR.
 tools: Bash(docling:*) Bash(pdftotext:*) Bash(tesseract:*) Bash(pdftoppm:*) Bash(pdfinfo:*) Read Write
+required_sandbox_capabilities: document
 tags: builtin ocr scanned pdf image tesseract docling english
 ---
 

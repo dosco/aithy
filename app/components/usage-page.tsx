@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { PageFrame } from "@/components/page-frame";
 import { ThemeSync } from "@/components/theme-sync";
-import { getUsageStats } from "@/server/actions.functions";
-import type { UsageBucketDto, UsagePageStateDto, UsageTotalsDto } from "@/server/dto";
-import { groupByDay, groupByModel, summarizeTokenTotals } from "./usage-page-model";
+import { getTrainingDataStats, getUsageAdvisor, getUsageStats } from "@/server/actions.functions";
+import type { TrainingDataSummaryDto, UsageAdvisorDto, UsageBucketDto, UsagePageStateDto, UsageTotalsDto } from "@/server/dto";
+import { groupByComponent, groupByDay, groupByModel, summarizeTokenTotals } from "./usage-page-model";
 import {
   CacheLegend,
+  ComponentBreakdown,
   DailyChart,
   Legend,
   ModelBreakdown,
@@ -13,6 +14,8 @@ import {
   Stat,
   TokenMix,
 } from "./usage-page-parts";
+import { UsageAdvisorPanel } from "./usage-advisor-panel";
+import { TrainingDataPanel } from "./usage-training-data-panel";
 
 export function UsagePage({ initialState }: { initialState: UsagePageStateDto }) {
   const [days, setDays] = useState<7 | 14 | 30 | 60 | 90>(30);
@@ -23,13 +26,21 @@ export function UsagePage({ initialState }: { initialState: UsagePageStateDto })
     tokensLast24h: 0,
     tokensLast7d: 0,
   });
+  const [trainingData, setTrainingData] = useState<TrainingDataSummaryDto | null>(null);
+  const [advisor, setAdvisor] = useState<UsageAdvisorDto | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void getUsageStats({ data: { days } }).then((r) => {
+    void Promise.all([
+      getUsageStats({ data: { days } }),
+      getUsageAdvisor({ data: { days } }),
+      getTrainingDataStats(),
+    ]).then(([r, usageAdvisor, training]) => {
       if (cancelled) return;
       setBuckets(r.buckets);
       setTotals(r.totals);
+      setAdvisor(usageAdvisor);
+      setTrainingData(training);
     });
     return () => {
       cancelled = true;
@@ -38,6 +49,7 @@ export function UsagePage({ initialState }: { initialState: UsagePageStateDto })
 
   const byDay = useMemo(() => groupByDay(buckets, days), [buckets, days]);
   const byModel = useMemo(() => groupByModel(buckets), [buckets]);
+  const byComponent = useMemo(() => groupByComponent(buckets), [buckets]);
   const tokenTotals = useMemo(() => summarizeTokenTotals(buckets), [buckets]);
   const purposesPresent = useMemo(() => {
     const set = new Set<string>();
@@ -56,7 +68,10 @@ export function UsagePage({ initialState }: { initialState: UsagePageStateDto })
         <Stat label="Last 7d" value={totals.tokensLast7d.toLocaleString()} />
       </div>
 
+      <UsageAdvisorPanel advisor={advisor} />
       <TokenMix totals={tokenTotals} days={days} />
+
+      <TrainingDataPanel stats={trainingData} onStatsChange={setTrainingData} />
 
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 className="font-mono text-[10px] uppercase tracking-[0.22em] text-[rgb(var(--muted-foreground))]">
@@ -83,6 +98,11 @@ export function UsagePage({ initialState }: { initialState: UsagePageStateDto })
         By model
       </h2>
       <ModelBreakdown rows={byModel} />
+
+      <h2 className="mb-3 mt-10 font-mono text-[10px] uppercase tracking-[0.22em] text-[rgb(var(--muted-foreground))]">
+        By component
+      </h2>
+      <ComponentBreakdown rows={byComponent} />
     </PageFrame>
   );
 }

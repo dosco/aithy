@@ -269,7 +269,7 @@ function budgetHits(
   opts: { source: "preload" | "recall"; limit: number; hasAnchors: boolean },
 ): { hits: UnifiedRecallHit[]; withheld: number } {
   const sourceLimits = opts.source === "preload"
-    ? { memory: 2, episode: 1, transcript: hits.some((hit) => hit.source === "transcript" && hit.rank.exactAnchor) ? 2 : 1 }
+    ? { memory: opts.limit, episode: opts.limit, transcript: hits.some((hit) => hit.source === "transcript" && hit.rank.exactAnchor) ? 2 : 1 }
     : { memory: 4, episode: 2, transcript: 2 };
   const counts = { memory: 0, episode: 0, transcript: 0 };
   const seen = new Set<string>();
@@ -304,7 +304,7 @@ function passesConfidence(hit: UnifiedRecallHit, hasAnchors: boolean): boolean {
   if (hit.rank.exactAnchor) return true;
   if (hasAnchors) return false;
   if (hit.rank.matchedLane === "tokens" && hit.rank.fusedScore < 0.025) return false;
-  return hit.rank.fusedScore >= 0.015;
+  return hit.rank.fusedScore >= 0.014;
 }
 
 function dedupeKey(hit: UnifiedRecallHit): string {

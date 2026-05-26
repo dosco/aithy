@@ -14,7 +14,9 @@ function NotificationsPage() {
     <PageFrame eyebrow="Inbox" title="Notifications">
       <div className="flex items-center justify-between gap-3 border-b border-[rgb(var(--border))] pb-4">
         <p className="text-sm text-[rgb(var(--muted-foreground))]">
-          {state.unreadNotifications} unread, {state.notifications.length} total
+          {state.notificationAttention.active
+            ? `${state.notificationAttention.label}, ${state.unreadNotifications} unread`
+            : `${state.unreadNotifications} unread, ${state.notifications.length} total`}
         </p>
         <button
           type="button"

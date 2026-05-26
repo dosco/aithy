@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { buildTimeline, type ChatMessageItem } from "../app/components/chat-timeline";
-import type { SerializableBotMessage } from "../src/web/live-events";
+import { deriveWorkingLabel } from "../app/components/chat-working-status";
+import type { TaskDto } from "../app/server/dto";
+import type { SerializableBotMessage, SerializableSystemPermissionRequest } from "../src/web/live-events";
 
 describe("buildTimeline day dividers", () => {
   test("adds one divider for each day with messages", () => {
@@ -76,6 +78,7 @@ function buildTestTimeline(input: {
 } = {}) {
   return buildTimeline({
     messages: input.messages ?? [],
+    tasks: [],
     subSessions: [],
     activities: input.activities ?? [],
     permissionRequests: [],
@@ -87,6 +90,86 @@ function buildTestTimeline(input: {
   });
 }
 
+describe("working status labels", () => {
+  test("pending permissions override every other working status", () => {
+    expect(deriveWorkingLabel({
+      messages: [item("u1", user("search and edit", "2026-05-01T12:00:00.000Z"))],
+      activities: [activity("Searching the web", "2026-05-01T12:00:01.000Z")],
+      permissionRequests: [permissionRequest()],
+      tasks: [task("running")],
+      localTurnPhase: "awaiting_reply",
+    })).toBe("Waiting for approval");
+  });
+
+  test("paused approval tasks beat recent tool activity", () => {
+    expect(deriveWorkingLabel({
+      messages: [
+        item("u1", user("run it", "2026-05-01T12:00:00.000Z")),
+        item("t1", toolCall("sandbox.bash", "2026-05-01T12:00:01.000Z")),
+      ],
+      activities: [],
+      permissionRequests: [],
+      tasks: [task("paused_approval")],
+      localTurnPhase: "awaiting_reply",
+    })).toBe("Waiting for approval");
+  });
+
+  test("maps recent tool and activity categories to calm labels", () => {
+    const base = {
+      permissionRequests: [],
+      tasks: [] as TaskDto[],
+      localTurnPhase: "awaiting_reply" as const,
+    };
+
+    expect(deriveWorkingLabel({
+      ...base,
+      messages: [
+        item("u1", user("look it up", "2026-05-01T12:00:00.000Z")),
+        item("t1", toolCall("web.search", "2026-05-01T12:00:01.000Z")),
+      ],
+      activities: [],
+    })).toBe("Searching");
+    expect(deriveWorkingLabel({
+      ...base,
+      messages: [
+        item("u1", user("read this", "2026-05-01T12:00:00.000Z")),
+        item("t1", toolCall("web.fetch", "2026-05-01T12:00:01.000Z")),
+      ],
+      activities: [],
+    })).toBe("Reading");
+    expect(deriveWorkingLabel({
+      ...base,
+      messages: [
+        item("u1", user("fix it", "2026-05-01T12:00:00.000Z")),
+        item("t1", toolCall("artifact.write", "2026-05-01T12:00:01.000Z")),
+      ],
+      activities: [],
+    })).toBe("Coding");
+    expect(deriveWorkingLabel({
+      ...base,
+      messages: [item("u1", user("run it", "2026-05-01T12:00:00.000Z"))],
+      activities: [activity("$ bun test", "2026-05-01T12:00:01.000Z")],
+    })).toBe("Running");
+  });
+
+  test("falls back from local submit to thinking", () => {
+    expect(deriveWorkingLabel({
+      messages: [],
+      activities: [],
+      permissionRequests: [],
+      tasks: [],
+      localTurnPhase: "submitting",
+    })).toBe("Sending");
+    expect(deriveWorkingLabel({
+      messages: [],
+      activities: [],
+      permissionRequests: [],
+      tasks: [],
+      localTurnPhase: "awaiting_reply",
+    })).toBe("Thinking");
+  });
+});
+
 function item(id: string, message: SerializableBotMessage): ChatMessageItem {
   return { id, message };
 }
@@ -97,4 +180,69 @@ function user(content: string, createdAt: string): SerializableBotMessage {
 
 function assistant(content: string, createdAt: string): SerializableBotMessage {
   return { role: "assistant", kind: "text", content, createdAt };
+}
+
+function toolCall(toolName: string, createdAt: string): SerializableBotMessage {
+  return {
+    role: "assistant",
+    kind: "tool_call",
+    toolName,
+    toolArgs: {},
+    createdAt,
+  };
+}
+
+function activity(label: string, createdAt: string) {
+  return {
+    type: "activity" as const,
+    id: `${label}-${createdAt}`,
+    conversationId: "session",
+    createdAt,
+    label,
+  };
+}
+
+function permissionRequest(): SerializableSystemPermissionRequest {
+  return {
+    id: "permission-1",
+    conversationId: "session",
+    toolName: "system.bash",
+    capability: "system.bash",
+    command: "pwd",
+    cwd: "/tmp",
+    reason: "inspect files",
+    targetKind: null,
+    targetValue: null,
+    matchOptions: [],
+    status: "pending",
+    createdAt: "2026-05-01T12:00:01.000Z",
+    decidedAt: null,
+  };
+}
+
+function task(status: TaskDto["status"]): TaskDto {
+  return {
+    id: `task-${status}`,
+    title: "Chat turn",
+    kind: "chat.turn",
+    status,
+    reason: null,
+    resultSummary: null,
+    errorSummary: null,
+    canRetry: false,
+    canCancel: status === "planned" || status === "running" || status === "paused_approval",
+    conversationId: "session",
+    relatedSessionId: "session",
+    runtimeCommandId: null,
+    queueJobId: null,
+    memoryRunId: null,
+    skillCandidateId: null,
+    permissionRequestId: null,
+    retryOfTaskId: null,
+    attempt: 1,
+    createdAt: "2026-05-01T12:00:00.000Z",
+    updatedAt: "2026-05-01T12:00:01.000Z",
+    startedAt: null,
+    completedAt: null,
+  };
 }

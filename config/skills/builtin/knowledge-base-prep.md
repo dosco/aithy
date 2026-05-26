@@ -3,6 +3,7 @@ name: Knowledge Base Prep
 description: Turn mixed source folders into clean, chunkable Markdown with manifests and source references.
 when_to_use: Use when the user wants documents prepared for retrieval, RAG, notes, or an LLM-ready knowledge base.
 tools: Bash(find:*) Bash(docling:*) Bash(python3:*) Read Write
+required_sandbox_capabilities: document
 tags: builtin knowledge-base rag markdown documents manifest chunking
 ---
 

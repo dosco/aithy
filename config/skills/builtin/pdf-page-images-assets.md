@@ -3,6 +3,7 @@ name: PDF Page Images And Assets
 description: Rasterize PDF pages, create thumbnails/contact sheets, and extract visual review assets.
 when_to_use: Use when the user wants page images, thumbnails, contact sheets, screenshots, or visual PDF review artifacts.
 tools: Bash(pdftoppm:*) Bash(pdfimages:*) Bash(pdfinfo:*) Bash(python3:*) Read Write
+required_sandbox_capabilities: document
 tags: builtin pdf images thumbnails assets poppler pillow
 ---
 

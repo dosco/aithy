@@ -3,6 +3,7 @@ name: Document Conversion (Docling)
 description: Convert a single mixed document into clean Markdown, JSON, HTML, or text using Docling first.
 when_to_use: Use when the user asks to process one PDF, Office document, image, or other document into Markdown, JSON, HTML, or plain text.
 tools: Bash(docling:*) Bash(pdftotext:*) Bash(pdfinfo:*) Bash(tesseract:*) Read Write
+required_sandbox_capabilities: document
 tags: builtin documents docling conversion markdown json html pdf office image
 ---
 

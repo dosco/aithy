@@ -18,6 +18,19 @@ export function SandboxStatusPanel({
   const cpus = numberValue(detail.cpus);
   const memoryMb = numberValue(detail.memoryMb);
   const state = service?.state ?? "unknown";
+  const health = objectDetail(detail.health);
+  const healthStatus = stringValue(health.status);
+  const sessionId = stringValue(health.sessionId);
+  const checkedAt = stringValue(health.checkedAt);
+  const capabilities = Array.isArray(health.capabilities) ? health.capabilities : [];
+  const missing = capabilities
+    .filter((item) => objectDetail(item).ok === false)
+    .map((item) => {
+      const check = objectDetail(item);
+      const commands = Array.isArray(check.missingCommands) ? check.missingCommands.join(", ") : "";
+      const imports = Array.isArray(check.missingPythonImports) ? check.missingPythonImports.join(", ") : "";
+      return `${stringValue(check.group)}${commands || imports ? `: ${[commands, imports].filter(Boolean).join("; ")}` : ""}`;
+    });
 
   return (
     <div className="mt-3 grid gap-3 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--background)/0.54)] p-3">
@@ -46,7 +59,32 @@ export function SandboxStatusPanel({
         </span>
         {cpus ? <span className="rounded border border-[rgb(var(--border))] px-2 py-1">{cpus} cpu</span> : null}
         {memoryMb ? <span className="rounded border border-[rgb(var(--border))] px-2 py-1">{memoryMb} MB</span> : null}
+        {healthStatus ? <span className="rounded border border-[rgb(var(--border))] px-2 py-1">doctor {healthStatus}</span> : null}
+        {sessionId ? <span className="rounded border border-[rgb(var(--border))] px-2 py-1">session {sessionId}</span> : null}
       </div>
+      {capabilities.length > 0 ? (
+        <div className="flex flex-wrap gap-2 font-mono text-[11px]">
+          {capabilities.map((item, index) => {
+            const check = objectDetail(item);
+            const ok = check.ok === true;
+            return (
+              <span key={`${stringValue(check.group)}-${index}`} className={cn("rounded border px-2 py-1", ok ? "border-[rgb(var(--accent)/0.45)] text-[rgb(var(--accent))]" : "border-[rgb(var(--danger)/0.45)] text-[rgb(var(--danger))]")}>
+                {stringValue(check.group)} {ok ? "ok" : "missing"}
+              </span>
+            );
+          })}
+        </div>
+      ) : null}
+      {missing.length > 0 ? (
+        <div className="rounded border border-[rgb(var(--danger)/0.36)] bg-[rgb(var(--danger)/0.08)] px-2 py-1.5 font-mono text-[11px] text-[rgb(var(--danger))]">
+          missing: {missing.join(" | ")}
+        </div>
+      ) : null}
+      {checkedAt ? (
+        <div className="font-mono text-[10px] text-[rgb(var(--muted-foreground))]">
+          checked {new Date(checkedAt).toLocaleString()}
+        </div>
+      ) : null}
       {status ? (
         <div className="rounded border border-[rgb(var(--border))] bg-[rgb(var(--panel)/0.52)] px-2 py-1.5 font-mono text-[11px] text-[rgb(var(--muted-foreground))]">
           setup: <span className="break-words text-[rgb(var(--foreground))]">{status.label}</span>

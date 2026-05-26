@@ -3,15 +3,12 @@ import { getRequest } from "@tanstack/react-start/server";
 import { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import { assertLoopbackRequest } from "../../src/settings/localhost";
 import { notificationIdInput } from "./action-schemas";
-import { notificationDto } from "./dto";
+import { notificationListDto } from "./notification-list.dto";
 
 export const listNotifications = createServerFn({ method: "GET" })
   .handler(async () => {
     const runtime = await getAithyRuntime();
-    return {
-      notifications: runtime.notifications.recent(5).map(notificationDto),
-      unread: runtime.notifications.unreadCount(),
-    };
+    return notificationListDto(runtime);
   });
 
 export const markNotificationRead = createServerFn({ method: "POST" })

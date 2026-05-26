@@ -3,6 +3,7 @@ name: PDF Fast Text Extraction
 description: Quickly extract digital PDF text and metadata using Poppler tools before heavier conversion.
 when_to_use: Use when the user wants quick plain text, metadata, page count, or a fast PDF inspection.
 tools: Bash(pdftotext:*) Bash(pdfinfo:*) Bash(pdffonts:*) Read Write
+required_sandbox_capabilities: document
 tags: builtin pdf poppler text metadata fast
 ---
 

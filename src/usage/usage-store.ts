@@ -10,6 +10,8 @@ interface Row {
   provider: string;
   model: string;
   purpose: UsagePurpose;
+  component: string;
+  stage: "ctx" | "task" | null;
   input_tokens: number;
   output_tokens: number;
   thought_tokens: number;
@@ -26,6 +28,8 @@ interface BucketRow {
   provider: string;
   model: string;
   purpose: UsagePurpose;
+  component: string;
+  stage: "ctx" | "task" | null;
   input_tokens: number;
   output_tokens: number;
   thought_tokens: number;
@@ -55,12 +59,12 @@ export class SqliteUsageStore {
     const result = this.db
       .query(
         `INSERT INTO llm_usage (
-           provider, model, purpose,
+           provider, model, purpose, component, stage,
            input_tokens, output_tokens, thought_tokens,
            cache_creation_tokens, cache_read_tokens, total_tokens,
            session_id, run_id, occurred_at
          ) VALUES (
-           $provider, $model, $purpose,
+           $provider, $model, $purpose, $component, $stage,
            $in, $out, $thought, $cacheCreation, $cacheRead, $total,
            $sessionId, $runId, $now
          )
@@ -70,6 +74,8 @@ export class SqliteUsageStore {
         $provider: input.provider,
         $model: input.model,
         $purpose: input.purpose,
+        $component: input.component?.trim() || input.purpose,
+        $stage: input.stage ?? null,
         $in: input.inputTokens,
         $out: input.outputTokens,
         $thought: input.thoughtTokens ?? 0,
@@ -90,6 +96,14 @@ export class SqliteUsageStore {
     return rows.map(rowToRecord);
   }
 
+  recordsSince(days = 30): UsageRecord[] {
+    const sinceIso = new Date(Date.now() - days * 86_400_000).toISOString();
+    const rows = this.db
+      .query(`SELECT * FROM llm_usage WHERE occurred_at >= $since ORDER BY occurred_at ASC, id ASC`)
+      .all({ $since: sinceIso }) as Row[];
+    return rows.map(rowToRecord);
+  }
+
   /**
    * Aggregate usage by day, grouped by model + purpose. Date math uses
    * SQLite's date() which expects ISO timestamps — what we already store.
@@ -99,7 +113,7 @@ export class SqliteUsageStore {
     const rows = this.db
       .query(
         `SELECT date(occurred_at) AS bucket,
-                provider, model, purpose,
+                provider, model, purpose, component, stage,
                 SUM(input_tokens) AS input_tokens,
                 SUM(output_tokens) AS output_tokens,
                 SUM(thought_tokens) AS thought_tokens,
@@ -109,8 +123,8 @@ export class SqliteUsageStore {
                 COUNT(*) AS calls
          FROM llm_usage
          WHERE date(occurred_at) >= date($since)
-         GROUP BY bucket, provider, model, purpose
-         ORDER BY bucket ASC, provider ASC, model ASC, purpose ASC`,
+         GROUP BY bucket, provider, model, purpose, component, stage
+         ORDER BY bucket ASC, provider ASC, model ASC, purpose ASC, component ASC, stage ASC`,
       )
       .all({ $since: sinceIso }) as BucketRow[];
     return rows.map(bucketRow);
@@ -154,6 +168,8 @@ function rowToRecord(row: Row): UsageRecord {
     provider: row.provider,
     model: row.model,
     purpose: row.purpose,
+    component: row.component ?? row.purpose,
+    stage: row.stage ?? null,
     inputTokens: row.input_tokens,
     outputTokens: row.output_tokens,
     thoughtTokens: row.thought_tokens,
@@ -172,6 +188,8 @@ function bucketRow(row: BucketRow): UsageBucket {
     provider: row.provider,
     model: row.model,
     purpose: row.purpose,
+    component: row.component ?? row.purpose,
+    stage: row.stage ?? null,
     inputTokens: row.input_tokens,
     outputTokens: row.output_tokens,
     thoughtTokens: row.thought_tokens,

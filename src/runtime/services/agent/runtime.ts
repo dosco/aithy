@@ -35,6 +35,7 @@ import { SqliteSoulStore } from "../../../soul/sqlite-soul-store";
 import type { SoulProfile } from "../../../soul/types";
 import type { SetupStatusInput } from "../../../setup/status";
 import { SqliteUsageStore } from "../../../usage/usage-store";
+import { SqliteTrainingDataStore } from "../../../training-data/store";
 import { LiveEventHub } from "../../../web/live-events";
 import { assertSupportedBunVersion } from "../../bun-version";
 import { loadBaseConfig, resolveEffectiveConfig } from "../../resolve-effective-config";
@@ -68,7 +69,7 @@ export class AgentWorkerRuntime {
     public readonly soul: SoulProfile,
     public readonly memory: SqliteMemoryStore, public readonly episodes: SqliteEpisodeStore, public readonly transcripts: SqliteTranscriptRecallStore,
     public readonly artifacts: SqliteArtifactStore,
-    public readonly usage: SqliteUsageStore,
+    public readonly usage: SqliteUsageStore, public readonly trainingData: SqliteTrainingDataStore,
     public readonly activeRuns: ActiveRunRegistry,
     public readonly skills: SqliteSkillsStore,
     public readonly runtimeStore: RuntimeStore,
@@ -137,7 +138,7 @@ export class AgentWorkerRuntime {
     }); const memoryRuns = new SqliteMemoryRunsStore(config.stateDbPath);
     const transcripts = new SqliteTranscriptRecallStore(config.stateDbPath); const notifications = new SqliteNotificationStore(config.stateDbPath);
     const artifacts = new SqliteArtifactStore(config.stateDbPath, config.workspaceRoot, config.outboxRoot);
-    const usage = new SqliteUsageStore(config.stateDbPath);
+    const usage = new SqliteUsageStore(config.stateDbPath); const trainingData = new SqliteTrainingDataStore(config.stateDbPath);
     const skills = new SqliteSkillsStore(config.stateDbPath, {
       embedder,
       reranker,
@@ -329,7 +330,7 @@ export class AgentWorkerRuntime {
       soul,
       memory, episodes, transcripts,
       artifacts,
-      usage,
+      usage, trainingData,
       activeRuns,
       skills,
       runtimeStore,
@@ -348,7 +349,7 @@ export class AgentWorkerRuntime {
       skillCandidates,
       skillCandidateQueue,
       skillPromotions,
-      [settings, skills, skillCandidates, skillPromotions, memory, episodes, transcripts, memoryRuns, artifacts, notifications, usage, soulStore, runtimeStore, tasks, automations],
+      [settings, skills, skillCandidates, skillPromotions, memory, episodes, transcripts, memoryRuns, artifacts, notifications, usage, trainingData, soulStore, runtimeStore, tasks, automations],
       options.ownsBunqueueManager ?? true,
     );
     runtimeRef = runtime;

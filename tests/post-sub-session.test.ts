@@ -30,7 +30,19 @@ describe("postToSubSessionAndFlush", () => {
     const result = await postToSubSessionAndFlush(
       sessions,
       new LiveEventHub(),
-      (input) => ({ id: 1, read: false, createdAt: new Date().toISOString(), body: input.body ?? null, link: input.link ?? null, kind: input.kind, title: input.title }),
+      (input) => ({
+        id: 1,
+        read: false,
+        createdAt: new Date().toISOString(),
+        body: input.body ?? null,
+        link: input.link ?? null,
+        kind: input.kind,
+        title: input.title,
+        conversationId: input.conversationId ?? null,
+        actionStatus: input.actionStatus ?? "none",
+        actionExpiresAt: input.actionExpiresAt ?? null,
+        resolvedAt: null,
+      }),
       { parentSessionId: "parent", text: "child note", notify: false },
       async () => {
         flushed = true;
@@ -80,6 +92,10 @@ describe("postToSubSessionAndFlush", () => {
           link: input.link ?? null,
           kind: input.kind,
           title: input.title,
+          conversationId: input.conversationId ?? null,
+          actionStatus: input.actionStatus ?? "none",
+          actionExpiresAt: input.actionExpiresAt ?? null,
+          resolvedAt: null,
         };
       },
       { parentSessionId: "parent", text: "child note", name: "Child" },

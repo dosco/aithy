@@ -259,6 +259,7 @@ describe("runMessage", () => {
     const emitted: unknown[] = [];
     events.subscribe((event) => emitted.push(event));
     const sessions = sessionsFor(root, path.join(root, "state.db"));
+    const retrievalLogs: Array<{ message: string; detail?: unknown }> = [];
     let forwardInput: any;
 
     await runMessage(textMessage("m1", "look it up"), {
@@ -302,6 +303,7 @@ describe("runMessage", () => {
           },
         },
       }),
+      logRetrieval: (message, detail) => retrievalLogs.push({ message, detail }),
     });
 
     expect(emitted).toContainEqual(
@@ -336,6 +338,7 @@ describe("runMessage", () => {
       }),
     );
     expect(forwardInput.memoryContext).toContain("Favorite city");
+    expect(retrievalLogs.map((log) => log.message)).toContain("skills search");
     expect(sessions.getTranscript("conversation")).toMatchObject([
       { role: "user", content: "look it up" },
       { role: "assistant", kind: "tool_call", toolName: "memory.recall" },

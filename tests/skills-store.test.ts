@@ -388,10 +388,12 @@ describe("SqliteSkillsStore", () => {
     });
     expect(dirtied).toEqual(["deploy-recovery"]);
     await store.indexEmbeddings(["deploy-recovery"]);
+    expect(store.embeddingStats()).toMatchObject({ total: 3, embedded: 3, stale: 0 });
     const matches = await store.resolveSearchQueriesSemantic(["kubernetes rollback plan"]);
     expect(matches[0]?.skill.id).toBe("deploy-recovery");
     expect((matches as { diagnostics?: unknown }).diagnostics).toBeTruthy();
   });
+
 });
 
 describe("parseSkillBundleFiles", () => {

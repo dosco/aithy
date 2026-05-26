@@ -9,6 +9,8 @@ export const MAX_PARALLEL_AGENTS = 8;
 
 export const MAX_TOOL_OUTPUT_CHARS = 24_000;
 export const MAX_BASH_TIMEOUT_MS = 1000 * 60 * 2;
+export const MAX_LONG_BASH_TIMEOUT_MS = 1000 * 60 * 10;
+export const MAX_EXTENDED_BASH_TIMEOUT_MS = 1000 * 60 * 30;
 export const DEFAULT_BASH_TIMEOUT_MS = 1000 * 30;
 export const MAX_SANDBOX_INLINE_BYTES = 1024 * 1024 * 2;
 export const MAX_CONVERSATION_HISTORY_MESSAGES = 1000;

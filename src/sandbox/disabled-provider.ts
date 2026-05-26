@@ -2,7 +2,9 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   DEFAULT_BASH_TIMEOUT_MS,
+  MAX_EXTENDED_BASH_TIMEOUT_MS,
   MAX_BASH_TIMEOUT_MS,
+  MAX_LONG_BASH_TIMEOUT_MS,
   MAX_SANDBOX_INLINE_BYTES,
   MAX_TOOL_OUTPUT_CHARS
 } from "../config/limits";
@@ -72,7 +74,7 @@ export class DisabledSandboxProvider implements SandboxProvider {
   async bash(sessionId: string, request: SandboxBashRequest): Promise<SandboxBashResult> {
     await this.resume(sessionId);
     const entry = this.getEntry(sessionId);
-    const timeoutMs = Math.min(request.timeoutMs ?? DEFAULT_BASH_TIMEOUT_MS, MAX_BASH_TIMEOUT_MS);
+    const timeoutMs = Math.min(request.timeoutMs ?? DEFAULT_BASH_TIMEOUT_MS, timeoutLimitFor(request.timeoutProfile));
     const cwd = toHostPath(entry, request.cwd ?? "/workspace");
     const result = await runBunShell({
       command: request.command,
@@ -100,6 +102,7 @@ export class DisabledSandboxProvider implements SandboxProvider {
   async write(sessionId: string, sandboxPath: string, content: string): Promise<SandboxFile> {
     await this.resume(sessionId);
     const entry = this.getEntry(sessionId);
+    assertWritableSandboxPath(entry, sandboxPath);
     const hostPath = toHostPath(entry, sandboxPath);
     await mkdir(path.dirname(hostPath), { recursive: true });
     await writeFile(hostPath, content, "utf8");
@@ -175,13 +178,39 @@ function toHostPath(entry: DisabledSandboxEntry, sandboxPath: string): string {
   return safeJoin(entry.hostWorkspacePath, sandboxPath);
 }
 
+function assertWritableSandboxPath(entry: DisabledSandboxEntry, sandboxPath: string): void {
+  const mount = mountForSandboxPath(entry, sandboxPath);
+  if (mount && mount.mode !== "read-write") {
+    throw new Error(`Mount is read-only: /mounts/${mount.mountName}`);
+  }
+}
+
+function mountForSandboxPath(entry: DisabledSandboxEntry, sandboxPath: string): SessionMount | undefined {
+  if (sandboxPath === "/mounts") throw new Error("Cannot write the /mounts root");
+  if (!sandboxPath.startsWith("/mounts/")) return undefined;
+  const name = sandboxPath.slice("/mounts/".length).split("/")[0];
+  return entry.mounts.find((m) => m.mountName === name);
+}
+
 function toSandboxPath(entry: DisabledSandboxEntry, hostPath: string): string {
+  const mount = entry.mounts
+    .map((item) => ({ item, relative: path.relative(item.hostPath, hostPath) }))
+    .find(({ relative }) => !relative.startsWith("..") && !path.isAbsolute(relative));
+  if (mount) {
+    return mount.relative ? `/mounts/${mount.item.mountName}/${ensureRelativePath(mount.relative)}` : `/mounts/${mount.item.mountName}`;
+  }
   const outboxRelativePath = path.relative(entry.hostOutboxPath, hostPath);
   if (outboxRelativePath && !outboxRelativePath.startsWith("..") && !path.isAbsolute(outboxRelativePath)) {
     return `/outbox/${ensureRelativePath(outboxRelativePath)}`;
   }
   const relativePath = path.relative(entry.hostWorkspacePath, hostPath);
   return `/workspace/${ensureRelativePath(relativePath)}`;
+}
+
+function timeoutLimitFor(profile: SandboxBashRequest["timeoutProfile"]): number {
+  if (profile === "extended") return MAX_EXTENDED_BASH_TIMEOUT_MS;
+  if (profile === "long") return MAX_LONG_BASH_TIMEOUT_MS;
+  return MAX_BASH_TIMEOUT_MS;
 }
 
 async function ensureHostPath(hostPath: string): Promise<void> {

@@ -15,6 +15,7 @@ export const skillColumns = [
   "description",
   "when_to_use",
   "allowed_tools",
+  "required_sandbox_capabilities",
   "tags",
   "content",
   "retrieved_count",

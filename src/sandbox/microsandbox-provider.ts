@@ -4,7 +4,9 @@ import { NetworkPolicy, Sandbox } from "microsandbox";
 import { INTERNAL_SANDBOX_IMAGES } from "./image-catalog";
 import {
   DEFAULT_BASH_TIMEOUT_MS,
+  MAX_EXTENDED_BASH_TIMEOUT_MS,
   MAX_BASH_TIMEOUT_MS,
+  MAX_LONG_BASH_TIMEOUT_MS,
   MAX_SANDBOX_INLINE_BYTES,
   MAX_TOOL_OUTPUT_CHARS
 } from "../config/limits";
@@ -98,7 +100,7 @@ export class MicrosandboxProvider implements SandboxProvider {
 
   async bash(sessionId: string, request: SandboxBashRequest): Promise<SandboxBashResult> {
     await this.ensureLive(sessionId);
-    const timeoutMs = Math.min(request.timeoutMs ?? DEFAULT_BASH_TIMEOUT_MS, MAX_BASH_TIMEOUT_MS);
+    const timeoutMs = Math.min(request.timeoutMs ?? DEFAULT_BASH_TIMEOUT_MS, timeoutLimitFor(request.timeoutProfile));
     const cwd = normalizeSandboxCwd(request.cwd);
     const command = `${envExports(request.env)}cd ${shellQuote(cwd)} && ${request.command}`;
 
@@ -114,14 +116,14 @@ export class MicrosandboxProvider implements SandboxProvider {
 
   async read(sessionId: string, sandboxPath: string, maxBytes = MAX_SANDBOX_INLINE_BYTES): Promise<string> {
     await this.ensureLive(sessionId);
-    const safeSandboxPath = toSandboxFilePath(sandboxPath);
+    const safeSandboxPath = toSandboxFilePath(sandboxPath, { allowMounts: true });
     const content = await this.fs(sessionId).readToString(safeSandboxPath);
     return content.length > maxBytes ? content.slice(0, maxBytes) : content;
   }
 
   async write(sessionId: string, sandboxPath: string, content: string): Promise<SandboxFile> {
     await this.ensureLive(sessionId);
-    const safeSandboxPath = toSandboxFilePath(sandboxPath);
+    const safeSandboxPath = toSandboxFilePath(sandboxPath, { allowMounts: true });
     await this.mkdirp(sessionId, path.posix.dirname(safeSandboxPath));
     await this.fs(sessionId).write(safeSandboxPath, content);
     return { path: safeSandboxPath, sizeBytes: Buffer.byteLength(content) };
@@ -240,7 +242,10 @@ export class MicrosandboxProvider implements SandboxProvider {
     builder = builder.volume("/workspace", (v) => v.bind(hostWorkspacePath));
     builder = builder.volume("/outbox", (v) => v.bind(hostOutboxPath));
     for (const mount of mounts) {
-      builder = builder.volume(`/mounts/${mount.mountName}`, (v) => v.bind(mount.hostPath));
+      builder = builder.volume(`/mounts/${mount.mountName}`, (v) => {
+        const bound = v.bind(mount.hostPath);
+        return mount.mode === "read-write" ? bound : bound.readonly?.() ?? bound;
+      });
     }
     return this.createFromBuilder(builder, image);
   }
@@ -359,7 +364,13 @@ function outboxAndMounts(
   return { hostOutboxPath: path.join(hostWorkspacePath, "outbox"), mounts: hostOutboxPathOrMounts };
 }
 
-function toSandboxFilePath(sandboxPath: string): string {
+function timeoutLimitFor(profile: SandboxBashRequest["timeoutProfile"]): number {
+  if (profile === "extended") return MAX_EXTENDED_BASH_TIMEOUT_MS;
+  if (profile === "long") return MAX_LONG_BASH_TIMEOUT_MS;
+  return MAX_BASH_TIMEOUT_MS;
+}
+
+function toSandboxFilePath(sandboxPath: string, options: { allowMounts?: boolean } = {}): string {
   if (sandboxPath === "/workspace") return "/workspace";
   if (sandboxPath.startsWith("/workspace/")) {
     return sandboxWorkspacePath(sandboxPath.slice("/workspace/".length));
@@ -367,6 +378,10 @@ function toSandboxFilePath(sandboxPath: string): string {
   if (sandboxPath === "/outbox") return "/outbox";
   if (sandboxPath.startsWith("/outbox/")) {
     return `/outbox/${ensureRelativePath(sandboxPath.slice("/outbox/".length))}`;
+  }
+  if (options.allowMounts && sandboxPath === "/mounts") return "/mounts";
+  if (options.allowMounts && sandboxPath.startsWith("/mounts/")) {
+    return `/mounts/${ensureRelativePath(sandboxPath.slice("/mounts/".length))}`;
   }
   return sandboxWorkspacePath(ensureRelativePath(sandboxPath));
 }

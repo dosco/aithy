@@ -26,7 +26,7 @@ export function mountsForSandbox(globalMounts: readonly GlobalMount[]): SessionM
     }
     if (seen.has(resolved)) continue;
     seen.add(resolved);
-    out.push({ hostPath: resolved, mountName: computeMountName(resolved) });
+    out.push({ hostPath: resolved, mountName: computeMountName(resolved), mode: m.mode ?? "read-only" });
   }
   return out;
 }
@@ -39,13 +39,13 @@ export function prepareGlobalMountAdd(
   const sandboxPath = `/mounts/${mountName}`;
   if (globalMounts.some((m) => m.hostPath === hostPath)) {
     return {
-      result: { alreadyExisted: true, mount: { hostPath, mountName }, sandboxPath },
+      result: { alreadyExisted: true, mount: { hostPath, mountName, mode: "read-only" }, sandboxPath },
       next: null,
     };
   }
   return {
-    result: { alreadyExisted: false, mount: { hostPath, mountName }, sandboxPath },
-    next: [...globalMounts, { hostPath }],
+    result: { alreadyExisted: false, mount: { hostPath, mountName, mode: "read-only" }, sandboxPath },
+    next: [...globalMounts, { hostPath, mode: "read-only" }],
   };
 }
 

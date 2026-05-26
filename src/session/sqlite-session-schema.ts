@@ -42,6 +42,7 @@ export interface SkillRow {
   content: string;
   when_to_use: string | null;
   allowed_tools: string | null;
+  required_sandbox_capabilities: string | null;
   tags: string | null;
   retrieved_count: number;
   used_count: number;
@@ -446,6 +447,13 @@ export const sessionMigrations = [
         INSERT INTO skill_search_chunks_fts(skill_search_chunks_fts, rowid, text) VALUES ('delete', old.id, old.text);
         INSERT INTO skill_search_chunks_fts(rowid, text) VALUES (new.id, new.text);
       END;
+    `,
+  },
+  {
+    version: 11,
+    precondition: (db: Database) => hasSkillTable()(db) && !hasSkillColumn("required_sandbox_capabilities")(db),
+    sql: `
+      ALTER TABLE skills ADD COLUMN required_sandbox_capabilities TEXT;
     `,
   },
 ];

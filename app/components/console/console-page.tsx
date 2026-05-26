@@ -11,6 +11,7 @@ import type {
 } from "@/server/runtime-console.dto";
 import { ConsoleFilters, LoadMoreRow } from "./console-filters";
 import { SandboxStatusPanel } from "./console-sandbox-status";
+import { ConsoleSandboxFiles } from "./console-sandbox-files";
 import { detailText, ServiceStatus, serviceStatusSummary, StatePill, toneForState } from "./console-service-status";
 import { SetupStatusList } from "./console-setup-status";
 import { useRuntimeConsole } from "./use-runtime-console";
@@ -91,6 +92,7 @@ export function ConsolePage({ initialState }: { initialState: RuntimeConsoleDto 
                 </div>
                 <SandboxStatusPanel service={sandboxService} status={sandboxStatus} />
                 <SetupStatusList statuses={state.setupStatuses} />
+                <ConsoleSandboxFiles />
               </div>
 
               <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1">
@@ -276,14 +278,35 @@ function LogRow({ log }: { log: CollapsedLog }) {
 }
 
 function CommandRow({ command }: { command: RuntimeCommandDto }) {
+  const duration = command.completedAt && command.claimedAt
+    ? `${Math.max(0, new Date(command.completedAt).getTime() - new Date(command.claimedAt).getTime())}ms`
+    : command.claimedAt ? "running" : "queued";
+  const detail = commandSummary(command);
   return (
-    <DataRow columns="md:grid-cols-[12rem_13rem_8rem_minmax(0,1fr)]">
+    <DataRow columns="md:grid-cols-[11rem_12rem_7rem_7rem_minmax(0,1fr)]">
       <MutedCell wrap>{command.id}</MutedCell>
       <span className="min-w-0 break-words font-mono text-xs">{command.kind}</span>
       <StatePill label={command.status} tone={toneForState(command.status)} />
-      <MutedCell wrap>{detailText(command.detail) || command.targetRole}</MutedCell>
+      <MutedCell>{duration}</MutedCell>
+      <MutedCell wrap>{detail || command.targetRole}</MutedCell>
     </DataRow>
   );
+}
+
+function commandSummary(command: RuntimeCommandDto): string {
+  const payload = objectDetail(command.payload);
+  const request = objectDetail(payload.request);
+  const commandText = stringValue(request.command);
+  const cwd = stringValue(request.cwd);
+  const result = objectDetail(objectDetail(command.detail).result);
+  const stdout = stringValue(result.stdout);
+  const stderr = stringValue(result.stderr);
+  return [
+    commandText ? `$ ${commandText}` : "",
+    cwd ? `cwd:${cwd}` : "",
+    stdout ? `out:${stdout.slice(0, 180)}` : "",
+    stderr ? `err:${stderr.slice(0, 180)}` : "",
+  ].filter(Boolean).join(" | ") || detailText(command.detail);
 }
 
 function DataRow({
@@ -370,6 +393,14 @@ function containsQuery(query: string, values: Array<string | undefined>): boolea
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
   return values.some((value) => value?.toLowerCase().includes(needle));
+}
+
+function objectDetail(value: unknown): Record<string, unknown> {
+  return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
+}
+
+function stringValue(value: unknown): string {
+  return typeof value === "string" ? value : "";
 }
 
 function nextLimit(limit: number): number {

@@ -48,7 +48,7 @@ describe("processUserChatJob skill tracking", () => {
     }
   });
 
-  test("caps search-discovered skill payloads", async () => {
+  test("returns full search-discovered skill payloads", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "aithy-skill-cap-"));
     const store = new SqliteSkillsStore(path.join(dir, "state.db"));
     store.upsert({
@@ -62,8 +62,8 @@ describe("processUserChatJob skill tracking", () => {
 
     const tracked = createTrackedSkills(store, []);
     const [result] = await tracked.skillsSearch(["long"]);
-    expect(result.content.length).toBeLessThan(3_000);
-    expect(result.content).toContain("[truncated]");
+    expect(result.content).toContain("repeat ".repeat(800));
+    expect(result.content).not.toContain("[truncated]");
   });
 });
 

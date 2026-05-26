@@ -29,6 +29,7 @@ export const LEGACY_DEFAULT_SANDBOX_IMAGE = "python:3.11-slim";
 
 export interface GlobalMount {
   hostPath: string;
+  mode?: "read-only" | "read-write";
 }
 
 export interface AppConfig {
@@ -65,6 +66,7 @@ export interface AppConfig {
   botId: string;
   stateDir: string;
   stateDbPath: string;
+  trainingDataCaptureEnabled: boolean;
   traceEnabled: boolean;
   tracesDir: string;
   globalMounts: GlobalMount[];
@@ -103,6 +105,7 @@ export function loadConfig(
     botId,
     stateDir,
     stateDbPath: path.join(stateDir, botId, "state.db"),
+    trainingDataCaptureEnabled: overrides.traceEnabled ?? false,
     traceEnabled: overrides.traceEnabled ?? false,
     tracesDir: path.join(stateDir, botId, "traces"),
     globalMounts: [],

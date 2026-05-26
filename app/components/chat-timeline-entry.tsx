@@ -3,6 +3,7 @@ import { GitBranch, LoaderCircle, RotateCcw } from "lucide-react";
 import { ArtifactCard } from "@/components/artifact-card";
 import { Markdown } from "@/components/markdown";
 import { PermissionCard } from "@/components/permission-card";
+import type { LayoutName } from "../../src/settings/types";
 import type { SessionSummaryDto } from "@/server/dto";
 import type {
   SerializableBotMessage,
@@ -11,6 +12,14 @@ import type {
 
 type Usage = { input: number; output: number; thought: number; total: number };
 type AssistantTextStatus = Extract<SerializableBotMessage, { kind: "text" }>["status"];
+export type WorkingLabel =
+  | "Thinking"
+  | "Searching"
+  | "Reading"
+  | "Coding"
+  | "Running"
+  | "Waiting for approval"
+  | "Sending";
 
 export type TimelineEntry =
   | { kind: "day-divider"; key: string; label: string }
@@ -32,16 +41,18 @@ export type TimelineEntry =
   | { kind: "tool"; key: string; toolName: string; toolArgs: unknown; toolResult?: unknown; usage?: Usage }
   | { kind: "sub-session"; key: string; session: SessionSummaryDto }
   | { kind: "activity"; key: string; label: string }
-  | { kind: "typing"; key: string };
+  | { kind: "typing"; key: string; label: WorkingLabel };
 
 export function TimelineItem({
   item,
+  layout,
   onOpenSession,
   onPermissionDecision,
   onPermissionRetry,
   onRetryTask,
 }: {
   item: Exclude<TimelineEntry, { kind: "typing" }>;
+  layout: LayoutName;
   onOpenSession: (session: SessionSummaryDto) => void;
   onPermissionDecision: (requestId: string, decision: "allow" | "deny", persist?: string) => void;
   onPermissionRetry: (message: Extract<SerializableBotMessage, { kind: "permission" }>) => void;
@@ -131,12 +142,12 @@ export function TimelineItem({
     );
   }
   if (item.kind === "permission") {
-    return <motion.div {...motionProps}><PermissionCard message={item.message} onRetry={onPermissionRetry} /></motion.div>;
+    return <motion.div {...motionProps}><PermissionCard layout={layout} message={item.message} onRetry={onPermissionRetry} /></motion.div>;
   }
   if (item.kind === "permission-request") {
-    return <motion.div {...motionProps}><PermissionCard request={item.request} onDecision={onPermissionDecision} /></motion.div>;
+    return <motion.div {...motionProps}><PermissionCard layout={layout} request={item.request} onDecision={onPermissionDecision} /></motion.div>;
   }
-  if (item.kind === "artifact") return <motion.div {...motionProps}><ArtifactCard artifact={item.message} /></motion.div>;
+  if (item.kind === "artifact") return <motion.div {...motionProps}><ArtifactCard layout={layout} artifact={item.message} /></motion.div>;
   if (item.kind === "tool") return <ToolEntry item={item} motionProps={motionProps} />;
   if (item.kind === "sub-session") {
     return (
@@ -176,7 +187,7 @@ export function TimelineItem({
   );
 }
 
-export function TypingIndicator() {
+export function WorkingIndicator({ label }: { label: WorkingLabel }) {
   const reduce = useReducedMotion();
   return (
     <motion.div
@@ -185,21 +196,26 @@ export function TypingIndicator() {
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
       transition={{ duration: 0.2 }}
-      className="flex items-center gap-1.5 px-1"
-      aria-label="Assistant is thinking"
+      className="app-chat-bubble-frame w-fit max-w-[min(62%,24rem)]"
+      aria-label={`Assistant is ${label.toLowerCase()}`}
     >
-      {[0, 1, 2].map((i) => (
-        <motion.span
-          key={i}
-          className="block h-1.5 w-1.5 rounded-full bg-[rgb(var(--muted-foreground))]"
-          animate={reduce ? undefined : { y: [0, -3, 0], opacity: [0.35, 0.8, 0.35] }}
-          transition={
-            reduce
-              ? undefined
-              : { duration: 1, ease: "easeInOut", repeat: Infinity, delay: i * 0.15 }
-          }
-        />
-      ))}
+      <div className="app-chat-bubble app-chat-bubble-assistant flex items-center gap-2 rounded-[12px] bg-[rgb(var(--bubble-bot)/0.72)] px-3 py-2 text-sm text-[rgb(var(--muted-foreground))] shadow-[0_1px_2px_rgb(0_0_0/0.04)]">
+        <span>{label}</span>
+        <span className="flex items-center gap-1" aria-hidden>
+          {[0, 1, 2].map((i) => (
+            <motion.span
+              key={i}
+              className="block h-1.5 w-1.5 rounded-full bg-[rgb(var(--muted-foreground))]"
+              animate={reduce ? undefined : { y: [0, -3, 0], opacity: [0.35, 0.8, 0.35] }}
+              transition={
+                reduce
+                  ? undefined
+                  : { duration: 1, ease: "easeInOut", repeat: Infinity, delay: i * 0.15 }
+              }
+            />
+          ))}
+        </span>
+      </div>
     </motion.div>
   );
 }

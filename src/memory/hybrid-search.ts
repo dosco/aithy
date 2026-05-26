@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import type { Embedder } from "./embed";
-import { embedText, vecToBlob } from "./embed-text";
+import { bodyHash, embedText, vecToBlob } from "./embed-text";
 import { score } from "./ranking";
 import type { Reranker } from "./rerank";
 import type { MemoryEntry, MemoryGuidance, MemoryKind, MemoryScopeKind, MemorySearchOptions, MemorySubject } from "./types";
@@ -41,6 +41,9 @@ interface FtsRow extends MemoryRow {
 interface VecRow extends MemoryRow {
   rowid: number;
   distance: number;
+  body_hash: string;
+  model_id: string;
+  dim: number;
 }
 
 interface RankedHit {
@@ -76,7 +79,7 @@ export async function hybridSearch(
     Promise.all(rawQueries.map((raw) =>
       embedder
         .embedQuery(raw)
-        .then((vec) => runVec(db, vec, filters, excludeFilter))
+        .then((vec) => runVec(db, embedder, vec, filters, excludeFilter))
         .catch(() => [] as RankedHit[]),
     )),
   ]);
@@ -228,6 +231,7 @@ function runFts(
 
 function runVec(
   db: Database,
+  embedder: Embedder,
   embedding: Float32Array,
   filters: ReturnType<typeof buildMemorySearchFilters>,
   excludeFilter: ReturnType<typeof buildExcludeFilter>,
@@ -240,10 +244,14 @@ function runVec(
   const rows = db
     .query(
       `SELECT m.rowid AS rowid, m.*, v.distance
+              , meta.body_hash, meta.model_id, meta.dim
          FROM memories_vec v
          JOIN memories m ON m.rowid = v.rowid
+         JOIN memory_embed_meta meta ON meta.memory_id = m.id
         WHERE v.embedding MATCH $vec
           AND k = $k
+          AND meta.model_id = $modelId
+          AND meta.dim = $dim
           AND m.superseded_by IS NULL
           ${filters.sql}
           ${excludeFilter.sql}
@@ -252,10 +260,15 @@ function runVec(
     .all({
       $vec: vecToBlob(embedding),
       $k: k,
+      $modelId: embedder.modelId,
+      $dim: embedder.dim,
       ...filters.params,
       ...excludeFilter.params,
     } as never) as VecRow[];
-  return rows.slice(0, PER_RANKER_LIMIT).map((row, rank) => ({ row, rank, lane: "semantic" }));
+  return rows
+    .filter((row) => row.body_hash === bodyHash(embedText(rowToEntry(row))))
+    .slice(0, PER_RANKER_LIMIT)
+    .map((row, rank) => ({ row, rank, lane: "semantic" }));
 }
 
 function addToFusion(

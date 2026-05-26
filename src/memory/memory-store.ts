@@ -445,6 +445,7 @@ export class SqliteMemoryStore {
   }
 
   private markRecalled(ids: readonly string[]): void {
+    if (ids.length === 0) return;
     const now = new Date().toISOString();
     const placeholders = ids.map((_, i) => `$id${i}`).join(", ");
     const params: Record<string, SQLQueryBindings> = { $now: now };

@@ -1,10 +1,11 @@
-import type { Dispatch, SetStateAction } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { useState, type Dispatch, type SetStateAction } from "react";
+import { Plus, RefreshCcw, Trash2 } from "lucide-react";
 import { Field, Section, fieldClass, selectClass } from "@/components/settings-form-bits";
 import { GlobalMountsSection } from "@/components/settings-global-mounts";
 import { SettingsSaveBar } from "@/components/settings-save-bar";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { testSandboxImage } from "@/server/console.functions";
 import type { ConfigDto } from "@/server/dto";
 
 const DEFAULT_IMAGE_SELECTION = { kind: "internal", id: "aithy-sandbox" } satisfies ConfigDto["sandboxImageSelection"];
@@ -37,6 +38,7 @@ export function SandboxSettingsTab({ config, setConfig, skippedPaths, saved, sav
           )}
         </div>
       </Section>
+      <SandboxHealthCard config={config} />
       <RuntimeFields config={config} setConfig={setConfig} />
       {config.sandboxProvider === "microsandbox" ? (
         <GlobalMountsSection
@@ -46,6 +48,51 @@ export function SandboxSettingsTab({ config, setConfig, skippedPaths, saved, sav
         />
       ) : null}
     </div>
+  );
+}
+
+function SandboxHealthCard({ config }: { config: ConfigDto }) {
+  const [testing, setTesting] = useState(false);
+  const [testResult, setTestResult] = useState<ConfigDto["sandboxHealth"] | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const health = testResult ?? config.sandboxHealth;
+  const caps = health?.capabilities ?? [];
+  return (
+    <Section title="Sandbox Doctor" subtitle="Verified image tools and VM shape from the current sandbox preflight." muted>
+      <div className="grid gap-3">
+        <div className="flex flex-wrap items-center gap-2 font-mono text-xs">
+          <span className="rounded border border-[rgb(var(--border))] px-2 py-1">{health?.status ?? "not checked"}</span>
+          <span className="min-w-0 break-all text-[rgb(var(--muted-foreground))]">{health?.image ?? config.sandboxImage}</span>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {caps.length ? caps.map((cap) => (
+            <span key={cap.group} className={`rounded border px-2 py-1 font-mono text-[11px] ${cap.ok ? "border-[rgb(var(--accent)/0.45)] text-[rgb(var(--accent))]" : "border-[rgb(var(--danger)/0.45)] text-[rgb(var(--danger))]"}`}>
+              {cap.group} {cap.ok ? "ok" : "missing"}
+            </span>
+          )) : <span className="font-mono text-xs text-[rgb(var(--muted-foreground))]">No capability report yet.</span>}
+        </div>
+        {health?.lastError ? <p className="break-words font-mono text-xs text-[rgb(var(--danger))]">{health.lastError}</p> : null}
+        {error ? <p className="break-words font-mono text-xs text-[rgb(var(--danger))]">{error}</p> : null}
+        <Button type="button" variant="soft" size="sm" disabled={testing} onClick={() => {
+          setTesting(true);
+          setError(null);
+          void testSandboxImage({
+            data: {
+              sandboxProvider: config.sandboxProvider === "disabled" ? "disabled" : "microsandbox",
+              sandboxImageSelection: config.sandboxImageSelection,
+              customSandboxImages: config.customSandboxImages,
+              sandboxCpus: config.sandboxCpus,
+              sandboxMemoryMb: config.sandboxMemoryMb,
+              sandboxNetwork: networkValue(config.sandboxNetwork),
+            },
+          }).then((result) => setTestResult(result)).catch((err) => {
+            setError(err instanceof Error ? err.message : "Sandbox image test failed");
+          }).finally(() => setTesting(false));
+        }}>
+          <RefreshCcw className={`h-4 w-4 ${testing ? "animate-spin" : ""}`} /> Test image
+        </Button>
+      </div>
+    </Section>
   );
 }
 
@@ -126,7 +173,7 @@ function CustomImageControls({ config, setConfig }: Pick<SandboxTabProps, "confi
 
 function RuntimeFields({ config, setConfig }: Pick<SandboxTabProps, "config" | "setConfig">) {
   return (
-    <Section title="Javascript Runtime" subtitle="Session lifecycle and tracing.">
+    <Section title="Javascript Runtime" subtitle="Session lifecycle and host shell controls.">
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Host shell">
           <div className="flex min-h-11 items-center justify-between gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5">
@@ -138,12 +185,6 @@ function RuntimeFields({ config, setConfig }: Pick<SandboxTabProps, "config" | "
         </Field>
         <Field label="Session TTL (ms)">
           <input className={fieldClass} type="number" value={config.sessionTtlMs} onChange={(event) => setConfigValue(setConfig, "sessionTtlMs", Number(event.target.value))} />
-        </Field>
-        <Field label="Tracing">
-          <div className="flex h-11 items-center gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5">
-            <Switch checked={config.traceEnabled} onCheckedChange={(value) => setConfigValue(setConfig, "traceEnabled", value)} />
-            <span className="text-sm text-[rgb(var(--muted-foreground))]">{config.traceEnabled ? "Enabled" : "Disabled"}</span>
-          </div>
         </Field>
         <Field label={`Parallel agents (${config.parallelAgents})`}>
           <div className="flex h-11 items-center gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] px-3.5">
@@ -225,4 +266,9 @@ function deleteCustomImage(setter: Dispatch<SetStateAction<ConfigDto>>, id: stri
       sandboxImage: internal?.image ?? current.sandboxImage,
     };
   });
+}
+
+function networkValue(value: string): "none" | "public" | "allow-all" {
+  if (value === "public" || value === "allow-all") return value;
+  return "none";
 }

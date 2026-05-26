@@ -92,6 +92,21 @@ describe("web settings", () => {
     expect(runtimeSandboxChanged(base, next)).toBe(true);
   });
 
+  test("treats legacy trace settings as training data capture", async () => {
+    const root = await mkdtemp(path.join(tmpdir(), "aithy-settings-"));
+    const store = new SqliteSettingsStore(path.join(root, "state.db"));
+
+    store.save({ runtime: { traceEnabled: true } });
+    const legacy = applyRuntimeSettings(loadConfig({}), store.load().runtime);
+    expect(legacy.trainingDataCaptureEnabled).toBe(true);
+    expect(legacy.traceEnabled).toBe(true);
+
+    store.save({ runtime: { trainingDataCaptureEnabled: false } });
+    const loaded = store.load();
+    expect(loaded.runtime.traceEnabled).toBeUndefined();
+    expect(loaded.runtime.trainingDataCaptureEnabled).toBe(false);
+  });
+
   test("migrates explicitly saved python slim image to Aithy sandbox", () => {
     const base = loadConfig({});
     const next = applyRuntimeSettings(base, {

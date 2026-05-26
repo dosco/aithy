@@ -3,6 +3,7 @@ name: CJK Document Handling
 description: Preserve Chinese, Japanese, and Korean text rendering with Noto CJK fonts and explicit OCR limits.
 when_to_use: Use when documents contain CJK text, multilingual fonts, rendered output, or text extraction with missing glyphs.
 tools: Bash(fc-list:*) Bash(docling:*) Bash(pdftotext:*) Bash(python3:*) Read Write
+required_sandbox_capabilities: document
 tags: builtin cjk fonts noto multilingual pdf documents
 ---
 

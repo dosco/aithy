@@ -1,5 +1,5 @@
 import { Plus, X } from "lucide-react";
-import { Section, fieldClass } from "@/components/settings-form-bits";
+import { Section, fieldClass, selectClass } from "@/components/settings-form-bits";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { GlobalMountDto } from "@/server/dto";
@@ -14,9 +14,9 @@ export function GlobalMountsSection({
   onChange: (next: GlobalMountDto[]) => void;
 }) {
   const skippedSet = new Set(skippedPaths);
-  const setAt = (index: number, hostPath: string) => {
+  const setAt = (index: number, patch: Partial<GlobalMountDto>) => {
     const next = mounts.slice();
-    next[index] = { hostPath };
+    next[index] = { ...next[index], ...patch };
     onChange(next);
   };
   const removeAt = (index: number) => {
@@ -27,7 +27,7 @@ export function GlobalMountsSection({
   return (
     <Section
       title="Global mounts"
-      subtitle="Bind-mounted into every sandbox at /mounts/<name>. Read-write. Folders pasted in chat are added here automatically."
+      subtitle="Bind-mounted into every sandbox at /mounts/<name>. Read-only by default. Folders pasted in chat are added here automatically."
       muted
     >
       <div className="grid gap-2">
@@ -41,14 +41,23 @@ export function GlobalMountsSection({
           const skipped = trimmed && skippedSet.has(trimmed);
           return (
             <div key={index} className="grid gap-1">
-              <div className="flex items-stretch gap-2">
+              <div className="grid gap-2 md:grid-cols-[minmax(0,1fr)_9rem_auto]">
                 <input
                   className={cn(fieldClass, "flex-1")}
                   value={mount.hostPath}
                   placeholder="/Users/you/Documents/Obsidian-Vault"
                   spellCheck={false}
-                  onChange={(event) => setAt(index, event.target.value)}
+                  onChange={(event) => setAt(index, { hostPath: event.target.value })}
                 />
+                <select
+                  className={selectClass}
+                  value={mount.mode ?? "read-only"}
+                  aria-label="Mount mode"
+                  onChange={(event) => setAt(index, { mode: event.target.value === "read-write" ? "read-write" : "read-only" })}
+                >
+                  <option value="read-only">read-only</option>
+                  <option value="read-write">read-write</option>
+                </select>
                 <Button
                   type="button"
                   onClick={() => removeAt(index)}
@@ -70,7 +79,7 @@ export function GlobalMountsSection({
         })}
         <Button
           type="button"
-          onClick={() => onChange([...mounts, { hostPath: "" }])}
+          onClick={() => onChange([...mounts, { hostPath: "", mode: "read-only" }])}
           variant="ghost"
           className="h-11 w-full rounded-xl border border-dashed border-[rgb(var(--border))] bg-transparent hover:border-[rgb(var(--foreground))]"
         >

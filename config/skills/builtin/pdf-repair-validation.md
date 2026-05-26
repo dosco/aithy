@@ -3,6 +3,7 @@ name: PDF Repair And Validation
 description: Validate PDFs, inspect encryption, and attempt non-destructive qpdf repair.
 when_to_use: Use when a PDF will not open, conversion fails, qpdf reports errors, or the user asks to repair/validate a PDF.
 tools: Bash(qpdf:*) Bash(pdfinfo:*) Read Write
+required_sandbox_capabilities: document
 tags: builtin pdf qpdf repair validation encryption
 ---
 

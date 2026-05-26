@@ -21,7 +21,12 @@ export {
   markAllNotificationsRead,
   markNotificationRead,
 } from "./notification.actions";
-export { getUsageStats } from "./usage.actions";
+export { getUsageAdvisor, getUsageStats } from "./usage.actions";
+export {
+  clearTrainingData,
+  exportTrainingData,
+  getTrainingDataStats,
+} from "./training-data.actions";
 export { saveSoul } from "./soul.actions";
 export { getWebState } from "./web-state.actions";
 export { cancelTask, retryTask } from "./task.actions";

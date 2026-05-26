@@ -6,6 +6,7 @@ import {
   tokenValueFor,
   usageProviderLabel,
   type DayStack,
+  type ComponentRow,
   type ModelRow,
   type RangeTokenTotals,
 } from "./usage-page-model";
@@ -318,7 +319,7 @@ export function CacheLegend() {
 }
 
 export function ModelBreakdown({ rows }: { rows: ModelRow[] }) {
-  const max = Math.max(1, ...rows.map((r) => r.totalTokens));
+  const max = Math.max(1, ...rows.map((r) => r.tokensPerCall));
   if (rows.length === 0) {
     return (
       <div className="rounded-lg border border-dashed border-[rgb(var(--border))] px-4 py-8 text-center text-xs text-[rgb(var(--muted-foreground))]">
@@ -341,9 +342,9 @@ export function ModelBreakdown({ rows }: { rows: ModelRow[] }) {
                 </div>
               </div>
               <div className="shrink-0 text-right">
-                <div className="text-sm tabular-nums">{r.totalTokens.toLocaleString()}</div>
+                <div className="text-sm tabular-nums">{r.tokensPerCall.toLocaleString()} / run</div>
                 <div className="font-mono text-[10px] uppercase tracking-wide text-[rgb(var(--muted-foreground))]">
-                  {r.calls} call{r.calls === 1 ? "" : "s"}
+                  {r.totalTokens.toLocaleString()} total
                 </div>
               </div>
             </div>
@@ -351,7 +352,9 @@ export function ModelBreakdown({ rows }: { rows: ModelRow[] }) {
             <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-[rgb(var(--muted-foreground))]">
               <span>{cacheTotal.toLocaleString()} cached</span>
               <span>{cacheShare}% input read from cache</span>
-              <span>{r.cacheCreationTokens.toLocaleString()} written</span>
+              <span>{r.calls} run{r.calls === 1 ? "" : "s"}</span>
+              <span>{r.outputTokens.toLocaleString()} output</span>
+              <span>{r.thoughtTokens.toLocaleString()} thinking</span>
             </div>
           </li>
         );
@@ -361,7 +364,7 @@ export function ModelBreakdown({ rows }: { rows: ModelRow[] }) {
 }
 
 function ModelUsageBar({ row, max }: { row: ModelRow; max: number }) {
-  const totalWidth = (row.totalTokens / max) * 100;
+  const totalWidth = (row.tokensPerCall / max) * 100;
   const cacheWidth = row.totalTokens === 0 ? 0 : ((row.cacheCreationTokens + row.cacheReadTokens) / row.totalTokens) * 100;
   return (
     <div className="mt-2 h-2 overflow-hidden rounded bg-[rgb(var(--muted))]">
@@ -369,5 +372,58 @@ function ModelUsageBar({ row, max }: { row: ModelRow; max: number }) {
         <div className="h-full bg-teal-300/70" style={{ width: `${Math.min(100, cacheWidth)}%` }} />
       </div>
     </div>
+  );
+}
+
+export function EfficiencySummary({ rows }: { rows: ModelRow[] }) {
+  const best = rows[0];
+  return (
+    <div className="mb-6 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/35 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="font-mono text-[10px] uppercase tracking-[0.22em] text-[rgb(var(--muted-foreground))]">
+            token efficiency
+          </p>
+          <p className="mt-2 max-w-xl text-sm text-[rgb(var(--muted-foreground))]">
+            Lower tokens per run can be useful, but quality signals and retries decide whether a model is actually better.
+          </p>
+        </div>
+        <div className="text-right">
+          <div className="text-xl font-medium tabular-nums">
+            {best ? best.tokensPerCall.toLocaleString() : "0"}
+          </div>
+          <div className="font-mono text-[10px] uppercase tracking-[0.22em] text-[rgb(var(--muted-foreground))]">
+            {best ? `${usageProviderLabel(best.provider, best.model)} / ${best.model}` : "no samples"}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function ComponentBreakdown({ rows }: { rows: ComponentRow[] }) {
+  if (rows.length === 0) return null;
+  return (
+    <ul className="grid gap-2">
+      {rows.map((row) => (
+        <li
+          key={`${row.component}/${row.stage ?? ""}/${row.purpose}`}
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-[rgb(var(--border))] bg-[rgb(var(--panel))]/40 px-4 py-3"
+        >
+          <div className="min-w-0">
+            <div className="truncate text-sm font-medium">{row.component}</div>
+            <div className="font-mono text-[10px] uppercase tracking-wide text-[rgb(var(--muted-foreground))]">
+              {PURPOSE_LABEL[row.purpose] ?? row.purpose}{row.stage ? ` · ${row.stage}` : ""}
+            </div>
+          </div>
+          <div className="text-right text-sm tabular-nums">
+            <div>{row.totalTokens.toLocaleString()} tokens</div>
+            <div className="font-mono text-[10px] uppercase tracking-wide text-[rgb(var(--muted-foreground))]">
+              {row.tokensPerCall.toLocaleString()} / run
+            </div>
+          </div>
+        </li>
+      ))}
+    </ul>
   );
 }

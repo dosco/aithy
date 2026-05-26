@@ -7,6 +7,7 @@ import {
   UserProfileSection,
 } from "@/components/settings-identity-sections";
 import { SandboxSettingsTab } from "@/components/settings-sandbox-tab";
+import { ObservabilitySettingsTab } from "@/components/settings-observability-tab";
 import { SearchSettingsTab } from "@/components/settings-search-tab";
 import { PermissionsSettingsTab } from "@/components/settings-permissions-tab";
 import { ThemeSync } from "@/components/theme-sync";
@@ -35,7 +36,7 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
   const [meshCatalogs, setMeshCatalogs] = useState<MeshLiveCatalogPeerDto[]>(initialState.meshCatalogs);
 
   async function save(options?: {
-    section?: "search" | "sandbox";
+    section?: "search" | "sandbox" | "observability";
     clearParallelApiKey?: boolean;
   }) {
     setSaveBusy(true);
@@ -68,7 +69,7 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
               }
               : {}),
             systemBashEnabled: config.systemBashEnabled,
-            traceEnabled: config.traceEnabled,
+            trainingDataCaptureEnabled: config.trainingDataCaptureEnabled,
             globalMounts: config.globalMounts
               .map((m) => ({ hostPath: m.hostPath.trim() }))
               .filter((m) => m.hostPath.length > 0),
@@ -105,6 +106,7 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
       <Tabs defaultValue="search">
         <TabsList className="mb-6">
           <TabsTrigger value="search">Search</TabsTrigger>
+          <TabsTrigger value="observability">Data</TabsTrigger>
           <TabsTrigger value="sandbox">Sandbox</TabsTrigger>
           <TabsTrigger value="permissions">Permissions</TabsTrigger>
           <TabsTrigger value="profile">User</TabsTrigger>
@@ -147,6 +149,16 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
             saved={saved}
             saveBusy={saveBusy}
             onSave={() => void save({ section: "sandbox" })}
+          />
+        </TabsContent>
+
+        <TabsContent value="observability">
+          <ObservabilitySettingsTab
+            config={config}
+            setConfig={setConfig}
+            saved={saved}
+            saveBusy={saveBusy}
+            onSave={() => void save({ section: "observability" })}
           />
         </TabsContent>
 

@@ -180,6 +180,37 @@ describe("SqliteTaskStore", () => {
     expect(result.task.reason).toBe("Still queued");
     store.close();
   });
+
+  test("looks up lightweight task outcomes by id", async () => {
+    const store = await makeStore();
+    const first = store.create({
+      kind: "chat.turn",
+      title: "First",
+      attempt: 2,
+      retryOfTaskId: "prior",
+    });
+    const second = store.create({ kind: "memory.auto", title: "Second" });
+    store.update(first.id, { status: "completed", reason: "Done" });
+    store.update(second.id, { status: "failed", reason: "Nope" });
+
+    expect(store.outcomesByIds([first.id, "missing", second.id])).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: first.id,
+        status: "completed",
+        attempt: 2,
+        retryOfTaskId: "prior",
+        completedAt: expect.any(String),
+      }),
+      expect.objectContaining({
+        id: second.id,
+        status: "failed",
+        attempt: 1,
+        retryOfTaskId: null,
+        completedAt: expect.any(String),
+      }),
+    ]));
+    store.close();
+  });
 });
 
 async function makeStore(): Promise<SqliteTaskStore> {

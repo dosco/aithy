@@ -136,7 +136,7 @@ function RetrievalHealth({ state }: { state: LocalInferencePageStateDto }) {
       <div className="grid gap-2 sm:grid-cols-3">
         <HealthCell label="Memories" value={embeddedLabel(health.memories)} stale={health.memories.stale} />
         <HealthCell label="Episodes" value={embeddedLabel(health.episodes)} stale={health.episodes.stale} />
-        <HealthCell label="Skills" value={embeddedLabel(health.skills)} stale={health.skills.stale} />
+        <HealthCell label="Skill chunks" value={embeddedLabel(health.skills)} stale={health.skills.stale} />
       </div>
       <div className="mt-3 grid gap-1 text-xs text-[rgb(var(--muted-foreground))]">
         <p>Reranker: {health.rerankerReady ? "active" : "inactive"}</p>

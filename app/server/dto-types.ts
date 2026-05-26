@@ -1,9 +1,9 @@
 import type { AiProviderProfile, SearchProviderId, SearchProviderProfile, StoredSettings } from "../../src/settings/types";
 import type { CustomSandboxImage, SandboxImageOption, SandboxImageSelection } from "../../src/sandbox/image-catalog";
+import type { SandboxHealthReport } from "../../src/sandbox/health";
 import type { LocalInferenceSettings } from "../../src/local-inference/settings";
 import type { MemoryGuidance, MemoryKind, MemoryScopeKind, MemorySubject } from "../../src/memory/types";
 import type { MemoryRunStatus, MemoryRunTrigger } from "../../src/memory/memory-runs";
-import type { NotificationKind } from "../../src/notifications/types";
 import type { UsagePurpose } from "../../src/usage/types";
 import type { CapabilityPolicyRule } from "../../src/security/capability-policy";
 import type { TaskSummary } from "../../src/tasks/types";
@@ -22,11 +22,13 @@ import type {
   SerializableSystemPermissionRequest,
   WebLiveEvent,
 } from "../../src/web/live-events";
+import type { NotificationAttentionDto, NotificationDto } from "./notification.dto-types";
 
 export type SessionSummaryDto = SerializableSessionSummary;
 
 export interface GlobalMountDto {
   hostPath: string;
+  mode?: "read-only" | "read-write";
 }
 
 export interface ConfigDto {
@@ -44,6 +46,7 @@ export interface ConfigDto {
   sandboxImageSelection: SandboxImageSelection;
   customSandboxImages: CustomSandboxImage[];
   sandboxImageOptions: SandboxImageOption[];
+  sandboxHealth: SandboxHealthReport | null;
   sandboxCpus: number;
   sandboxMemoryMb: number;
   sandboxNetwork: string;
@@ -54,6 +57,7 @@ export interface ConfigDto {
   parallelSearchMcpUrl: string;
   grokSubscriptionConnected?: boolean;
   systemBashEnabled: boolean;
+  trainingDataCaptureEnabled: boolean;
   traceEnabled: boolean;
   botId: string;
   stateDbPath: string;
@@ -214,6 +218,7 @@ export interface SkillDto {
   whenToUse: string | null;
   body: string;
   allowedTools: string | null;
+  requiredSandboxCapabilities: string | null;
   tags: string | null;
   disableModelInvocation: boolean;
   userInvocable: boolean;
@@ -287,6 +292,8 @@ export interface UsageBucketDto {
   provider: string;
   model: string;
   purpose: UsagePurpose;
+  component: string;
+  stage: "ctx" | "task" | null;
   inputTokens: number;
   outputTokens: number;
   thoughtTokens: number;
@@ -319,16 +326,6 @@ export interface ActivityDto {
   label: string;
   detail?: JsonValue;
   tone?: "neutral" | "danger" | "success";
-}
-
-export interface NotificationDto {
-  id: number;
-  kind: NotificationKind;
-  title: string;
-  body: string | null;
-  link: string | null;
-  read: boolean;
-  createdAt: string;
 }
 
 export type TaskDto = TaskSummary;
@@ -401,6 +398,7 @@ export interface WebStateDto {
   memoryRuns: MemoryRunDto[];
   notifications: NotificationDto[];
   unreadNotifications: number;
+  notificationAttention: NotificationAttentionDto;
   tasks: TaskDto[];
   aiConfigured: boolean;
   runtimeCapabilities: RuntimeCapabilitiesDto;
@@ -452,7 +450,7 @@ export type SetupPageStateDto = Pick<
 
 export type ThemesPageStateDto = Pick<WebStateDto, "settings">;
 export type UsagePageStateDto = Pick<WebStateDto, "settings">;
-export type NotificationsPageStateDto = Pick<WebStateDto, "notifications" | "unreadNotifications">;
+export type NotificationsPageStateDto = Pick<WebStateDto, "notifications" | "unreadNotifications" | "notificationAttention">;
 
 export type TasksPageStateDto = Pick<WebStateDto, "tasks" | "settings">;
 

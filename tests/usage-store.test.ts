@@ -36,6 +36,8 @@ describe("SqliteUsageStore", () => {
       provider: "openai",
       model: "gpt-5.4-mini",
       purpose: "chat",
+      component: "chat",
+      stage: null,
       inputTokens: 12,
       outputTokens: 8,
       thoughtTokens: 4,
@@ -100,6 +102,25 @@ describe("SqliteUsageStore", () => {
     ]);
   });
 
+  test("returns raw records for advisor time windows", async () => {
+    const dbPath = await tempDbPath();
+    const store = new SqliteUsageStore(dbPath);
+    const db = new Database(dbPath);
+    db.exec(`
+      INSERT INTO llm_usage (
+        provider, model, purpose, component, stage,
+        input_tokens, output_tokens, thought_tokens,
+        cache_creation_tokens, cache_read_tokens, total_tokens,
+        session_id, run_id, occurred_at
+      ) VALUES
+        ('openai', 'small', 'chat', 'chat.actor', 'ctx', 1, 1, 0, 0, 0, 2, 's1', 'r1', datetime('now')),
+        ('openai', 'old', 'chat', 'chat.actor', 'ctx', 1, 1, 0, 0, 0, 2, 's1', 'r2', '2000-01-01T00:00:00.000Z');
+    `);
+    db.close();
+
+    expect(store.recordsSince(30).map((row) => row.model)).toEqual(["small"]);
+  });
+
   test("migrates to the day bucket index and keeps occurred_at for time windows", async () => {
     const dbPath = await tempDbPath();
     const seed = new Database(dbPath, { create: true });
@@ -145,7 +166,7 @@ describe("SqliteUsageStore", () => {
     `).all() as Array<{ name: string }>;
 
     expect(indexRows.map((row) => row.name)).toContain("llm_usage_occurred_idx");
-    expect(indexRows.map((row) => row.name)).toContain("llm_usage_day_idx");
+    expect(indexRows.map((row) => row.name)).toContain("llm_usage_day_component_idx");
     expect(indexRows.map((row) => row.name)).not.toContain("llm_usage_purpose_idx");
     expect(indexRows.map((row) => row.name)).not.toContain("llm_usage_model_idx");
 
@@ -172,7 +193,7 @@ describe("SqliteUsageStore", () => {
         ORDER BY bucket ASC, provider ASC, model ASC, purpose ASC
       `,
     );
-    expect(groupedPlan).toContain("llm_usage_day_idx");
+    expect(groupedPlan).toContain("llm_usage_day_component_idx");
 
     const windowPlan = explainQueryPlan(
       db,

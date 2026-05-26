@@ -28,6 +28,7 @@ import {
   notificationDto,
   profileDto,
   runtimeCapabilitiesDto,
+  sandboxHealthFromService,
   sessionDto,
   skillDto,
   soulDto,
@@ -62,6 +63,7 @@ import {
   type UsagePageStateDto,
   type WebStateDto,
 } from "./dto-types";
+import { notificationAttentionDto } from "./notification-attention";
 
 const SERVICE_READY_FRESH_MS = 15_000;
 
@@ -105,6 +107,7 @@ export async function webStateDto(
     memoryRuns: runtime.memoryRuns.recent(50).map(memoryRunDto),
     notifications: runtime.notifications.recent(50).map(notificationDto),
     unreadNotifications: runtime.notifications.unreadCount(),
+    notificationAttention: notificationAttentionDto(runtime),
     tasks: runtime.tasks.recent({ limit: 50 }).map(taskSummary),
     aiConfigured: isAiConfigured(runtime.config),
     runtimeCapabilities: runtimeCapabilitiesDto(),
@@ -292,9 +295,11 @@ export function skillsPageStateDto(runtime: AithyRuntime): SkillsPageStateDto {
 
 export async function settingsPageStateDto(runtime: AithyRuntime): Promise<SettingsPageStateDto> {
   const settings = runtime.settings.load();
+  const config = configDto(runtime.config, settings);
+  config.sandboxHealth = sandboxHealthFromService(runtime.runtimeStore.service("sandbox-worker"));
   return {
     settings,
-    config: configDto(runtime.config, settings),
+    config,
     secret: await secretStatus(runtime.config, settings),
     fastSecret: await fastSecretStatus(runtime, settings),
     providerSecrets: await providerSecretStatuses(runtime.config, settings),
@@ -345,6 +350,7 @@ export function notificationsPageStateDto(runtime: AithyRuntime): NotificationsP
   return {
     notifications: runtime.notifications.recent(50).map(notificationDto),
     unreadNotifications: runtime.notifications.unreadCount(),
+    notificationAttention: notificationAttentionDto(runtime),
   };
 }
 

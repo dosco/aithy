@@ -3,6 +3,7 @@ name: PDF Page Range Assembly
 description: Split, merge, reorder, and extract PDF page ranges with qpdf and clear output manifests.
 when_to_use: Use when the user asks to split PDFs, combine PDFs, remove pages, reorder pages, or extract ranges.
 tools: Bash(qpdf:*) Bash(pdfinfo:*) Read Write
+required_sandbox_capabilities: document
 tags: builtin pdf qpdf split merge pages
 ---
 

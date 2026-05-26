@@ -16,6 +16,7 @@ import { shutdownManager } from "bunqueue/client";
 import { SqliteNotificationStore } from "../notifications/notification-store";
 import type { NotificationCreate, NotificationEntry } from "../notifications/types";
 import { SqliteUsageStore } from "../usage/usage-store";
+import { SqliteTrainingDataStore } from "../training-data/store";
 import type { SandboxProvider } from "../sandbox/provider";
 import { UnavailableSandboxProvider } from "../sandbox/unavailable-provider";
 import { SessionManager } from "../session/session-manager";
@@ -67,9 +68,8 @@ export interface AithyRuntime {
   transcripts: SqliteTranscriptRecallStore;
   notifications: SqliteNotificationStore;
   notify(input: NotificationCreate): NotificationEntry;
-  usage: SqliteUsageStore;
-  memoryRuns: SqliteMemoryRunsStore;
-  memoryConsolidate: MemoryConsolidateHandle;
+  usage: SqliteUsageStore; trainingData: SqliteTrainingDataStore;
+  memoryRuns: SqliteMemoryRunsStore; memoryConsolidate: MemoryConsolidateHandle;
   skillCandidates: SqliteSkillCandidateStore;
   skillPromotions: SqliteSkillPromotionStore;
   activeRuns: ActiveRunRegistry;
@@ -158,7 +158,7 @@ class RuntimeImpl implements AithyRuntime {
     public skillCandidates: SqliteSkillCandidateStore,
     public skillPromotions: SqliteSkillPromotionStore,
     public notifications: SqliteNotificationStore,
-    public usage: SqliteUsageStore,
+    public usage: SqliteUsageStore, public trainingData: SqliteTrainingDataStore,
     public activeRuns: ActiveRunRegistry,
     public dispatcher: UserChatQueueClient,
     public queue: QueueServiceClient,
@@ -175,14 +175,7 @@ class RuntimeImpl implements AithyRuntime {
       type: "notification",
       id: crypto.randomUUID(),
       createdAt: entry.createdAt,
-      notification: {
-        id: entry.id,
-        kind: entry.kind,
-        title: entry.title,
-        body: entry.body,
-        link: entry.link,
-        createdAt: entry.createdAt,
-      },
+      notification: { ...entry },
     });
     return entry;
   }
@@ -210,7 +203,7 @@ class RuntimeImpl implements AithyRuntime {
     const artifacts = new SqliteArtifactStore(config.stateDbPath, config.workspaceRoot, config.outboxRoot);
     const memoryRuns = new SqliteMemoryRunsStore(config.stateDbPath);
     const notifications = new SqliteNotificationStore(config.stateDbPath);
-    const usage = new SqliteUsageStore(config.stateDbPath);
+    const usage = new SqliteUsageStore(config.stateDbPath); const trainingData = new SqliteTrainingDataStore(config.stateDbPath);
     const runtimeStore = new RuntimeStore(config.stateDbPath);
     const tasks = new SqliteTaskStore(config.stateDbPath);
     const automations = new SqliteAutomationStore(config.stateDbPath);
@@ -274,7 +267,7 @@ class RuntimeImpl implements AithyRuntime {
       skillCandidates,
       skillPromotions,
       notifications,
-      usage,
+      usage, trainingData,
       activeRuns,
       dispatcher,
       queue,
@@ -478,7 +471,7 @@ class RuntimeImpl implements AithyRuntime {
     this.transcripts.close();
     this.memoryRuns.close();
     this.notifications.close();
-    this.usage.close();
+    this.usage.close(); this.trainingData.close();
     this.runtimeStore.close();
     this.tasks.close();
     this.automations.close();

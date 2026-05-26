@@ -15,6 +15,11 @@ import type { AppConfig } from "../../../config/env";
 import type { SandboxCommand } from "../../protocol/types";
 import type { RuntimeCommandRow } from "../../runtime-store";
 import type { QueueServiceClient } from "../queue/client";
+import {
+  initialSandboxHealth,
+  runSandboxDoctor,
+  type SandboxHealthReport,
+} from "../../../sandbox/health";
 
 type SandboxWorkerConfig = Awaited<ReturnType<typeof resolveEffectiveConfig>>;
 
@@ -22,6 +27,7 @@ export class SandboxWorkerRuntime {
   private heartbeatTimer?: Timer;
   private shutdownPromise?: Promise<void>;
   private activeSessionId: string | null = null;
+  private sandboxHealth: SandboxHealthReport;
 
   private constructor(
     private readonly baseConfig: AppConfig,
@@ -31,7 +37,9 @@ export class SandboxWorkerRuntime {
     private readonly events: EventBus,
     private readonly live: LiveEventHub,
     private provider: SandboxProvider,
-  ) {}
+  ) {
+    this.sandboxHealth = initialSandboxHealth(config);
+  }
 
   static async create(queue: QueueServiceClient): Promise<SandboxWorkerRuntime> {
     assertSupportedBunVersion();
@@ -49,9 +57,9 @@ export class SandboxWorkerRuntime {
   }
 
   start(): void {
-    this.heartbeat("ready", sandboxHeartbeatDetail(this.config));
+    this.heartbeat("ready", sandboxHeartbeatDetail(this.config, this.sandboxHealth));
     this.heartbeatTimer = setInterval(() => {
-      this.heartbeat("ready", sandboxHeartbeatDetail(this.config));
+      this.heartbeat("ready", sandboxHeartbeatDetail(this.config, this.sandboxHealth));
     }, 2_000);
     this.heartbeatTimer.unref();
     this.queue.onCommand((command) => this.handleCommand(command));
@@ -71,7 +79,7 @@ export class SandboxWorkerRuntime {
       detail: { commandId: command.id },
     });
     try {
-      const result = await this.runCommand(command.kind, command.payload);
+      const result = await this.runCommand(command);
       this.appendLog({
         role: "sandbox-worker",
         level: "debug",
@@ -92,7 +100,8 @@ export class SandboxWorkerRuntime {
     }
   }
 
-  private async runCommand(kind: string, payload: unknown): Promise<SandboxCommand["result"]> {
+  private async runCommand(command: RuntimeCommandRow): Promise<SandboxCommand["result"]> {
+    const { kind, payload } = command;
     if (kind === "sandbox.createSession") {
       const value = objectPayload(payload);
       const session = await this.provider.createSession(
@@ -102,6 +111,7 @@ export class SandboxWorkerRuntime {
         mountsField(value),
       );
       this.activeSessionId = session.id;
+      await this.refreshSandboxHealth(session.id);
       return session;
     }
     if (kind === "sandbox.recreate") {
@@ -113,18 +123,36 @@ export class SandboxWorkerRuntime {
         mountsField(value),
       );
       this.activeSessionId = session.id;
+      await this.refreshSandboxHealth(session.id);
       return session;
     }
     if (kind === "sandbox.bash") {
       const value = objectPayload(payload);
+      const sessionId = stringField(value, "sessionId");
+      const request = bashRequestField(value);
       this.appendLog({
         role: "sandbox-worker",
         level: "info",
         source: "bash",
-        message: `bash ${stringField(value, "sessionId")}`,
-        detail: { command: bashRequestField(value).command },
+        message: `bash ${sessionId}`,
+        detail: { command: request.command },
       });
-      return this.provider.bash(stringField(value, "sessionId"), bashRequestField(value));
+      this.sandboxCommandEvent(command.id, sessionId, "started", request);
+      try {
+        const result = await this.provider.bash(sessionId, request);
+        if (result.stdout) this.sandboxCommandEvent(command.id, sessionId, "stdout", request, { chunk: result.stdout });
+        if (result.stderr) this.sandboxCommandEvent(command.id, sessionId, "stderr", request, { chunk: result.stderr });
+        this.sandboxCommandEvent(command.id, sessionId, result.timedOut ? "timed-out" : result.exitCode === 0 ? "completed" : "failed", request, {
+          exitCode: result.exitCode,
+          timedOut: result.timedOut,
+        });
+        return result;
+      } catch (error) {
+        this.sandboxCommandEvent(command.id, sessionId, "failed", request, {
+          error: error instanceof Error ? error.message : String(error),
+        });
+        throw error;
+      }
     }
     if (kind === "sandbox.read") {
       const value = objectPayload(payload);
@@ -169,9 +197,37 @@ export class SandboxWorkerRuntime {
     const setupStatus = setupStatusReporter(this.events, this.queue);
     await this.destroyActiveSandboxForReload();
     this.config = next;
+    this.sandboxHealth = initialSandboxHealth(next);
     reportSandboxConfig(this.queue, setupStatus, next);
     this.provider = createWorkerProvider(next, setupStatus);
-    this.heartbeat("ready", sandboxHeartbeatDetail(next));
+    this.heartbeat("ready", sandboxHeartbeatDetail(next, this.sandboxHealth));
+  }
+
+  private async refreshSandboxHealth(sessionId: string): Promise<void> {
+    const startedAt = new Date().toISOString();
+    this.sandboxHealth = {
+      ...initialSandboxHealth(this.config),
+      status: "checking",
+      sessionId,
+      startedAt,
+      checkedAt: startedAt,
+    };
+    this.heartbeat("busy", sandboxHeartbeatDetail(this.config, this.sandboxHealth));
+    const report = await runSandboxDoctor({
+      provider: this.provider,
+      sessionId,
+      config: this.config,
+      startedAt,
+    });
+    this.sandboxHealth = report;
+    this.appendLog({
+      role: "sandbox-worker",
+      level: report.status === "ready" ? "info" : report.status === "degraded" ? "warn" : "error",
+      source: "doctor",
+      message: `sandbox doctor ${report.status}: ${report.image}`,
+      detail: report,
+    });
+    this.heartbeat("ready", sandboxHeartbeatDetail(this.config, this.sandboxHealth));
   }
 
   private async destroyActiveSandboxForReload(): Promise<void> {
@@ -210,6 +266,27 @@ export class SandboxWorkerRuntime {
 
   private heartbeat(state: Parameters<QueueServiceClient["heartbeat"]>[1], detail?: unknown): void {
     void this.queue.heartbeat("sandbox-worker", state, detail);
+  }
+
+  private sandboxCommandEvent(
+    commandId: string,
+    sessionId: string,
+    phase: "started" | "stdout" | "stderr" | "completed" | "failed" | "timed-out",
+    request: SandboxBashRequest,
+    extra: Record<string, unknown> = {},
+  ): void {
+    void this.queue.appendEvent({
+      type: "sandbox-command",
+      id: crypto.randomUUID(),
+      createdAt: new Date().toISOString(),
+      commandId,
+      sessionId,
+      phase,
+      command: request.command,
+      cwd: request.cwd,
+      timeoutProfile: request.timeoutProfile,
+      ...extra,
+    });
   }
 }
 
@@ -251,7 +328,7 @@ function reportSandboxConfig(
   });
 }
 
-function sandboxHeartbeatDetail(config: SandboxWorkerConfig): Record<string, unknown> {
+function sandboxHeartbeatDetail(config: SandboxWorkerConfig, health?: SandboxHealthReport): Record<string, unknown> {
   return {
     provider: config.sandboxProvider,
     selection: config.sandboxImageSelection,
@@ -260,6 +337,7 @@ function sandboxHeartbeatDetail(config: SandboxWorkerConfig): Record<string, unk
     network: config.sandboxNetwork,
     cpus: config.sandboxCpus,
     memoryMb: config.sandboxMemoryMb,
+    health: health ?? initialSandboxHealth(config),
   };
 }
 
@@ -302,9 +380,17 @@ function bashRequestField(value: Record<string, unknown>): SandboxBashRequest {
     command: stringField(record, "command"),
     cwd: optionalString(record, "cwd"),
     timeoutMs: optionalNumber(record, "timeoutMs"),
+    timeoutProfile: optionalTimeoutProfile(record, "timeoutProfile"),
     maxOutputChars: optionalNumber(record, "maxOutputChars"),
     env: optionalStringMap(record, "env"),
   };
+}
+
+function optionalTimeoutProfile(value: Record<string, unknown>, key: string): SandboxBashRequest["timeoutProfile"] {
+  const field = value[key];
+  if (field === undefined) return undefined;
+  if (field === "short" || field === "long" || field === "extended") return field;
+  throw new Error(`Invalid sandbox command field: ${key}`);
 }
 
 function optionalString(value: Record<string, unknown>, key: string): string | undefined {

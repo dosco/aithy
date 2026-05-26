@@ -142,6 +142,24 @@ describe("hybrid memory retrieval", () => {
     expect(store.embeddingStats()).toMatchObject({ total: 1, embedded: 1, stale: 0 });
   });
 
+  test("hybrid vector search ignores stale embeddings until reindexed", async () => {
+    const embedder = new MockEmbedder([
+      ["legacy memory", "legacy query"],
+      ["fresh memory", "fresh query"],
+    ]);
+    const store = new SqliteMemoryStore(await tempDbPath(), { embedder, inlineEmbeds: false });
+    if (!store.isHybridReady()) return;
+
+    const entry = store.upsert({ kind: "fact", title: "Recall target", body: "legacy memory" });
+    await store.indexEmbeddings([entry.id]);
+    store.upsert({ id: entry.id, kind: "fact", title: "Recall target", body: "fresh memory" });
+
+    expect(await store.search(["legacy query"])).toEqual([]);
+    expect(store.embeddingStats()).toMatchObject({ total: 1, embedded: 0, stale: 1 });
+    await store.indexEmbeddings([entry.id]);
+    expect((await store.search(["fresh query"]))[0]?.body).toBe("fresh memory");
+  });
+
   test("vec leg failure degrades to FTS-only without throwing", async () => {
     const embedder = new MockEmbedder();
     const store = new SqliteMemoryStore(await tempDbPath(), { embedder });

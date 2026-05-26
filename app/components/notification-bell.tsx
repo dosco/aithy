@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import * as Popover from "@radix-ui/react-popover";
 import { Bell, Check, ChevronRight } from "lucide-react";
@@ -9,31 +9,69 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
 } from "@/server/actions.functions";
-import type { NotificationDto } from "@/server/dto";
+import type { NotificationAttentionDto, NotificationDto } from "@/server/dto";
 import type { WebLiveEvent } from "../../src/web/live-events";
 
 type IncomingNotification = Extract<WebLiveEvent, { type: "notification" }>["notification"];
+type NotificationListItem =
+  | { kind: "notification"; item: NotificationDto; active: boolean }
+  | {
+    kind: "attention";
+    id: string;
+    title: string;
+    body: string | null;
+    link: string | null;
+    createdAt: string;
+  };
 
 export function NotificationBell() {
   const [open, setOpen] = useState(false);
   const [items, setItems] = useState<NotificationDto[]>([]);
   const [unread, setUnread] = useState(0);
+  const [attention, setAttention] = useState<NotificationAttentionDto>({
+    active: false,
+    count: 0,
+    label: "All caught up",
+    items: [],
+  });
+  const refreshTimer = useRef<number | null>(null);
 
   useEffect(() => {
     void refresh();
+    return () => {
+      if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
+    };
   }, []);
 
   useLiveEvent((event) => {
-    if (event.type !== "notification") return;
-    const incoming = event.notification;
-    setItems((prev) => mergeIncoming(prev, incoming));
-    setUnread((n) => n + 1);
+    if (event.type === "notification") {
+      const incoming = event.notification;
+      setItems((prev) => mergeIncoming(prev, incoming));
+      if (!incoming.read) setUnread((n) => n + 1);
+    }
+    if (
+      event.type === "notification"
+      || event.type === "permission-request"
+      || event.type === "task-status"
+      || event.type === "message"
+    ) {
+      scheduleRefresh();
+    }
   });
 
   async function refresh() {
     const result = await listNotifications();
     setItems(result.notifications);
     setUnread(result.unread);
+    setAttention(result.notificationAttention);
+  }
+
+  function scheduleRefresh() {
+    if (refreshTimer.current) window.clearTimeout(refreshTimer.current);
+    refreshTimer.current = window.setTimeout(() => {
+      refreshTimer.current = null;
+      void refresh();
+    }, 250);
   }
 
   async function activate(item: NotificationDto) {
@@ -51,18 +89,22 @@ export function NotificationBell() {
     setItems((prev) => prev.map((n) => ({ ...n, read: true })));
   }
 
+  const rows = notificationRows(attention, items);
+
   return (
     <Popover.Root open={open} onOpenChange={setOpen}>
       <Popover.Trigger asChild>
         <button
           type="button"
-          aria-label={`Notifications${unread > 0 ? ` (${unread} unread)` : ""}`}
+          aria-label={attention.active
+            ? `Notifications: ${attention.label}`
+            : `Notifications${unread > 0 ? ` (${unread} unread)` : ""}`}
           className={cn("app-top-icon relative", open && "app-top-icon-active")}
         >
           <Bell className="h-4 w-4" />
-          {unread > 0 ? (
-            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-[rgb(var(--accent))] px-1 text-[9px] font-medium text-[rgb(var(--accent-foreground))]">
-              {unread > 99 ? "99+" : unread}
+          {attention.active ? (
+            <span className="absolute -right-0.5 -top-0.5 flex h-4 min-w-4 items-center justify-center rounded-full border border-[rgb(var(--background))] bg-[rgb(var(--accent))] px-1 text-[9px] font-semibold text-[rgb(var(--accent-foreground))] shadow-[0_0_0_2px_rgb(var(--background)),0_3px_8px_rgb(var(--accent)/0.22)]">
+              {attention.count > 9 ? "9+" : attention.count}
             </span>
           ) : null}
         </button>
@@ -79,7 +121,8 @@ export function NotificationBell() {
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium">Notifications</div>
               <div className="text-[11px] text-[rgb(var(--muted-foreground))]">
-                {unread > 0 ? `${unread} unread` : "All caught up"}
+                {attention.active ? attention.label : "All caught up"}
+                {unread > 0 ? ` · ${unread} unread` : ""}
               </div>
             </div>
             <Link
@@ -102,12 +145,19 @@ export function NotificationBell() {
             ) : null}
           </div>
           <ul className="flex flex-1 flex-col gap-1 overflow-y-auto">
-            {items.length === 0 ? (
+            {rows.length === 0 ? (
               <li className="px-4 py-7 text-center text-sm text-[rgb(var(--muted-foreground))]">
                 Nothing new right now.
               </li>
             ) : (
-              items.map((n) => <NotificationRow key={n.id} item={n} onActivate={activate} />)
+              rows.map((row) => (
+                <NotificationRow
+                  key={rowKey(row)}
+                  row={row}
+                  onActivate={activate}
+                  onClose={() => setOpen(false)}
+                />
+              ))
             )}
           </ul>
         </Popover.Content>
@@ -117,18 +167,25 @@ export function NotificationBell() {
 }
 
 function NotificationRow({
-  item,
+  row,
   onActivate,
+  onClose,
 }: {
-  item: NotificationDto;
+  row: NotificationListItem;
   onActivate: (item: NotificationDto) => void;
+  onClose: () => void;
 }) {
+  const title = row.kind === "notification" ? row.item.title : row.title;
+  const body = row.kind === "notification" ? row.item.body : row.body;
+  const link = row.kind === "notification" ? row.item.link : row.link;
+  const createdAt = row.kind === "notification" ? row.item.createdAt : row.createdAt;
+  const read = row.kind === "notification" ? row.item.read && !row.active : false;
   const inner = (
     <div className="flex gap-3 px-3 py-2.5">
       <span
         className={cn(
           "mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full",
-          item.read ? "bg-[rgb(var(--border))]" : "bg-[rgb(var(--accent))]",
+          read ? "bg-[rgb(var(--border))]" : "bg-[rgb(var(--foreground))]/70",
         )}
       />
       <div className="min-w-0 flex-1">
@@ -136,18 +193,18 @@ function NotificationRow({
           <div
             className={cn(
               "min-w-0 truncate text-sm",
-              item.read ? "text-[rgb(var(--foreground))]" : "font-medium",
+              read ? "text-[rgb(var(--foreground))]" : "font-medium",
             )}
           >
-            {item.title}
+            {title}
           </div>
           <span className="shrink-0 text-[10px] text-[rgb(var(--muted-foreground))]">
-            {relativeTime(item.createdAt)}
+            {relativeTime(createdAt)}
           </span>
         </div>
-        {item.body ? (
+        {body ? (
           <div className="mt-0.5 line-clamp-2 text-xs leading-5 text-[rgb(var(--muted-foreground))]">
-            {item.body}
+            {body}
           </div>
         ) : null}
       </div>
@@ -155,14 +212,18 @@ function NotificationRow({
   );
   const className = cn(
     "block w-full rounded-md text-left transition",
-    item.read
+    read
       ? "hover:bg-[rgb(var(--muted))]/50"
       : "bg-[rgb(var(--muted))]/45 hover:bg-[rgb(var(--muted))]/70",
   );
-  if (item.link) {
+  const activate = () => {
+    if (row.kind === "notification") onActivate(row.item);
+    else onClose();
+  };
+  if (link) {
     return (
       <li>
-        <Link to={item.link} onClick={() => onActivate(item)} className={className}>
+        <Link to={link} onClick={activate} className={className}>
           {inner}
         </Link>
       </li>
@@ -170,11 +231,47 @@ function NotificationRow({
   }
   return (
     <li>
-      <button type="button" onClick={() => onActivate(item)} className={cn(className, "w-full")}>
+      <button type="button" onClick={activate} className={cn(className, "w-full")}>
         {inner}
       </button>
     </li>
   );
+}
+
+function notificationRows(
+  attention: NotificationAttentionDto,
+  items: NotificationDto[],
+): NotificationListItem[] {
+  const attentionRows: Array<Extract<NotificationListItem, { kind: "attention" }>> = attention.items.map((item) => ({
+    kind: "attention",
+    id: item.id,
+    title: item.title,
+    body: item.body,
+    link: item.link,
+    createdAt: item.createdAt,
+  }));
+  const notificationRows = items
+    .filter((item) => !attentionRows.some((row) => sameNotification(row, item)))
+    .map((item) => ({
+      kind: "notification" as const,
+      item,
+      active: item.actionStatus === "pending",
+    }));
+  return [...attentionRows, ...notificationRows]
+    .sort((a, b) => rowCreatedAt(b).localeCompare(rowCreatedAt(a)))
+    .slice(0, 8);
+}
+
+function sameNotification(row: Extract<NotificationListItem, { kind: "attention" }>, item: NotificationDto): boolean {
+  return row.link === item.link && row.body === item.body;
+}
+
+function rowKey(row: NotificationListItem): string {
+  return row.kind === "notification" ? `notification-${row.item.id}` : `attention-${row.id}`;
+}
+
+function rowCreatedAt(row: NotificationListItem): string {
+  return row.kind === "notification" ? row.item.createdAt : row.createdAt;
 }
 
 function mergeIncoming(prev: NotificationDto[], incoming: IncomingNotification): NotificationDto[] {
@@ -185,7 +282,11 @@ function mergeIncoming(prev: NotificationDto[], incoming: IncomingNotification):
     title: incoming.title,
     body: incoming.body,
     link: incoming.link,
-    read: false,
+    read: incoming.read ?? false,
+    conversationId: incoming.conversationId ?? null,
+    actionStatus: incoming.actionStatus ?? "none",
+    actionExpiresAt: incoming.actionExpiresAt ?? null,
+    resolvedAt: incoming.resolvedAt ?? null,
     createdAt: incoming.createdAt,
   };
   return [dto, ...prev].slice(0, 5);

@@ -71,15 +71,12 @@ export function skillEmbeddingStats(
   embedder: Embedder | null,
   skills: readonly SkillEntry[],
 ): EmbeddingHealthStats {
-  if (!embedder) return { total: skills.length, embedded: 0, stale: skills.length };
+  const total = skills.reduce((sum, skill) => sum + skillEmbeddingChunks(skill).length, 0);
+  if (!embedder) return { total, embedded: 0, stale: total };
   let embedded = 0;
   let stale = 0;
   for (const skill of skills) {
     const chunks = skillEmbeddingChunks(skill);
-    if (chunks.length === 0) {
-      embedded += 1;
-      continue;
-    }
     const rows = db
       .query(
         `SELECT chunk_key AS chunkKey, body_hash AS bodyHash, model_id AS modelId, dim
@@ -88,17 +85,17 @@ export function skillEmbeddingStats(
       )
       .all({ $skillId: skill.id }) as Array<{ chunkKey: string; bodyHash: string; modelId: string; dim: number }>;
     const byKey = new Map(rows.map((row) => [row.chunkKey, row]));
-    const upToDate = chunks.every((chunk) => {
+    for (const chunk of chunks) {
       const row = byKey.get(chunk.key);
-      return row
+      if (row
         && row.bodyHash === skillChunkHash(chunk.text)
         && row.modelId === embedder.modelId
-        && row.dim === embedder.dim;
-    });
-    if (upToDate) embedded += 1;
-    else stale += 1;
+        && row.dim === embedder.dim
+      ) embedded += 1;
+      else stale += 1;
+    }
   }
-  return { total: skills.length, embedded, stale };
+  return { total, embedded, stale };
 }
 
 export async function indexSkillEmbeddings(
@@ -122,6 +119,23 @@ export async function indexSkillEmbeddings(
     }
   }
   return counts;
+}
+
+export function clearSkillEmbeddingChunks(db: Database, skillId: string, deleteVecRows: boolean): void {
+  let rows: Array<{ id: number }>;
+  try {
+    rows = db
+      .query("SELECT id FROM skill_embedding_chunks WHERE skill_id = $skillId")
+      .all({ $skillId: skillId }) as Array<{ id: number }>;
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("no such table")) return;
+    throw error;
+  }
+  if (deleteVecRows) {
+    const deleteVec = db.query("DELETE FROM skills_vec WHERE rowid = $id");
+    for (const row of rows) deleteVec.run({ $id: row.id } as never);
+  }
+  db.query("DELETE FROM skill_embedding_chunks WHERE skill_id = $skillId").run({ $skillId: skillId });
 }
 
 function writeChunk(

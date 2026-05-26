@@ -6,6 +6,7 @@ export interface SkillEntry {
   description: string;
   when_to_use: string | null;
   allowed_tools: string | null;
+  required_sandbox_capabilities: string | null;
   tags: string | null;
   body: string;
   files: SkillFileEntry[];
@@ -35,6 +36,7 @@ export interface SkillUpsert {
   whenToUse?: string | null;
   body: string;
   allowedTools: string | null;
+  requiredSandboxCapabilities?: string | null;
   tags: string | null;
   disableModelInvocation?: boolean;
   userInvocable?: boolean;

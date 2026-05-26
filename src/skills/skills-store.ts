@@ -6,7 +6,7 @@ import { applySqliteMigrations } from "../sqlite/migrations";
 import type { Embedder } from "../memory/embed";
 import type { Reranker } from "../memory/rerank";
 import { tryLoadVecExtension } from "../memory/vec-extension";
-import { backfillSkillEmbeddings, indexSkillEmbeddings, skillEmbeddingStats } from "./embed-write";
+import { backfillSkillEmbeddings, clearSkillEmbeddingChunks, indexSkillEmbeddings, skillEmbeddingStats } from "./embed-write";
 import type { EmbeddingHealthStats, TargetIndexCounts } from "../retrieval/indexing";
 import { hybridSkillSearch } from "./hybrid-search";
 import { backfillSkillSearchChunks, replaceSkillSearchChunks, searchSkillChunkIds } from "./search-chunks";
@@ -67,6 +67,7 @@ export class SqliteSkillsStore {
     }
     const updatedAt = new Date().toISOString();
     const files = normalizeSkillFiles(skill.files);
+    const shouldClearEmbeddings = skillEmbeddingInputChanged(existing, skill, files);
     const links = extractSkillLinks(skill.body, files);
     const sourceKind = options.allowBuiltIn && skill.sourceKind === "builtin" ? "builtin" : "user";
     const sourceId = sourceKind === "builtin" ? skill.sourceId : null;
@@ -80,14 +81,15 @@ export class SqliteSkillsStore {
         .query(
           `
             INSERT INTO skills (
-              id, name, description, when_to_use, content, allowed_tools, tags,
+              id, name, description, when_to_use, content, allowed_tools,
+              required_sandbox_capabilities, tags,
               disable_model_invocation, user_invocable, source_kind, source_id,
               source_version, source_hash, disabled_at, duplicated_from_source_id,
               updated_at
             )
             VALUES (
               $id, $name, $description, $whenToUse, $content, $allowedTools,
-              $tags, $disableModelInvocation, $userInvocable, $sourceKind,
+              $requiredSandboxCapabilities, $tags, $disableModelInvocation, $userInvocable, $sourceKind,
               $sourceId, $sourceVersion, $sourceHash, $disabledAt,
               $duplicatedFromSourceId, $updatedAt
             )
@@ -97,6 +99,7 @@ export class SqliteSkillsStore {
               when_to_use = excluded.when_to_use,
               content = excluded.content,
               allowed_tools = excluded.allowed_tools,
+              required_sandbox_capabilities = excluded.required_sandbox_capabilities,
               tags = excluded.tags,
               disable_model_invocation = excluded.disable_model_invocation,
               user_invocable = excluded.user_invocable,
@@ -116,6 +119,7 @@ export class SqliteSkillsStore {
           $whenToUse: skill.whenToUse ?? null,
           $content: skill.body,
           $allowedTools: skill.allowedTools,
+          $requiredSandboxCapabilities: skill.requiredSandboxCapabilities ?? null,
           $tags: skill.tags,
           $disableModelInvocation: skill.disableModelInvocation ? 1 : 0,
           $userInvocable: skill.userInvocable === false ? 0 : 1,
@@ -130,6 +134,7 @@ export class SqliteSkillsStore {
       this.replaceFiles(skill.id, files, updatedAt);
       this.replaceLinks(skill.id, links);
       replaceSkillSearchChunks(this.db, skill, files, updatedAt);
+      if (shouldClearEmbeddings) clearSkillEmbeddingChunks(this.db, skill.id, this.vecEnabled);
       this.db.exec("COMMIT;");
     } catch (error) {
       this.db.exec("ROLLBACK;");
@@ -468,4 +473,24 @@ export class SqliteSkillsStore {
     return row !== undefined;
   }
   close(): void { this.db.close(); }
+}
+
+function skillEmbeddingInputChanged(
+  existing: SkillEntry | null,
+  skill: SkillUpsert,
+  files: readonly SkillFileInput[],
+): boolean {
+  if (!existing) return true;
+  return existing.name !== skill.name
+    || existing.description !== skill.description
+    || (existing.when_to_use ?? null) !== (skill.whenToUse ?? null)
+    || existing.body !== skill.body
+    || (existing.allowed_tools ?? null) !== (skill.allowedTools ?? null)
+    || (existing.required_sandbox_capabilities ?? null) !== (skill.requiredSandboxCapabilities ?? null)
+    || (existing.tags ?? null) !== (skill.tags ?? null)
+    || skillFilesSignature(existing.files) !== skillFilesSignature(files);
+}
+
+function skillFilesSignature(files: readonly Pick<SkillFileInput, "path" | "content">[]): string {
+  return JSON.stringify(files.map((file) => [file.path, file.content]));
 }

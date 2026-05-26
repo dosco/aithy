@@ -40,7 +40,7 @@ export function buildRetrievalQueryPlan(queries: readonly string[]): RetrievalQu
     }
 
     const tokens = queryTokens(raw).slice(0, MAX_TOKENS_PER_QUERY);
-  const tokenExpression = tokens.map(quoteForFts5).filter(Boolean).join(" AND ");
+    const tokenExpression = tokens.map(quoteForFts5).filter(Boolean).join(" AND ");
     if (tokenExpression && !seenExpressions.has(`tokens:${tokenExpression}`)) {
       seenExpressions.add(`tokens:${tokenExpression}`);
       lexicalQueries.push({ raw, lane: "tokens", expression: tokenExpression, terms: tokens });

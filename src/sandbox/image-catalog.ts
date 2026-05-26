@@ -54,7 +54,7 @@ export const INTERNAL_SANDBOX_IMAGES: readonly SandboxImageCatalogEntry[] = [
   {
     id: "aithy-sandbox",
     name: "Aithy Sandbox",
-    description: "Full document sandbox with Python, Docling, OCR, PDF/image tooling, fonts, and shell tools.",
+    description: "Full document and media sandbox with Python, Docling, OCR, PDF/image tooling, ffmpeg/ffprobe, mediainfo, fonts, and shell tools.",
     repository: "ghcr.io/dosco/aithy-sandbox",
   },
   {

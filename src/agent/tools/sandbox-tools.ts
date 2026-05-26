@@ -2,7 +2,9 @@ import { f, fn } from "@ax-llm/ax";
 import type { AppConfig } from "../../config/env";
 import {
   DEFAULT_BASH_TIMEOUT_MS,
+  MAX_EXTENDED_BASH_TIMEOUT_MS,
   MAX_BASH_TIMEOUT_MS,
+  MAX_LONG_BASH_TIMEOUT_MS,
   MAX_TOOL_OUTPUT_CHARS
 } from "../../config/limits";
 import { argsPreview } from "../../security/capability-broker";
@@ -43,6 +45,7 @@ function createBashTool(ctx: ToolContext, sandboxProvider: AppConfig["sandboxPro
     .arg("command", f.string("Bash command to run"))
     .arg("cwd", f.string("Working directory under /workspace").optional())
     .arg("timeoutMs", f.number("Timeout in milliseconds").optional())
+    .arg("timeoutProfile", f.string("short, long, or extended. Use extended only when the user explicitly approved a long-running sandbox job.").optional())
     .arg("maxOutputChars", f.number("Maximum stdout/stderr characters").optional())
     .returnsField("exitCode", f.number("Command exit code"))
     .returnsField("stdout", f.string("Standard output, truncated when large"))
@@ -88,13 +91,15 @@ function normalizeBashArgs(request: {
   command: string;
   cwd?: string;
   timeoutMs?: number;
+  timeoutProfile?: string;
   maxOutputChars?: number;
 }, env?: Record<string, string>) {
   return {
     command: request.command,
     cwd: request.cwd,
     env,
-    timeoutMs: clampNumber(request.timeoutMs, DEFAULT_BASH_TIMEOUT_MS, MAX_BASH_TIMEOUT_MS),
+    timeoutProfile: timeoutProfile(request.timeoutProfile),
+    timeoutMs: clampNumber(request.timeoutMs, DEFAULT_BASH_TIMEOUT_MS, timeoutLimitFor(timeoutProfile(request.timeoutProfile))),
     maxOutputChars: clampNumber(request.maxOutputChars, MAX_TOOL_OUTPUT_CHARS, MAX_TOOL_OUTPUT_CHARS)
   };
 }
@@ -111,4 +116,15 @@ function artifactEnv(ctx: ToolContext): Record<string, string> | undefined {
 function clampNumber(value: unknown, fallback: number, max: number): number {
   if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return fallback;
   return Math.min(Math.floor(value), max);
+}
+
+function timeoutProfile(value: unknown): "short" | "long" | "extended" | undefined {
+  if (value === "short" || value === "long" || value === "extended") return value;
+  return undefined;
+}
+
+function timeoutLimitFor(profile: "short" | "long" | "extended" | undefined): number {
+  if (profile === "extended") return MAX_EXTENDED_BASH_TIMEOUT_MS;
+  if (profile === "long") return MAX_LONG_BASH_TIMEOUT_MS;
+  return MAX_BASH_TIMEOUT_MS;
 }

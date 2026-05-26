@@ -11,6 +11,7 @@ import {
 import type { AppConfig } from "../config/env";
 import type { EventBus } from "../events/bus";
 import type { RuntimeStore } from "../runtime/runtime-store";
+import { missingCapabilitySummary, type SandboxCapabilityGroup, type SandboxHealthReport } from "../sandbox/health";
 import { combineResponderDescription } from "../profile/service";
 import type { SoulProfile } from "../soul/types";
 import type { AithyAgentProgram, AxAgentConfigBoundary, AxServiceHandle } from "./ax-boundary";
@@ -117,11 +118,12 @@ Artifacts:
 - For artifacts created by another tool or command, write them under $AITHY_OUTBOX, then call artifact.publish with that path.
 - Keep scratch files, package output, and intermediates elsewhere in /workspace unless the user explicitly asked to receive them.`;
 
-function microsandboxActorDescription(config: AppConfig): string {
+function microsandboxActorDescription(config: AppConfig, sandboxHealth?: SandboxHealthReport | null): string {
   return `You drive a Linux microVM rooted at /workspace. /workspace is the bot's shared workspace — every conversation with this bot sees the same files here, and anything you write lands on the user's host machine under ~/.config/aithy/<botId>/workspace/. Files persist across conversations and across VM restarts. Use the sandbox tools to do real work; do not paraphrase or simulate commands you could actually run.
 
 ${urlResearchDescription}
 ${artifactGuidance}
+${sandboxHealthGuidance(sandboxHealth)}
 
 Mounting policy: host paths outside /workspace (e.g. /Users/..., /home/...) are only visible after a mount. Use sandbox.mount to expose them. The VM restarts on a folder mount, so do this BEFORE any command that uses the file. Mounting a file copies it (copy-on-write where supported) into /workspace/<filename>; mounting a folder bind-mounts it at /mounts/<name>.
 
@@ -136,11 +138,12 @@ ${config.systemBashEnabled ? hostShellGuidance : ""}
 ${durableMemoryDescription}`;
 }
 
-function disabledActorDescription(config: AppConfig): string {
+function disabledActorDescription(config: AppConfig, sandboxHealth?: SandboxHealthReport | null): string {
   return `Sandboxing is disabled. Shell commands run locally on the host through Bun Shell, rooted at the bot's shared workspace directory at ~/.config/aithy/<botId>/workspace/. Use the sandbox tools to do real work; do not paraphrase or simulate commands you could actually run.
 
 ${urlResearchDescription}
 ${artifactGuidance}
+${sandboxHealthGuidance(sandboxHealth)}
 
 Filesystem topology:
   /workspace  ⇄  ~/.config/aithy/<botId>/workspace/   (bot-shared, persistent)
@@ -154,10 +157,11 @@ ${config.systemBashEnabled ? hostShellGuidance : ""}
 ${durableMemoryDescription}`;
 }
 
-export function actorDescriptionForSandbox(config: AppConfig): string {
+export function actorDescriptionForSandbox(config: AppConfig, runtimeStore?: RuntimeStore): string {
+  const sandboxHealth = sandboxHealthFromRuntime(runtimeStore);
   return config.sandboxProvider === "disabled"
-    ? disabledActorDescription(config)
-    : microsandboxActorDescription(config);
+    ? disabledActorDescription(config, sandboxHealth)
+    : microsandboxActorDescription(config, sandboxHealth);
 }
 
 export function createAithyAgent({
@@ -198,7 +202,7 @@ export function createAithyAgent({
       },
     ],
     contextOptions: { description: contextDescription },
-    executorOptions: { description: actorDescriptionForSandbox(config) },
+    executorOptions: { description: actorDescriptionForSandbox(config, runtimeStore) },
     responderOptions,
     recursionOptions,
     functions: tools,
@@ -217,4 +221,27 @@ export function createAithyAgent({
   const program = agent(aithySignature, agentConfig as never) as unknown as AithyAgentProgram;
 
   return { program, llm };
+}
+
+function sandboxHealthFromRuntime(runtimeStore?: RuntimeStore): SandboxHealthReport | null {
+  const detail = runtimeStore?.service("sandbox-worker")?.detail;
+  if (!detail || typeof detail !== "object") return null;
+  const health = (detail as { health?: unknown }).health;
+  if (!health || typeof health !== "object") return null;
+  return health as SandboxHealthReport;
+}
+
+function sandboxHealthGuidance(health: SandboxHealthReport | null | undefined): string {
+  if (!health) {
+    return "Sandbox health: no preflight report is available yet. Verify required commands with sandbox.bash before using document, OCR, PDF, or media tools when the task depends on them.";
+  }
+  const ready = health.capabilities.filter((check) => check.ok).map((check) => check.group);
+  const missing = missingCapabilitySummary(health, ["document", "media"] satisfies SandboxCapabilityGroup[]);
+  return `Sandbox health:
+- status: ${health.status}
+- image: ${health.image || "unknown"}
+- session: ${health.sessionId ?? "not started"}
+- ready capability groups: ${ready.length ? ready.join(", ") : "none"}
+- missing full-sandbox capability notes: ${missing.length ? missing.join("; ") : "none"}
+If a retrieved skill needs a missing capability group, say which commands/imports are missing and ask the user to switch images or install a compatible custom image instead of pretending the tool exists.`;
 }

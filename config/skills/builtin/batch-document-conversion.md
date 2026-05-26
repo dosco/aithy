@@ -3,6 +3,7 @@ name: Batch Document Conversion
 description: Convert a folder of documents with stable output names, logs, manifests, and artifact-ready results.
 when_to_use: Use when the user asks to process many files, a folder, or an archive of documents into a consistent output set.
 tools: Bash(find:*) Bash(docling:*) Bash(python3:*) Bash(unzip:*) Read Write
+required_sandbox_capabilities: document
 tags: builtin documents batch docling conversion manifest artifacts
 ---
 

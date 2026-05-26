@@ -34,6 +34,11 @@ export function applyRuntimeSettings(
     ? undefined
     : cleanString(aiProfile.model ?? undefined) ?? cleanString(settings.aiModel) ?? config.aiModel;
   const sandboxImage = resolveSandboxImageConfig(settings, sandboxImageContext);
+  const trainingDataCaptureEnabled =
+    settings.trainingDataCaptureEnabled
+    ?? settings.traceEnabled
+    ?? config.trainingDataCaptureEnabled
+    ?? config.traceEnabled;
   return {
     ...config,
     aiProvider,
@@ -83,8 +88,9 @@ export function applyRuntimeSettings(
       ? undefined
       : parallelApiKey ?? config.parallelApiKey,
     systemBashEnabled: settings.systemBashEnabled ?? config.systemBashEnabled,
-    traceEnabled: settings.traceEnabled ?? config.traceEnabled,
-    globalMounts: settings.globalMounts ?? config.globalMounts ?? [],
+    trainingDataCaptureEnabled,
+    traceEnabled: trainingDataCaptureEnabled,
+    globalMounts: normalizeGlobalMounts(settings.globalMounts ?? config.globalMounts ?? []),
   };
 }
 
@@ -100,11 +106,18 @@ export function globalMountsChanged(a: AppConfig, b: AppConfig): boolean {
   const aMounts = a.globalMounts ?? [];
   const bMounts = b.globalMounts ?? [];
   if (aMounts.length !== bMounts.length) return true;
-  const aSet = new Set(aMounts.map((m) => m.hostPath));
+  const aSet = new Set(aMounts.map((m) => `${m.hostPath}\0${m.mode ?? "read-only"}`));
   for (const m of bMounts) {
-    if (!aSet.has(m.hostPath)) return true;
+    if (!aSet.has(`${m.hostPath}\0${m.mode ?? "read-only"}`)) return true;
   }
   return false;
+}
+
+function normalizeGlobalMounts(mounts: AppConfig["globalMounts"]): AppConfig["globalMounts"] {
+  return mounts.map((mount) => ({
+    hostPath: mount.hostPath,
+    mode: mount.mode === "read-write" ? "read-write" : "read-only",
+  }));
 }
 
 function cleanString(value: string | undefined): string | undefined {

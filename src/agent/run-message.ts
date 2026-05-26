@@ -16,6 +16,7 @@ import type { SqliteArtifactStore } from "../artifacts/artifact-store";
 import type { MemoryQueue } from "../memory/memory-queue";
 import type { NotificationCreate } from "../notifications/types";
 import type { SqliteUsageStore } from "../usage/usage-store";
+import type { SqliteTrainingDataStore } from "../training-data/store";
 import type { SqliteSkillsStore } from "../skills/skills-store";
 import { captureProgramUsage, usageAttributionForConfig } from "../usage/capture";
 import type { SandboxProvider } from "../sandbox/provider";
@@ -25,6 +26,11 @@ import { userProfileForAgent } from "../profile/service";
 import type { SoulProfile } from "../soul/types";
 import type { AssistantToolCallMessage } from "../session/types";
 import { isClarificationPause } from "./clarification";
+import {
+  notifyClarification,
+  resolveClarificationNotifications,
+  type NotificationActionResolver,
+} from "./clarification-notifications";
 import { userFacingErrorText } from "./error-copy";
 import {
   artifactContextText,
@@ -49,7 +55,6 @@ import type { CapabilityBroker } from "../security/capability-broker";
 import type { RuntimeStore } from "../runtime/runtime-store";
 import type { SqliteTaskStore } from "../tasks/task-store";
 import type { AutomationToolActions } from "../automations/tool-actions";
-import { appendChatLogToTraces } from "./trace-writer";
 import {
   prefetchUrlsForMessage,
   type UrlPrefetcher,
@@ -79,6 +84,7 @@ export interface RunMessageDeps {
   artifacts?: SqliteArtifactStore;
   memoryQueue?: MemoryQueue;
   usage?: SqliteUsageStore;
+  trainingData?: SqliteTrainingDataStore;
   skillsSearch?: AxAgentSkillsSearchFn;
   skills?: readonly AxAgentSkillResult[];
   skillsStore?: SqliteSkillsStore;
@@ -88,6 +94,7 @@ export interface RunMessageDeps {
   agentFactory?: typeof createAithyAgent;
   activeRuns?: ActiveRunRegistry;
   notify?: (input: NotificationCreate) => void;
+  resolveNotificationActions?: NotificationActionResolver;
   userMessagePersisted?: boolean;
   capabilities?: CapabilityBroker;
   runtimeStore?: RuntimeStore;
@@ -109,6 +116,7 @@ export async function runMessage(
     conversationId: message.conversationId,
     text: message.text,
   });
+  resolveClarificationNotifications(deps.resolveNotificationActions, message.conversationId);
 
   const session = await deps.sessions.get(message.conversationId);
   const artifactRun = createArtifactRunContext(message.conversationId);
@@ -150,7 +158,7 @@ export async function runMessage(
     toolCallMessages.push(toolMessage);
     publishToolCall(toolMessage);
   };
-  const onSkillsSearch = wrapSkillsSearch(deps.skillsSearch, toolCallMessages, publishToolCall);
+  const onSkillsSearch = wrapSkillsSearch(deps.skillsSearch, toolCallMessages, publishToolCall, deps.logRetrieval);
   const memoryStore = deps.memory;
   const episodeStore = deps.episodes;
   const transcriptStore = deps.transcripts;
@@ -235,7 +243,7 @@ export async function runMessage(
           workspaceRoot: deps.config.workspaceRoot,
           conversationId: message.conversationId,
           source: "preload",
-          limit: 3,
+          limit: 8,
           beforeCreatedAt: message.createdAt.toISOString(),
         })
       : undefined;
@@ -300,14 +308,6 @@ export async function runMessage(
       turnMessages(message, toolCallMessages, assistantTextMessage(agentResponse), deps, artifactMessages),
     );
     await deps.flushSessionState?.();
-    if (deps.usage) {
-      captureProgramUsage(program, {
-        store: deps.usage,
-        purpose: "chat",
-        sessionId: message.conversationId,
-        attribution: usageAttributionForConfig(deps.config),
-      });
-    }
     enqueueAutoMemoryTask(deps, message.conversationId);
     deps.events.emit({
       type: "agent.completed",
@@ -389,6 +389,7 @@ export async function runMessage(
         conversationId: message.conversationId,
         question,
       });
+      notifyClarification(deps.notify, message.conversationId, question);
       deps.sessions.appendMessages(
         message.conversationId,
         turnMessages(
@@ -444,8 +445,32 @@ export async function runMessage(
     };
   } finally {
     deps.activeRuns?.clear(message.conversationId);
-    if (deps.config.traceEnabled) {
-      await appendChatLogToTraces(deps.config, safeGetChatLog(program), deps.events);
+    if (deps.usage) {
+      captureProgramUsage(program, {
+        store: deps.usage,
+        purpose: "chat",
+        sessionId: message.conversationId,
+        runId: deps.taskId ?? artifactRun.runId,
+        attribution: usageAttributionForConfig(deps.config),
+      });
+    }
+    if (deps.config.trainingDataCaptureEnabled && deps.trainingData) {
+      try {
+        deps.trainingData.recordChatLog({
+          sessionId: message.conversationId,
+          runId: deps.taskId ?? artifactRun.runId,
+          entries: safeGetChatLog(program),
+        });
+      } catch (error) {
+        deps.events.emit({
+          type: "error",
+          conversationId: message.conversationId,
+          message: `training-data: failed to store trace data: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+          cause: error,
+        });
+      }
     }
   }
 }

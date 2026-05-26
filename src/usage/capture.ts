@@ -11,6 +11,8 @@ import { isCustomOpenAIProvider, isLocalAiProvider } from "../agent/ai-providers
 interface ProgramUsageEntry {
   ai?: string;
   model?: string;
+  component?: string;
+  stage?: "ctx" | "task" | null;
   tokens?: {
     promptTokens?: number;
     completionTokens?: number;
@@ -24,6 +26,7 @@ interface ProgramUsageEntry {
 
 interface ProgramUsageLike {
   getUsage?: () => unknown;
+  getStagedUsage?: () => unknown;
   resetUsage?: () => void;
 }
 
@@ -43,14 +46,8 @@ export interface UsageAttribution {
 
 export function captureProgramUsage(program: unknown, opts: CaptureOpts): void {
   const p = program as ProgramUsageLike;
-  if (typeof p.getUsage !== "function") return;
-  let rawUsage: unknown;
-  try {
-    rawUsage = p.getUsage();
-  } catch {
-    return;
-  }
-  const entries = normalizeUsage(rawUsage);
+  if (typeof p.getUsage !== "function" && typeof p.getStagedUsage !== "function") return;
+  const entries = stagedUsage(p, opts.purpose) ?? aggregateUsage(p, opts.purpose);
   for (const entry of entries) {
     const tokens = entry.tokens;
     if (!tokens) continue;
@@ -66,6 +63,8 @@ export function captureProgramUsage(program: unknown, opts: CaptureOpts): void {
       provider: attribution?.provider ?? normalizedProvider(entry.ai) ?? "unknown",
       model: entry.model ?? "unknown",
       purpose: opts.purpose,
+      component: entry.component ?? opts.purpose,
+      stage: entry.stage ?? null,
       inputTokens: input,
       outputTokens: output,
       thoughtTokens: thought,
@@ -104,19 +103,66 @@ export function usageAttributionForConfig(config: AppConfig): UsageAttribution[]
   return entries;
 }
 
-function normalizeUsage(rawUsage: unknown): ProgramUsageEntry[] {
-  if (Array.isArray(rawUsage)) return rawUsage.filter(isUsageEntry);
+function stagedUsage(p: ProgramUsageLike, purpose: UsagePurpose): ProgramUsageEntry[] | undefined {
+  if (typeof p.getStagedUsage !== "function") return undefined;
+  try {
+    const raw = p.getStagedUsage();
+    const entries = normalizeStagedUsage(raw, purpose);
+    return entries.length > 0 ? entries : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function aggregateUsage(p: ProgramUsageLike, purpose: UsagePurpose): ProgramUsageEntry[] {
+  try {
+    return normalizeUsage(p.getUsage?.(), purpose);
+  } catch {
+    return [];
+  }
+}
+
+function normalizeStagedUsage(rawUsage: unknown, purpose: UsagePurpose): ProgramUsageEntry[] {
+  if (!rawUsage || typeof rawUsage !== "object") return [];
+  const staged = rawUsage as { ctx?: unknown; task?: unknown };
+  return [
+    ...normalizeUsage(staged.ctx, purpose, "ctx"),
+    ...normalizeUsage(staged.task, purpose, "task"),
+  ];
+}
+
+function normalizeUsage(
+  rawUsage: unknown,
+  purpose: UsagePurpose,
+  stage: "ctx" | "task" | null = null,
+): ProgramUsageEntry[] {
+  if (Array.isArray(rawUsage)) {
+    return rawUsage.filter(isUsageEntry).map((entry) => ({
+      ...entry,
+      component: purpose,
+      stage,
+    }));
+  }
   if (!rawUsage || typeof rawUsage !== "object") return [];
 
   const split = rawUsage as {
     actor?: unknown;
     responder?: unknown;
   };
-  return [...usageEntries(split.actor), ...usageEntries(split.responder)];
+  return [
+    ...usageEntries(split.actor, componentForSplit(purpose, "actor"), stage),
+    ...usageEntries(split.responder, componentForSplit(purpose, "responder"), stage),
+  ];
 }
 
-function usageEntries(value: unknown): ProgramUsageEntry[] {
-  return Array.isArray(value) ? value.filter(isUsageEntry) : [];
+function usageEntries(
+  value: unknown,
+  component: string,
+  stage: "ctx" | "task" | null,
+): ProgramUsageEntry[] {
+  return Array.isArray(value)
+    ? value.filter(isUsageEntry).map((entry) => ({ ...entry, component, stage }))
+    : [];
 }
 
 function isUsageEntry(value: unknown): value is ProgramUsageEntry {
@@ -138,6 +184,10 @@ function usageAttributionForEntry(
 
 function backendProviderForUsage(provider: string): string {
   return isCustomOpenAIProvider(provider) || isLocalAiProvider(provider) ? "openai" : provider;
+}
+
+function componentForSplit(purpose: UsagePurpose, split: "actor" | "responder"): string {
+  return purpose === "chat" ? `chat.${split}` : purpose;
 }
 
 function normalizedProvider(provider: string | undefined): string | undefined {

@@ -3,6 +3,7 @@ name: Research Paper Extraction
 description: Extract paper structure, abstracts, sections, figures, captions, equations, tables, and references.
 when_to_use: Use for scholarly papers, technical PDFs, preprints, journal articles, whitepapers, or reports with citations.
 tools: Bash(docling:*) Bash(pdftotext:*) Bash(pdfinfo:*) Bash(python3:*) Read Write
+required_sandbox_capabilities: document
 tags: builtin research paper pdf citations figures tables equations
 ---
 

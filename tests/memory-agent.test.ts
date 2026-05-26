@@ -221,6 +221,7 @@ async function fixture(): Promise<{ config: AppConfig; memory: SqliteMemoryStore
     stateDir: dir,
     stateDbPath: path.join(dir, "state.db"),
     systemBashEnabled: true,
+    trainingDataCaptureEnabled: false,
     traceEnabled: false,
     tracesDir: path.join(dir, "traces"),
     globalMounts: [],

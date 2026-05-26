@@ -31,8 +31,8 @@ describe("MicrosandboxProvider", () => {
     expect(created?.volumes).toEqual([
       { guest: "/workspace", host: workspacePath, readonly: false },
       { guest: "/outbox", host: path.join(workspacePath, "outbox"), readonly: false },
-      { guest: "/mounts/data-aabbccdd", host: "/host/data", readonly: false },
-      { guest: "/mounts/scratch-eeff0011", host: "/host/scratch", readonly: false }
+      { guest: "/mounts/data-aabbccdd", host: "/host/data", readonly: true },
+      { guest: "/mounts/scratch-eeff0011", host: "/host/scratch", readonly: true }
     ]);
     expect(created?.envs).toEqual({});
 
@@ -56,7 +56,7 @@ describe("MicrosandboxProvider", () => {
     expect(fakeFactory.created[1]?.volumes).toEqual([
       { guest: "/workspace", host: workspacePath, readonly: false },
       { guest: "/outbox", host: path.join(workspacePath, "outbox"), readonly: false },
-      { guest: "/mounts/data-aabbccdd", host: "/host/data", readonly: false }
+      { guest: "/mounts/data-aabbccdd", host: "/host/data", readonly: true }
     ]);
 
     await provider.destroy(session.id);

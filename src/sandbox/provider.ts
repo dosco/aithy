@@ -7,6 +7,7 @@ export interface SandboxBashRequest {
   command: string;
   cwd?: string;
   timeoutMs?: number;
+  timeoutProfile?: "short" | "long" | "extended";
   maxOutputChars?: number;
   env?: Record<string, string>;
 }
@@ -26,6 +27,7 @@ export interface SandboxFile {
 export interface SessionMount {
   hostPath: string;
   mountName: string;
+  mode?: "read-only" | "read-write";
 }
 
 export interface SandboxProvider {

@@ -32,6 +32,7 @@ function configFixture(globalMounts: AppConfig["globalMounts"] = []): AppConfig 
     stateDir: "/tmp",
     stateDbPath: "/tmp/x.db",
     systemBashEnabled: true,
+    trainingDataCaptureEnabled: false,
     traceEnabled: false,
     tracesDir: "/tmp/traces",
     globalMounts,
@@ -135,7 +136,7 @@ describe("SessionManager.mountsForSandbox", () => {
     const mounts: SessionMount[] = mgr.mountsForSandbox();
     const resolvedPresent = await realpath(present);
     expect(mounts).toEqual([
-      { hostPath: resolvedPresent, mountName: computeMountName(resolvedPresent) },
+      { hostPath: resolvedPresent, mountName: computeMountName(resolvedPresent), mode: "read-only" },
     ]);
   });
 });
@@ -158,7 +159,7 @@ describe("SessionManager.addGlobalMount", () => {
       destroy: async () => undefined,
     };
 
-    const persisted: Array<Array<{ hostPath: string }>> = [];
+    const persisted: Array<Array<{ hostPath: string; mode?: string }>> = [];
     const mgr = new SessionManager({
       sandbox,
       botId: "default",
@@ -171,7 +172,7 @@ describe("SessionManager.addGlobalMount", () => {
     expect(r1.alreadyExisted).toBe(false);
     expect(r1.sandboxPath).toBe(`/mounts/${computeMountName(folder)}`);
     expect(persisted).toHaveLength(1);
-    expect(persisted[0]).toEqual([{ hostPath: folder }]);
+    expect(persisted[0]).toEqual([{ hostPath: folder, mode: "read-only" }]);
 
     const r2 = await mgr.addGlobalMount(folder);
     expect(r2.alreadyExisted).toBe(true);

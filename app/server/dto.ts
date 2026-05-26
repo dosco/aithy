@@ -1,4 +1,7 @@
 export type * from "./dto-types";
+export type * from "./notification.dto-types";
+export type * from "./training-data.dto";
+export type * from "./usage-advisor.dto";
 export {
   MEMORIES_PAGE_SIZE,
   SKILLS_PAGE_SIZE,
@@ -16,6 +19,7 @@ export {
   sessionDto,
   skillDto,
   soulDto,
+  trainingDataSummaryDto,
   usageBucketDto,
 } from "./dto-mappers";
 export {
@@ -25,6 +29,9 @@ export {
   secretStatus,
   secretStatusForProvider,
 } from "./secret.dto";
+export {
+  notificationAttentionDto,
+} from "./notification-attention";
 export {
   memoryPageStateDto,
   localInferencePageStateDto,

@@ -63,6 +63,8 @@ describe("captureProgramUsage", () => {
       {
         provider: "openai",
         model: "gpt-test",
+        component: "chat.actor",
+        stage: null,
         inputTokens: 3,
         outputTokens: 2,
         thoughtTokens: 0,
@@ -73,6 +75,8 @@ describe("captureProgramUsage", () => {
       {
         provider: "openai",
         model: "gpt-test-fast",
+        component: "chat.responder",
+        stage: null,
         inputTokens: 1,
         outputTokens: 4,
         thoughtTokens: 2,
@@ -113,6 +117,49 @@ describe("captureProgramUsage", () => {
         provider: LOCAL_AI_PROVIDER,
         model: LOCAL_CHAT_MODEL_ALIAS,
         totalTokens: 5,
+      },
+    ]);
+  });
+
+  test("captures staged Ax agent usage with component labels", () => {
+    const records: any[] = [];
+
+    captureProgramUsage(
+      {
+        getUsage: () => [],
+        getStagedUsage: () => ({
+          ctx: {
+            actor: [
+              { ai: "openai", model: "gpt-context", tokens: { promptTokens: 2, completionTokens: 3 } },
+            ],
+            responder: [],
+          },
+          task: {
+            actor: [],
+            responder: [
+              { ai: "openai", model: "gpt-final", tokens: { promptTokens: 5, completionTokens: 7 } },
+            ],
+          },
+        }),
+      },
+      {
+        store: { record: (entry: unknown) => records.push(entry) } as any,
+        purpose: "chat",
+      },
+    );
+
+    expect(records).toMatchObject([
+      {
+        model: "gpt-context",
+        component: "chat.actor",
+        stage: "ctx",
+        totalTokens: 5,
+      },
+      {
+        model: "gpt-final",
+        component: "chat.responder",
+        stage: "task",
+        totalTokens: 12,
       },
     ]);
   });

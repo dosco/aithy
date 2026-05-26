@@ -24,7 +24,7 @@ Aithy is useful as a personal agent today, but it is also built for the messy pl
 - **Use the models you already have.** Choose managed local `llama.cpp` models, normal cloud/API providers, custom OpenAI-compatible endpoints, or an eligible Grok subscription.
 - **Make your Grok subscription useful.** Grok subscription sign-in can power chat and `web.search` without pasting an API key into Aithy. For people who already pay for Grok, that can avoid setting up separate per-token API-key billing for supported usage, subject to xAI eligibility and limits.
 - **Share a stronger machine.** Pair Aithy on your laptop with Aithy on a GPU box over LAN Mesh, then use validated family inference/search services without copying secrets around.
-- **Keep the agent visible.** Sessions, memory, skills, attentions, artifacts, usage, permissions, sandbox state, and runtime services are part of the product, not hidden logs.
+- **Keep the agent visible.** Sessions, memory, skills, attentions, artifacts, usage, permissions, training-data capture, sandbox state, and runtime services are part of the product, not hidden logs. Chat shows calm working status, inline artifacts, and explicit approval bubbles while work is happening.
 
 ## Quick Start
 
@@ -90,7 +90,7 @@ These light-mode screenshots are captured from the real app with a disposable lo
     <td><img src="screenshots/light/02-console-runtime-overview-light.png" alt="Runtime console" width="280"><br><sub>Watch services, queues, jobs, and logs</sub></td>
   </tr>
   <tr>
-    <td><img src="screenshots/light/05-usage-analytics-light.png" alt="Usage tracking dashboard" width="280"><br><sub>Track calls, tokens, cache, and purpose</sub></td>
+    <td><img src="screenshots/light/05-usage-analytics-light.png" alt="Usage tracking dashboard" width="280"><br><sub>See model recommendations by task component</sub></td>
     <td><img src="screenshots/light/04-skills-library-light.png" alt="Skills gallery" width="280"><br><sub>Teach repeatable workflows and reusable abilities</sub></td>
     <td><img src="screenshots/light/03-themes-palette-list-light.png" alt="Theme gallery" width="280"><br><sub>Tune the surface without changing the agent</sub></td>
   </tr>
@@ -164,15 +164,17 @@ MCP fits this shape naturally. Tools can become callable runtime functions inste
 
 ## Memory, Skills, Dreams, and Attentions
 
-Aithy keeps durable conversation history and separate durable memory for facts worth keeping. Memories are typed by subject (`user`, `project`, or `agent`), scope (`global`, `workspace`, or `session`), and guidance strength (`context` or `standing_request`). Agent memories are operational lessons and failure modes only; they are advisory context and cannot change tool policy, sandbox boundaries, or permissions. Retrieval is grep-first and sparse: exact lexical anchors such as paths, filenames, commands, quoted text, and error codes are searched with SQLite FTS, semantic sqlite-vec candidates fill in fuzzy recall, and local reranking refines the strongest candidates when available. The agent sees only a small evidence pack, not every retrieved candidate, and workspace/session scoped memories are recalled only in matching contexts.
+Aithy keeps durable conversation history and separate durable memory for facts worth keeping. Memories are typed by subject (`user`, `project`, or `agent`), scope (`global`, `workspace`, or `session`), and guidance strength (`context` or `standing_request`). Agent memories are operational lessons and failure modes only; they are advisory context and cannot change tool policy, sandbox boundaries, or permissions. Every chat turn performs deterministic first-turn recall before the agent starts: exact lexical anchors such as paths, filenames, commands, quoted text, and error codes are searched with SQLite FTS, semantic sqlite-vec candidates fill in fuzzy recall across memories and episodes, and local reranking is the final ordering authority when available. The agent sees only a small evidence pack, not every retrieved candidate, and workspace/session scoped memories are recalled only in matching contexts.
 
-Dreams turn completed work into searchable episodes with task, approach, outcome, notes, tools, errors, artifacts, and evidence. Actionable dream notes can also become scoped operational agent memories so future turns can reuse lessons without treating them as user facts. Transcript recall can surface small raw snippets from prior messages, tool calls, and artifact metadata when exact evidence matters. Skills capture reusable workflows, including Claude-style skill folders and portable `SKILL.md` bundles with supporting files; skill names, descriptions, bodies, and supporting files are searchable without stuffing all skill text into prompt context. Attentions are ongoing reminders, briefings, watches, and tasks that need to come back later.
+Writes to memories, episodes, and skills queue targeted local embedding immediately, while startup and periodic backfill stay in place as a safety net if the local inference worker was offline. Agent-triggered recall uses the same combined retrieval coordinator as pre-recall, and tool details include compact diagnostics for FTS candidates, vector candidates, fused candidates, reranker state, fallback errors, and latency. The Local Inference page shows retrieval health for memory rows, episode rows, and semantic skill chunks, plus the last targeted index and backfill times.
+
+Dreams turn completed work into searchable episodes with task, approach, outcome, notes, tools, errors, artifacts, and evidence. Actionable dream notes can also become scoped operational agent memories so future turns can reuse lessons without treating them as user facts. Transcript recall can surface small raw snippets from prior messages, tool calls, and artifact metadata when exact evidence matters. Skills capture reusable workflows, including Claude-style skill folders and portable `SKILL.md` bundles with supporting files; skill cards, bodies, and attached files are chunked for semantic indexing and reranked discovery, while exact skill ids and names still take precedence. Attentions are ongoing reminders, briefings, watches, and tasks that need to come back later.
 
 Aithy ships a source-managed built-in skills catalog for sandbox work: Docling conversion, OCR, PDF repair/assembly/optimization, media inspection/extraction, spreadsheet and CSV cleanup, web/table extraction, downloads, and artifact packaging. Built-ins are read-only, can be disabled without deletion, and can be duplicated into normal editable user skills.
 
 ## Built for Trust
 
-Aithy is local-first by default. State, sessions, memories, skills, settings, usage, runtime status, and Mesh peer records live under your Aithy config directory unless you deliberately point them elsewhere.
+Aithy is local-first by default. State, sessions, memories, skills, settings, usage, opt-in training traces, runtime status, and Mesh peer records live under your Aithy config directory unless you deliberately point them elsewhere.
 
 - Microsandbox mode runs agent commands in a Linux sandbox.
 - Host files are exposed through explicit attachments or mounts.
@@ -185,7 +187,11 @@ Aithy is local-first by default. State, sessions, memories, skills, settings, us
 - Mesh TLS private keys stay in local secrets, paired certificate pins live in SQLite, and provider API keys are never sent to peers.
 - Mesh RPC uses pinned TLS with HTTP/3 preferred and pinned HTTPS fallback.
 - Mesh service access requires mutual `family` trust, live catalog authorization, and a current model/service allowlist match.
-- Usage capture records provider, model, token, cache, and purpose details for visibility.
+- Usage capture records provider, model, token, cache, purpose, component, stage, and run details for visibility.
+- Usage Advisor compares observed models per component with token efficiency, sample confidence, and task outcomes when available; it is advisory and never switches models automatically.
+- Settings -> Data controls opt-in training-data capture. Captured traces can include prompts, assistant replies, tool outputs, model usage, and provider request identifiers.
+- The Usage page can export local SFT JSONL from captured traces and delete captured training data. Live DPO capture is deferred because replaying agent actions can have side effects.
+- The notification bell lights up for active help requests, such as approvals, clarifications, retryable chat failures, or automations that need input. Old unread informational notes stay in the inbox without keeping the top indicator lit.
 
 The agent can be powerful, but it should not be mysterious. Aithy is designed so you can see what is happening, approve risky actions, and keep local state under your control.
 
@@ -217,6 +223,14 @@ The full image can inspect, extract, and transcode local audio and video files t
 
 Settings -> Sandbox stores the selected built-in image by Aithy-owned ID, not by raw registry URL. Packaged releases resolve built-ins to versioned arch-specific GHCR tags such as `ghcr.io/dosco/aithy-sandbox:v0.1.0-arm64`; dev builds resolve them to `latest-arm64` or `latest-amd64`. Custom user images keep their exact user-entered image reference and are not rewritten by Aithy updates.
 
+After a VM starts or reloads, Sandbox Doctor records the selected image, resolved ref, architecture, provider, network, CPU, memory, session id, startup time, command checks, and Python import checks. Capability groups cover core shell, Python, document/OCR/PDF, and media tooling. Settings -> Sandbox can test the selected built-in or custom image, and the Runtime Console shows the loaded image, session id, capability status, missing tools, and last successful preflight. Full-sandbox document and media skills declare the capability groups they need, so the agent can explain missing tools when a lite or custom image does not provide them.
+
+The Runtime Console also includes a sandbox workbench for `/workspace` and `/outbox`. It uses `sandbox.bash` to list directories, inspect file sizes and modified times, and delete stale `/outbox` outputs, plus a guarded host-side download path for regular `/outbox` files. The agent-facing sandbox surface stays intentionally small: `sandbox.bash` for commands, `sandbox.edit` for exact text edits, and artifact tools for user-facing deliverables.
+
+Settings-managed host mounts are read-only by default. Read-write mounts remain available but are labeled explicitly in Settings and surfaced in the sandbox session mount metadata. File attachments still use copy-into-workspace semantics rather than exposing arbitrary host paths.
+
+Sandbox bash now uses timeout categories instead of one fixed ceiling: short commands use the normal limit, document/media jobs can request the long profile, and extended jobs require explicit user approval. The runtime records sandbox command lifecycle events for started, stdout, stderr, completed, failed, and timed-out states; the Console jobs table shows command, cwd, duration, status, exit code, and output previews from command completion details.
+
 When the image is not cached yet, Microsandbox downloads it directly and Aithy shows a sandbox image splash with pull progress, byte counts, and filesystem preparation status. Users do not need Docker installed for runtime sandbox setup. For Aithy GHCR images, Aithy selects Microsandbox's public pull mode so public packages download without user credentials. If the configured sandbox image cannot be pulled or started while Microsandbox mode is enabled, Aithy keeps the blocking splash visible because agent tools cannot run without a working sandbox; the splash and Runtime Console both offer a retry action.
 
 The sandbox image workflow publishes `aithy-sandbox` from `Dockerfile` and `aithy-sandbox-lite` from `Dockerfile.sandbox-lite` on `main` as `latest` plus single-manifest `latest-arm64` and `latest-amd64` tags. The release workflow also publishes the release ref tag and versioned arch tags. GHCR creates new container packages as private by default, so both packages must be made public in GitHub Packages before Microsandbox can pull them without user credentials. Docker is only needed by the workflows or by developers who want to build an image locally before publishing.
@@ -243,7 +257,8 @@ src/security/         capability policies and permission gates
 src/session/          session state and SQLite persistence
 src/settings/         settings, themes, mounts, and API key storage
 src/skills/           skill bundles, detection, storage, search, and promotion
-src/usage/            provider/model token usage capture
+src/training-data/    opt-in trace capture and SFT export
+src/usage/            provider/model token usage capture and advisor aggregation
 ```
 
 The repo enforces a 500-line hard limit with `bun run check:lines`. Keep code clean, simple, and boring: separate subsystems, short files, local patterns first.

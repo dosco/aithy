@@ -47,10 +47,22 @@ export interface ModelRow {
   provider: string;
   model: string;
   inputTokens: number;
+  outputTokens: number;
+  thoughtTokens: number;
   cacheCreationTokens: number;
   cacheReadTokens: number;
   totalTokens: number;
   calls: number;
+  tokensPerCall: number;
+}
+
+export interface ComponentRow {
+  component: string;
+  stage: string | null;
+  purpose: string;
+  totalTokens: number;
+  calls: number;
+  tokensPerCall: number;
 }
 
 export function summarizeTokenTotals(rows: UsageBucketDto[]): RangeTokenTotals {
@@ -112,19 +124,49 @@ export function groupByModel(rows: UsageBucketDto[]): ModelRow[] {
     const existing = map.get(key);
     if (existing) {
       existing.inputTokens += r.inputTokens;
+      existing.outputTokens += r.outputTokens;
+      existing.thoughtTokens += r.thoughtTokens;
       existing.cacheCreationTokens += r.cacheCreationTokens;
       existing.cacheReadTokens += r.cacheReadTokens;
       existing.totalTokens += r.totalTokens;
       existing.calls += r.calls;
+      existing.tokensPerCall = Math.round(existing.totalTokens / Math.max(1, existing.calls));
     } else {
       map.set(key, {
         provider: r.provider,
         model: r.model,
         inputTokens: r.inputTokens,
+        outputTokens: r.outputTokens,
+        thoughtTokens: r.thoughtTokens,
         cacheCreationTokens: r.cacheCreationTokens,
         cacheReadTokens: r.cacheReadTokens,
         totalTokens: r.totalTokens,
         calls: r.calls,
+        tokensPerCall: Math.round(r.totalTokens / Math.max(1, r.calls)),
+      });
+    }
+  }
+  return [...map.values()].sort((a, b) => a.tokensPerCall - b.tokensPerCall || b.totalTokens - a.totalTokens);
+}
+
+export function groupByComponent(rows: UsageBucketDto[]): ComponentRow[] {
+  const map = new Map<string, ComponentRow>();
+  for (const r of rows) {
+    const component = r.component || r.purpose;
+    const key = `${component}/${r.stage ?? ""}/${r.purpose}`;
+    const existing = map.get(key);
+    if (existing) {
+      existing.totalTokens += r.totalTokens;
+      existing.calls += r.calls;
+      existing.tokensPerCall = Math.round(existing.totalTokens / Math.max(1, existing.calls));
+    } else {
+      map.set(key, {
+        component,
+        stage: r.stage,
+        purpose: r.purpose,
+        totalTokens: r.totalTokens,
+        calls: r.calls,
+        tokensPerCall: Math.round(r.totalTokens / Math.max(1, r.calls)),
       });
     }
   }

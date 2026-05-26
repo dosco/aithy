@@ -88,6 +88,16 @@ export function pendingPermissionRequests(
   return rows.map(requestFromRow);
 }
 
+export function pendingPermissionRequestsAll(db: Database): SystemPermissionRequest[] {
+  maintainPermissionRequests(db);
+  const rows = db.query(`
+    SELECT * FROM permission_requests
+    WHERE status = 'pending'
+    ORDER BY created_at ASC
+  `).all() as PermissionRequestRow[];
+  return rows.map(requestFromRow);
+}
+
 export function maintainPermissionRequests(db: Database, now = new Date()): {
   expired: number;
   pruned: number;

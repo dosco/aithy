@@ -161,6 +161,40 @@ describe("SqliteEpisodeStore", () => {
     expect(store.embeddingStats()).toMatchObject({ total: 1, embedded: 1, stale: 0 });
   });
 
+  test("hybrid vector search ignores stale episode embeddings until reindexed", async () => {
+    const embedder = new MockEmbedder([
+      ["legacy episode", "legacy query"],
+      ["fresh episode", "fresh query"],
+    ]);
+    const store = new SqliteEpisodeStore(await tempDbPath(), { embedder, inlineEmbeds: false });
+    if (!store.isHybridReady()) return;
+
+    const entry = store.upsert({
+      task: "Recall episode",
+      approach: "legacy episode",
+      outcome: "success",
+      canonicalText: "stable episode",
+      sourceSessionId: "s1",
+      evidenceStartMessageId: 1,
+      evidenceEndMessageId: 2,
+    });
+    await store.indexEmbeddings([entry.id]);
+    store.upsert({
+      task: "Recall episode",
+      approach: "fresh episode",
+      outcome: "success",
+      canonicalText: "stable episode",
+      sourceSessionId: "s1",
+      evidenceStartMessageId: 1,
+      evidenceEndMessageId: 2,
+    });
+
+    expect(await store.search(["legacy query"])).toEqual([]);
+    expect(store.embeddingStats()).toMatchObject({ total: 1, embedded: 0, stale: 1 });
+    await store.indexEmbeddings([entry.id]);
+    expect((await store.search(["fresh query"]))[0]?.approach).toBe("fresh episode");
+  });
+
   test("resetAll clears stale episode vectors even from a non-embedding store", async () => {
     const dbPath = await tempDbPath();
     const embedder = new MockEmbedder([

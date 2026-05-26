@@ -83,6 +83,7 @@ export interface RuntimeSettings {
   parallelSearchMcpUrl?: string | null;
   parallelApiKey?: string | null;
   systemBashEnabled?: boolean;
+  trainingDataCaptureEnabled?: boolean;
   traceEnabled?: boolean;
   globalMounts?: GlobalMount[];
 }

@@ -3,6 +3,7 @@ name: PDF Security Inspection
 description: Inspect PDF metadata, encryption flags, attachments, and risky features without claiming secure redaction.
 when_to_use: Use when the user asks what is inside a PDF, whether it is encrypted, or whether metadata/attachments are present.
 tools: Bash(qpdf:*) Bash(pdfinfo:*) Bash(pdfdetach:*) Read Write
+required_sandbox_capabilities: document
 tags: builtin pdf security metadata encryption attachments
 ---
 

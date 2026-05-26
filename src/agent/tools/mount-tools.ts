@@ -11,7 +11,7 @@ export function createMountTools(ctx: ToolContext) {
     fn("mount")
       .namespace("sandbox")
       .description(
-        "Make a host path available to the sandbox. Folders are added to the global mount list (managed in Settings → Sandbox) and appear at /mounts/<name> in the sandbox. Files are copy-on-write copied into /workspace/<filename> in the bot's shared workspace. Returns kind: 'directory' or 'file' so you know which case applied."
+        "Make a host path available to the sandbox. Folders are added as read-only global mounts (managed in Settings → Sandbox) and appear at /mounts/<name>. Files are copy-on-write copied into /workspace/<filename> in the bot's shared workspace. Returns kind: 'directory' or 'file' so you know which case applied."
       )
       .arg("hostPath", f.string("Absolute host file or directory path"))
       .returnsField("kind", f.string("Either 'directory' (added to global mounts) or 'file' (copied to /workspace)"))

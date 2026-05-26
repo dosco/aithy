@@ -27,7 +27,7 @@ import webPageToMarkdown from "../../config/skills/builtin/web-page-to-markdown.
 import { frontmatterString, parseSkillMarkdown } from "./frontmatter";
 import type { SqliteSkillsStore, SkillUpsert } from "./skills-store";
 
-export const BUILT_IN_SKILL_SOURCE_VERSION = "2026.05-document-media-sandbox";
+export const BUILT_IN_SKILL_SOURCE_VERSION = "2026.05-sandbox-capability-aware";
 
 export interface BuiltInSkillSource {
   sourceId: string;
@@ -95,6 +95,11 @@ function seedToUpsert(id: string, source: BuiltInSkillSource): SkillUpsert {
     whenToUse: frontmatterString(frontmatter, ["when_to_use", "when-to-use"]),
     body,
     allowedTools: frontmatterString(frontmatter, ["allowed-tools", "allowed_tools", "tools"]),
+    requiredSandboxCapabilities: frontmatterString(frontmatter, [
+      "required_sandbox_capabilities",
+      "required-sandbox-capabilities",
+      "sandbox_capabilities",
+    ]),
     tags: frontmatterString(frontmatter, ["tags"]),
     sourceKind: "builtin",
     sourceId: source.sourceId,

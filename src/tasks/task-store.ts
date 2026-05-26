@@ -14,6 +14,7 @@ import {
   type TaskQueryStatus,
   type TaskRecord,
   type TaskStatus,
+  type TaskOutcome,
   type TaskSummary,
 } from "./types";
 import { taskSummary } from "./summary";
@@ -213,6 +214,40 @@ export class SqliteTaskStore {
       conversationId: input.conversationId,
       limit: input.limit ?? 50,
     });
+  }
+
+  outcomesByIds(ids: readonly string[]): TaskOutcome[] {
+    const unique = [...new Set(ids.filter(Boolean))];
+    if (unique.length === 0) return [];
+    const rows: Array<{
+      id: string;
+      status: TaskStatus;
+      attempt: number;
+      retry_of_task_id: string | null;
+      created_at: string;
+      updated_at: string;
+      completed_at: string | null;
+    }> = [];
+    for (let start = 0; start < unique.length; start += 200) {
+      const chunk = unique.slice(start, start + 200);
+      const placeholders = chunk.map((_, index) => `$id${index}`).join(", ");
+      const params = Object.fromEntries(chunk.map((id, index) => [`$id${index}`, id]));
+      rows.push(...this.db.query(`
+        SELECT id, status, attempt, retry_of_task_id, created_at, updated_at, completed_at
+        FROM tasks
+        WHERE id IN (${placeholders})
+        ORDER BY created_at ASC, id ASC
+      `).all(params) as typeof rows);
+    }
+    return rows.map((row) => ({
+      id: row.id,
+      status: row.status,
+      attempt: row.attempt,
+      retryOfTaskId: row.retry_of_task_id,
+      createdAt: row.created_at,
+      updatedAt: row.updated_at,
+      completedAt: row.completed_at,
+    }));
   }
 
   summariesForAgent(input: {

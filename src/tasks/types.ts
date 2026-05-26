@@ -107,6 +107,16 @@ export interface TaskSummary {
   completedAt: string | null;
 }
 
+export interface TaskOutcome {
+  id: string;
+  status: TaskStatus;
+  attempt: number;
+  retryOfTaskId: string | null;
+  createdAt: string;
+  updatedAt: string;
+  completedAt: string | null;
+}
+
 export interface TaskEventRecord {
   id: number;
   taskId: string;
