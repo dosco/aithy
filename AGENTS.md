@@ -20,6 +20,7 @@
 - Processed soul data is stored in `metadata` under the `soul.md` key as `key`, `value`, and optional `hash`.
 - Session transcripts are durable conversation memory.
 - We do not persist Ax agent runtime state across turns. Each turn builds a fresh agent from the transcript; if the agent asks a clarification, the question is recorded in the transcript and the next user message is processed as a new turn (the agent re-derives any context from history).
+- Ax v23 can resume a clarification from `AxAgentState`, but Aithy intentionally defers that path. A future implementation would need a metadata snapshot with a short TTL and strict size cap; persisted runtime bindings can contain stale fetched pages or sandbox-dependent values, so transcript reconstruction remains the safer continuation contract for now.
 - Persisted sessions are logical bot sessions. Live Microsandbox VMs are process resources and are recreated after restart.
 - `bun run debug` lists SQLite tables. `bun run debug <table>` inspects a table, and `bun run debug <table> <id>` looks up a row by the table's primary lookup column.
 

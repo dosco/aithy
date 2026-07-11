@@ -69,6 +69,7 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
       <div className={`${chat.activeSession?.parentSessionId ? "mt-5 " : ""}app-chat-timeline flex flex-1 flex-col gap-5`}>
         <ChatTimeline
           messages={chat.messages}
+          streamingDraft={chat.streamingDraft}
           tasks={chat.tasks}
           activities={chat.activities}
           permissionRequests={chat.permissionRequests}
@@ -88,6 +89,7 @@ export function ChatPage({ initialState }: { initialState: WebStateDto }) {
           onPermissionDecision={chat.handlePermissionDecision}
           onPermissionRetry={(message) => void chat.retryPermission(message)}
           onRetryTask={(taskId) => void chat.retryFailedTask(taskId)}
+          onClarificationSubmit={(text) => void chat.submitText(text, { useSelectedSkills: false })}
         />
       </div>
 

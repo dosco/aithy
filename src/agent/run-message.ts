@@ -26,6 +26,7 @@ import { userProfileForAgent } from "../profile/service";
 import type { SoulProfile } from "../soul/types";
 import type { AssistantToolCallMessage } from "../session/types";
 import { isClarificationPause } from "./clarification";
+import { normalizeClarification } from "./clarification-payload";
 import {
   notifyClarification,
   resolveClarificationNotifications,
@@ -38,11 +39,13 @@ import {
   artifactMessagesForTurn,
   createArtifactRunContext,
 } from "./artifact-turn";
-import { artifactRepairRequest, shouldRequireArtifactForRequest } from "./artifact-intent";
+import { shouldRequireArtifactForRequest } from "./artifact-intent";
 import { createAithyAgent, type AxAgentMemoriesSearchFn } from "./create-agent";
 import {
   assistantTextMessage,
   conversationHistoryForAgent,
+  createAgentStatusHandler,
+  createTurnDeltaPublisher,
   safeGetChatLog,
   toChannelContext,
   toolCallMessage,
@@ -70,6 +73,7 @@ import {
   preRecallQueries,
   recallForAgent,
 } from "./memory-recall-context";
+import { forwardTurnWithArtifactRepair } from "./turn-forward";
 
 export interface RunMessageDeps {
   config: AppConfig;
@@ -197,6 +201,7 @@ export async function runMessage(
     onLoadedSkills: deps.onLoadedSkills,
     onUsedSkills: deps.onUsedSkills,
     onMemoriesSearch,
+    onAgentStatus: createAgentStatusHandler(deps.events, message.conversationId),
     onFunctionCall: (call) => {
       if (!shouldRecordFunctionCall(call)) return;
       const toolMessage = toolCallMessage(call);
@@ -272,37 +277,24 @@ export async function runMessage(
     };
     const options = deps.skills?.length ? { skills: deps.skills } : undefined;
     const requiresArtifact = Boolean(deps.artifacts) && shouldRequireArtifactForRequest(message.text);
-    let result = options
-      ? await program.forward(llm, input, options)
-      : await program.forward(llm, input);
-    let agentResponse = String(result.agentResponse ?? "");
-    let artifactMessages = await artifactMessagesForTurn({
+    const { agentResponse, artifactMessages } = await forwardTurnWithArtifactRepair({
+      program,
+      llm,
+      values: input,
+      options,
+      originalRequest: message.text,
+      requiresArtifact,
       artifacts: deps.artifacts,
       sessionId: message.conversationId,
       run: artifactRun,
       toolMessages: toolCallMessages,
       artifactIdsBeforeTurn,
+      onDeltaForTurnKey: (turnKey) => createTurnDeltaPublisher(
+        deps.events,
+        message.conversationId,
+        turnKey,
+      ),
     });
-    if (requiresArtifact && artifactMessages.length === 0) {
-      const repairInput = {
-        ...input,
-        userRequest: artifactRepairRequest(message.text, artifactRun.runOutboxPath),
-      };
-      result = options
-        ? await program.forward(llm, repairInput, options)
-        : await program.forward(llm, repairInput);
-      agentResponse = String(result.agentResponse ?? "");
-      artifactMessages = await artifactMessagesForTurn({
-        artifacts: deps.artifacts,
-        sessionId: message.conversationId,
-        run: artifactRun,
-        toolMessages: toolCallMessages,
-        artifactIdsBeforeTurn,
-      });
-    }
-    if (requiresArtifact && artifactMessages.length === 0) {
-      agentResponse = "I could not create or publish the requested file in this turn.";
-    }
     deps.sessions.appendMessages(
       message.conversationId,
       turnMessages(message, toolCallMessages, assistantTextMessage(agentResponse), deps, artifactMessages),
@@ -384,18 +376,19 @@ export async function runMessage(
         };
       }
       const question = error.question;
+      const clarification = normalizeClarification(error.clarification);
       deps.events.emit({
         type: "agent.clarification",
         conversationId: message.conversationId,
         question,
       });
-      notifyClarification(deps.notify, message.conversationId, question);
+      notifyClarification(deps.notify, message.conversationId, question, clarification);
       deps.sessions.appendMessages(
         message.conversationId,
         turnMessages(
           message,
           toolCallMessages,
-          assistantTextMessage(question),
+          assistantTextMessage(question, { clarification }),
           deps,
           await artifactMessagesForTurn({
             artifacts: deps.artifacts,

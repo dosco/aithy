@@ -15,6 +15,12 @@ export interface SessionTokenTotals {
 }
 
 export type AssistantTextStatus = "completed" | "failed" | "cancelled";
+export type AssistantClarificationType = "text" | "number" | "date" | "single_choice" | "multiple_choice";
+
+export interface AssistantClarification {
+  type: AssistantClarificationType;
+  choices?: Array<{ label: string; value: string }>;
+}
 
 export interface UserMessage {
   role: "user";
@@ -27,6 +33,7 @@ export interface AssistantTextMessage {
   kind: "text";
   content: string;
   status?: AssistantTextStatus;
+  clarification?: AssistantClarification;
   thought?: string;
   usage?: TokenUsage;
   createdAt: string;

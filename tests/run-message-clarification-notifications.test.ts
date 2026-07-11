@@ -31,7 +31,11 @@ describe("runMessage clarification notifications", () => {
         program: {
           forward: async () => {
             calls += 1;
-            if (calls === 1) throw new AxAgentClarificationError("Which detail?");
+            if (calls === 1) throw new AxAgentClarificationError({
+              question: "Which detail?",
+              type: "single_choice",
+              choices: ["Alpha", { label: "Beta", value: "b" }],
+            });
             return { agentResponse: "answered" };
           },
         },
@@ -53,12 +57,23 @@ describe("runMessage clarification notifications", () => {
     expect(notifications).toMatchObject([{
       kind: "session.clarification",
       title: "Aithy has a question",
-      body: "Which detail?",
+      body: "Which detail?\n\nChoices: Alpha, Beta",
       link: "/chat/conversation",
       conversationId: "conversation",
       actionStatus: "pending",
     }]);
     expect(typeof (notifications[0] as { actionExpiresAt?: unknown }).actionExpiresAt).toBe("string");
+    expect(sessions.getTranscript("conversation")[1]).toMatchObject({
+      role: "assistant",
+      kind: "text",
+      clarification: {
+        type: "single_choice",
+        choices: [
+          { label: "Alpha", value: "Alpha" },
+          { label: "Beta", value: "b" },
+        ],
+      },
+    });
     expect(resolved).toEqual([
       { conversationId: "conversation", kinds: ["session.clarification"] },
       { conversationId: "conversation", kinds: ["session.clarification"] },

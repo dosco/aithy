@@ -96,6 +96,54 @@ describe("web live events", () => {
     ]);
   });
 
+  test("converts agent status callbacks to typed activity details", () => {
+    const hub = new LiveEventHub();
+    const received: unknown[] = [];
+    const unsubscribe = hub.subscribe((event) => received.push(event));
+    hub.publishBotEvent({
+      type: "agent.status",
+      conversationId: "conversation",
+      message: "Finished checking the workspace",
+      status: "success",
+    });
+    unsubscribe();
+
+    expect(received).toEqual([expect.objectContaining({
+      type: "activity",
+      label: "Finished checking the workspace",
+      tone: "success",
+      detail: {
+        kind: "agent-status",
+        message: "Finished checking the workspace",
+        status: "success",
+      },
+    })]);
+  });
+
+  test("converts agent deltas to transient message-delta events", () => {
+    const hub = new LiveEventHub();
+    const received: unknown[] = [];
+    const unsubscribe = hub.subscribe((event) => received.push(event));
+    hub.publishBotEvent({
+      type: "agent.delta",
+      conversationId: "conversation",
+      turnKey: "run-1",
+      seq: 2,
+      text: "world",
+      reset: true,
+    });
+    unsubscribe();
+
+    expect(received).toEqual([expect.objectContaining({
+      type: "message-delta",
+      conversationId: "conversation",
+      turnKey: "run-1",
+      seq: 2,
+      text: "world",
+      reset: true,
+    })]);
+  });
+
   test("serializes artifact messages through live message events", () => {
     const event = messageEvent("conversation", {
       role: "assistant",

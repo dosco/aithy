@@ -292,7 +292,7 @@ export class QueueServiceRuntime {
   }
 
   private publish(event: WebLiveEvent): void {
-    this.runtimeStore.appendEvent(event);
+    if (shouldPersistRuntimeEvent(event)) this.runtimeStore.appendEvent(event);
     this.broadcast({ type: "event", event });
   }
 
@@ -379,6 +379,10 @@ export class QueueServiceRuntime {
     if (ws.readyState !== WebSocket.OPEN) return;
     ws.send(JSON.stringify(frame));
   }
+}
+
+export function shouldPersistRuntimeEvent(event: WebLiveEvent): boolean {
+  return event.type !== "message-delta";
 }
 
 function sameServiceStatus(a: RuntimeServiceStatus, b: RuntimeServiceStatus): boolean {

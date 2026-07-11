@@ -10,6 +10,7 @@ import {
 } from "@/components/chat-turn-model";
 import { useLiveEvent } from "@/components/live-events";
 import type { PendingChatMessage } from "@/components/pending-chat-queue-state";
+import { reduceStreamingDraft, type StreamingDraft } from "@/components/streaming-draft";
 import { useChatMessages } from "@/components/use-chat-messages";
 import { usePendingChatQueue } from "@/components/use-pending-chat-queue";
 import {
@@ -64,6 +65,7 @@ export function useChatController({
   const [selectedSkills, setSelectedSkills] = useState<SelectedSkill[]>([]);
   const [previewSessionId, setPreviewSessionId] = useState<string | null>(null);
   const [localTurn, setLocalTurn] = useState<LocalChatTurn>(IDLE_LOCAL_CHAT_TURN);
+  const [streamingDraft, setStreamingDraft] = useState<StreamingDraft | null>(null);
   const [retryingTaskIds, setRetryingTaskIds] = useState<Set<string>>(() => new Set());
   const activeSessionRef = useRef<string | null>(activeSessionId);
   const localTurnRef = useRef<LocalChatTurn>(localTurn);
@@ -116,6 +118,7 @@ export function useChatController({
     setTasks(initialState.tasks);
     setPreviewSessionId(null);
     setLocalTurn(IDLE_LOCAL_CHAT_TURN);
+    setStreamingDraft(null);
     previousTurnRef.current = null;
   }, [
     resolvedInitialSessionId,
@@ -142,11 +145,15 @@ export function useChatController({
           current.filter((request) => request.id !== message.requestId));
       }
       if (message.role === "assistant" && message.kind === "text") {
+        setStreamingDraft(null);
         const turnToComplete = localTurnRef.current;
         if (assistantCompletesLocalTurn(turnToComplete, event.conversationId, message.createdAt)) {
           setLocalTurn(IDLE_LOCAL_CHAT_TURN);
         }
       }
+    }
+    if (event.type === "message-delta") {
+      setStreamingDraft((current) => reduceStreamingDraft(current, event));
     }
     if (event.type === "permission-request") {
       setPermissionRequests((current) => updatePermissionRequests(current, event.request));
@@ -249,6 +256,7 @@ export function useChatController({
 
   const stop = useCallback(() => {
     setLocalTurn(IDLE_LOCAL_CHAT_TURN);
+    setStreamingDraft(null);
     if (activeSessionId) void stopChatMessage({ data: { conversationId: activeSessionId } });
   }, [activeSessionId]);
 
@@ -302,6 +310,7 @@ export function useChatController({
     previewSession,
     setPreviewSessionId,
     messages,
+    streamingDraft,
     tasks,
     activities,
     permissionRequests,
@@ -318,6 +327,7 @@ export function useChatController({
     retryingTaskIds,
     pendingMessages,
     submit,
+    submitText,
     stop,
     editPendingMessage,
     deletePendingMessage,

@@ -4,6 +4,10 @@ import type { LocalChatTurnPhase } from "./chat-turn-model";
 import type { WorkingLabel } from "./chat-timeline-entry";
 
 type ActivityEvent = Extract<WebLiveEvent, { type: "activity" }>;
+export interface WorkingStatus {
+  label: WorkingLabel;
+  detail?: string;
+}
 
 interface ChatMessageLike {
   message: SerializableBotMessage;
@@ -15,35 +19,46 @@ export function deriveWorkingLabel(input: {
   permissionRequests: SerializableSystemPermissionRequest[];
   tasks: TaskDto[];
   localTurnPhase?: LocalChatTurnPhase;
-}): WorkingLabel {
+}): WorkingStatus {
   if (input.permissionRequests.some((request) => request.status === "pending")) {
-    return "Waiting for approval";
+    return { label: "Waiting for approval" };
   }
   if (input.tasks.some((task) => task.status === "paused_approval")) {
-    return "Waiting for approval";
+    return { label: "Waiting for approval" };
   }
   const latestUserAt = latestUserCreatedAt(input.messages);
-  const candidates: Array<{ at: string; label: WorkingLabel }> = [];
+  const candidates: Array<{ at: string; status: WorkingStatus }> = [];
   for (const { message } of input.messages) {
     if (message.role !== "assistant" || message.kind !== "tool_call") continue;
     if (latestUserAt && message.createdAt < latestUserAt) continue;
     candidates.push({
       at: message.createdAt,
-      label: labelForTool(message.toolName),
+      status: { label: labelForTool(message.toolName) },
     });
   }
   for (const activity of input.activities) {
     if (latestUserAt && activity.createdAt < latestUserAt) continue;
     candidates.push({
       at: activity.createdAt,
-      label: labelForActivity(activity.label),
+      status: {
+        label: labelForActivity(activity.label),
+        ...(agentStatusDetail(activity) ? { detail: agentStatusDetail(activity) } : {}),
+      },
     });
   }
   candidates.sort((a, b) => a.at.localeCompare(b.at));
-  const latest = candidates.at(-1)?.label;
+  const latest = candidates.at(-1)?.status;
   if (latest) return latest;
-  if (input.localTurnPhase === "submitting") return "Sending";
-  return "Thinking";
+  if (input.localTurnPhase === "submitting") return { label: "Sending" };
+  return { label: "Thinking" };
+}
+
+function agentStatusDetail(activity: ActivityEvent): string | undefined {
+  if (!activity.detail || typeof activity.detail !== "object") return undefined;
+  const detail = activity.detail as { kind?: unknown; message?: unknown };
+  return detail.kind === "agent-status" && typeof detail.message === "string"
+    ? detail.message
+    : undefined;
 }
 
 function latestUserCreatedAt(messages: ChatMessageLike[]): string | null {

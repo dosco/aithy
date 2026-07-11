@@ -1,4 +1,4 @@
-import type { AssistantTextStatus, BotMessage, BotSessionSummary } from "./types";
+import type { AssistantClarification, AssistantTextStatus, BotMessage, BotSessionSummary } from "./types";
 import type { MessageRow, SessionRow } from "./sqlite-session-schema";
 
 export function summaryFromRow(row: SessionRow): BotSessionSummary {
@@ -103,9 +103,33 @@ function rowToMessage(row: MessageRow): BotMessage {
     kind: "text",
     content: row.content ?? "",
     ...textStatus(parseMetadata(row.metadata_json)),
+    ...textClarification(parseMetadata(row.metadata_json)),
     thought: row.thought ?? undefined,
     usage,
     createdAt: row.created_at,
+  };
+}
+
+function textClarification(value: Record<string, unknown>): { clarification?: AssistantClarification } {
+  const raw = value.clarification;
+  if (!raw || typeof raw !== "object") return {};
+  const record = raw as Record<string, unknown>;
+  const allowed = new Set(["text", "number", "date", "single_choice", "multiple_choice"]);
+  if (typeof record.type !== "string" || !allowed.has(record.type)) return {};
+  const choices = Array.isArray(record.choices)
+    ? record.choices.flatMap((choice) => {
+        if (!choice || typeof choice !== "object") return [];
+        const item = choice as Record<string, unknown>;
+        return typeof item.label === "string" && typeof item.value === "string"
+          ? [{ label: item.label, value: item.value }]
+          : [];
+      })
+    : undefined;
+  return {
+    clarification: {
+      type: record.type as AssistantClarification["type"],
+      ...(choices?.length ? { choices } : {}),
+    },
   };
 }
 
@@ -259,7 +283,12 @@ export function messageToBindings(message: BotMessage) {
   return {
     ...base,
     $content: message.content,
-    $metadataJson: message.status ? JSON.stringify({ status: message.status }) : null,
+    $metadataJson: message.status || message.clarification
+      ? JSON.stringify({
+          ...(message.status ? { status: message.status } : {}),
+          ...(message.clarification ? { clarification: message.clarification } : {}),
+        })
+      : null,
     $toolName: null,
     $toolArgs: null,
     $toolResult: null,

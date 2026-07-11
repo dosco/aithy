@@ -18,6 +18,20 @@ export type BotEvent =
       detail?: unknown;
     }
   | {
+      type: "agent.status";
+      conversationId: string;
+      message: string;
+      status: "success" | "failed";
+    }
+  | {
+      type: "agent.delta";
+      conversationId: string;
+      turnKey: string;
+      seq: number;
+      text: string;
+      reset?: boolean;
+    }
+  | {
       type: "agent.tool_call";
       conversationId: string;
       message: AssistantToolCallMessage;

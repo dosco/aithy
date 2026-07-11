@@ -3,6 +3,7 @@ import { GitBranch, LoaderCircle, RotateCcw } from "lucide-react";
 import { ArtifactCard } from "@/components/artifact-card";
 import { Markdown } from "@/components/markdown";
 import { PermissionCard } from "@/components/permission-card";
+import { ClarificationControls } from "@/components/clarification-controls";
 import type { LayoutName } from "../../src/settings/types";
 import type { SessionSummaryDto } from "@/server/dto";
 import type {
@@ -33,6 +34,8 @@ export type TimelineEntry =
       retrying?: boolean;
       retryDisabled?: boolean;
       usage?: Usage;
+      clarification?: Extract<SerializableBotMessage, { kind: "text" }>["clarification"];
+      clarificationInteractive?: boolean;
     }
   | { kind: "artifact"; key: string; message: Extract<SerializableBotMessage, { kind: "artifact" }> }
   | { kind: "permission"; key: string; message: Extract<SerializableBotMessage, { kind: "permission" }> }
@@ -41,7 +44,7 @@ export type TimelineEntry =
   | { kind: "tool"; key: string; toolName: string; toolArgs: unknown; toolResult?: unknown; usage?: Usage }
   | { kind: "sub-session"; key: string; session: SessionSummaryDto }
   | { kind: "activity"; key: string; label: string }
-  | { kind: "typing"; key: string; label: WorkingLabel };
+  | { kind: "typing"; key: string; label: WorkingLabel; detail?: string };
 
 export function TimelineItem({
   item,
@@ -50,6 +53,7 @@ export function TimelineItem({
   onPermissionDecision,
   onPermissionRetry,
   onRetryTask,
+  onClarificationSubmit,
 }: {
   item: Exclude<TimelineEntry, { kind: "typing" }>;
   layout: LayoutName;
@@ -57,6 +61,7 @@ export function TimelineItem({
   onPermissionDecision: (requestId: string, decision: "allow" | "deny", persist?: string) => void;
   onPermissionRetry: (message: Extract<SerializableBotMessage, { kind: "permission" }>) => void;
   onRetryTask: (taskId: string) => void;
+  onClarificationSubmit: (text: string) => void;
 }) {
   const reduce = useReducedMotion();
   const motionProps: HTMLMotionProps<"div"> = reduce
@@ -126,6 +131,9 @@ export function TimelineItem({
           )}
         </div>
         {item.usage ? <UsageLine usage={item.usage} /> : null}
+        {item.clarification && item.clarificationInteractive
+          ? <ClarificationControls clarification={item.clarification} onSubmit={onClarificationSubmit} />
+          : null}
       </motion.div>
     );
   }
@@ -187,7 +195,7 @@ export function TimelineItem({
   );
 }
 
-export function WorkingIndicator({ label }: { label: WorkingLabel }) {
+export function WorkingIndicator({ label, detail }: { label: WorkingLabel; detail?: string }) {
   const reduce = useReducedMotion();
   return (
     <motion.div
@@ -199,9 +207,10 @@ export function WorkingIndicator({ label }: { label: WorkingLabel }) {
       className="app-chat-bubble-frame w-fit max-w-[min(62%,24rem)]"
       aria-label={`Assistant is ${label.toLowerCase()}`}
     >
-      <div className="app-chat-bubble app-chat-bubble-assistant flex items-center gap-2 rounded-[12px] bg-[rgb(var(--bubble-bot)/0.72)] px-3 py-2 text-sm text-[rgb(var(--muted-foreground))] shadow-[0_1px_2px_rgb(0_0_0/0.04)]">
-        <span>{label}</span>
-        <span className="flex items-center gap-1" aria-hidden>
+      <div className="app-chat-bubble app-chat-bubble-assistant rounded-[12px] bg-[rgb(var(--bubble-bot)/0.72)] px-3 py-2 text-sm text-[rgb(var(--muted-foreground))] shadow-[0_1px_2px_rgb(0_0_0/0.04)]">
+        <div className="flex items-center gap-2">
+          <span>{label}</span>
+          <span className="flex items-center gap-1" aria-hidden>
           {[0, 1, 2].map((i) => (
             <motion.span
               key={i}
@@ -214,7 +223,9 @@ export function WorkingIndicator({ label }: { label: WorkingLabel }) {
               }
             />
           ))}
-        </span>
+          </span>
+        </div>
+        {detail ? <div className="mt-1 max-w-[22rem] text-xs leading-5 opacity-80">{detail}</div> : null}
       </div>
     </motion.div>
   );

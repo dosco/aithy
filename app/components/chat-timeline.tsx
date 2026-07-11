@@ -13,6 +13,7 @@ import type { SessionSummaryDto, TaskDto } from "@/server/dto";
 import type { LayoutName } from "../../src/settings/types";
 import type { SerializableBotMessage, SerializableSystemPermissionRequest, WebLiveEvent } from "../../src/web/live-events";
 import type { LocalChatTurnPhase } from "./chat-turn-model";
+import type { StreamingDraft } from "./streaming-draft";
 
 type ActivityEvent = Extract<WebLiveEvent, { type: "activity" }>;
 
@@ -29,6 +30,7 @@ const VIRTUALIZE_AFTER_ITEMS = 60;
 
 export function ChatTimeline({
   messages,
+  streamingDraft,
   tasks,
   subSessions,
   activities,
@@ -48,8 +50,10 @@ export function ChatTimeline({
   onPermissionDecision,
   onPermissionRetry,
   onRetryTask,
+  onClarificationSubmit,
 }: {
   messages: ChatMessageItem[];
+  streamingDraft: StreamingDraft | null;
   tasks: TaskDto[];
   subSessions: SessionSummaryDto[];
   activities: ActivityEvent[];
@@ -69,6 +73,7 @@ export function ChatTimeline({
   onPermissionDecision: (requestId: string, decision: "allow" | "deny", persist?: string) => void;
   onPermissionRetry: (message: Extract<SerializableBotMessage, { kind: "permission" }>) => void;
   onRetryTask: (taskId: string) => void;
+  onClarificationSubmit: (text: string) => void;
 }) {
   const listRef = useRef<HTMLDivElement>(null);
   const wasNearBottomRef = useRef(true);
@@ -78,6 +83,7 @@ export function ChatTimeline({
   const timeline = useMemo(
     () => buildTimeline({
       messages,
+      streamingDraft,
       tasks,
       subSessions,
       activities,
@@ -91,6 +97,7 @@ export function ChatTimeline({
     }),
     [
       messages,
+      streamingDraft,
       tasks,
       subSessions,
       activities,
@@ -180,7 +187,7 @@ export function ChatTimeline({
         {renderedItems.map((item) => (
           <MeasuredRow key={item.key} itemKey={item.key} onHeight={recordHeight}>
             {item.kind === "typing"
-              ? <WorkingIndicator label={item.label} />
+              ? <WorkingIndicator label={item.label} detail={item.detail} />
               : (
                   <TimelineItem
                     item={item}
@@ -189,6 +196,7 @@ export function ChatTimeline({
                     onPermissionDecision={onPermissionDecision}
                     onPermissionRetry={onPermissionRetry}
                     onRetryTask={onRetryTask}
+                    onClarificationSubmit={onClarificationSubmit}
                   />
                 )}
           </MeasuredRow>
@@ -215,6 +223,7 @@ export function countDebugItems(
 
 export function buildTimeline(input: {
   messages: ChatMessageItem[];
+  streamingDraft?: StreamingDraft | null;
   tasks: TaskDto[];
   subSessions: SessionSummaryDto[];
   activities: ActivityEvent[];
@@ -233,6 +242,9 @@ export function buildTimeline(input: {
     messageDayKeys.add(localDayKey(at));
   };
   const retryTaskIds = retryTaskIdsByAssistantKey(input.messages, input.retryableTasks);
+  const latestAssistantTextId = [...input.messages]
+    .reverse()
+    .find(({ message }) => message.role === "assistant" && message.kind === "text")?.id;
   input.messages.forEach(({ id, message }) => {
     const at = message.createdAt;
     const baseKey = String(id);
@@ -256,6 +268,10 @@ export function buildTimeline(input: {
           retrying: input.retryingTaskIds.has(retryTaskIds.get(baseKey) ?? ""),
           retryDisabled: input.retryDisabled,
           usage: input.details ? message.usage : undefined,
+          clarification: message.clarification,
+          clarificationInteractive: !input.sending
+            && Boolean(message.clarification)
+            && id === latestAssistantTextId,
         });
       }
     } else if (message.kind === "permission") {
@@ -299,11 +315,18 @@ export function buildTimeline(input: {
   }
   entries.sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0));
   const out = withDayDividers(entries, messageDayKeys);
-  if (input.sending) {
+  if (input.streamingDraft?.text) {
+    out.push({
+      kind: "assistant",
+      key: `streaming-${input.streamingDraft.turnKey}`,
+      content: input.streamingDraft.text,
+    });
+  }
+  if (input.sending && !input.streamingDraft?.text) {
     out.push({
       kind: "typing",
       key: "__typing__",
-      label: deriveWorkingLabel(input),
+      ...deriveWorkingLabel(input),
     });
   }
   return out;

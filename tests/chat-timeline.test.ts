@@ -98,7 +98,7 @@ describe("working status labels", () => {
       permissionRequests: [permissionRequest()],
       tasks: [task("running")],
       localTurnPhase: "awaiting_reply",
-    })).toBe("Waiting for approval");
+    })).toEqual({ label: "Waiting for approval" });
   });
 
   test("paused approval tasks beat recent tool activity", () => {
@@ -111,7 +111,7 @@ describe("working status labels", () => {
       permissionRequests: [],
       tasks: [task("paused_approval")],
       localTurnPhase: "awaiting_reply",
-    })).toBe("Waiting for approval");
+    })).toEqual({ label: "Waiting for approval" });
   });
 
   test("maps recent tool and activity categories to calm labels", () => {
@@ -128,7 +128,7 @@ describe("working status labels", () => {
         item("t1", toolCall("web.search", "2026-05-01T12:00:01.000Z")),
       ],
       activities: [],
-    })).toBe("Searching");
+    })).toEqual({ label: "Searching" });
     expect(deriveWorkingLabel({
       ...base,
       messages: [
@@ -136,7 +136,7 @@ describe("working status labels", () => {
         item("t1", toolCall("web.fetch", "2026-05-01T12:00:01.000Z")),
       ],
       activities: [],
-    })).toBe("Reading");
+    })).toEqual({ label: "Reading" });
     expect(deriveWorkingLabel({
       ...base,
       messages: [
@@ -144,12 +144,12 @@ describe("working status labels", () => {
         item("t1", toolCall("artifact.write", "2026-05-01T12:00:01.000Z")),
       ],
       activities: [],
-    })).toBe("Coding");
+    })).toEqual({ label: "Coding" });
     expect(deriveWorkingLabel({
       ...base,
       messages: [item("u1", user("run it", "2026-05-01T12:00:00.000Z"))],
       activities: [activity("$ bun test", "2026-05-01T12:00:01.000Z")],
-    })).toBe("Running");
+    })).toEqual({ label: "Running" });
   });
 
   test("falls back from local submit to thinking", () => {
@@ -159,14 +159,34 @@ describe("working status labels", () => {
       permissionRequests: [],
       tasks: [],
       localTurnPhase: "submitting",
-    })).toBe("Sending");
+    })).toEqual({ label: "Sending" });
     expect(deriveWorkingLabel({
       messages: [],
       activities: [],
       permissionRequests: [],
       tasks: [],
       localTurnPhase: "awaiting_reply",
-    })).toBe("Thinking");
+    })).toEqual({ label: "Thinking" });
+  });
+
+  test("keeps a stable label while showing agent-reported detail", () => {
+    expect(deriveWorkingLabel({
+      messages: [item("u1", user("inspect it", "2026-05-01T12:00:00.000Z"))],
+      activities: [{
+        ...activity("Finished checking the workspace", "2026-05-01T12:00:01.000Z"),
+        detail: {
+          kind: "agent-status",
+          message: "Finished checking the workspace",
+          status: "success",
+        },
+      }],
+      permissionRequests: [],
+      tasks: [],
+      localTurnPhase: "awaiting_reply",
+    })).toEqual({
+      label: "Thinking",
+      detail: "Finished checking the workspace",
+    });
   });
 });
 

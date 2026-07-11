@@ -24,7 +24,7 @@ Aithy is useful as a personal agent today, but it is also built for the messy pl
 - **Use the models you already have.** Choose managed local `llama.cpp` models, normal cloud/API providers, custom OpenAI-compatible endpoints, or an eligible Grok subscription.
 - **Make your Grok subscription useful.** Grok subscription sign-in can power chat and `web.search` without pasting an API key into Aithy. For people who already pay for Grok, that can avoid setting up separate per-token API-key billing for supported usage, subject to xAI eligibility and limits.
 - **Share a stronger machine.** Pair Aithy on your laptop with Aithy on a GPU box over LAN Mesh, then use validated family inference/search services without copying secrets around.
-- **Keep the agent visible.** Sessions, memory, skills, attentions, artifacts, usage, permissions, training-data capture, sandbox state, and runtime services are part of the product, not hidden logs. Chat shows calm working status, inline artifacts, and explicit approval bubbles while work is happening.
+- **Keep the agent visible.** Sessions, memory, skills, attentions, artifacts, usage, permissions, training-data capture, sandbox state, and runtime services are part of the product, not hidden logs. Chat streams assistant responses, shows model-reported progress, and keeps inline artifacts and explicit approval bubbles visible while work is happening.
 
 ## Quick Start
 
@@ -141,6 +141,8 @@ Mesh discovery is LAN-only. It advertises identity and connection metadata, not 
 ## Built for Real Agent Work
 
 Aithy is not just a chat box with a pile of tools. It treats the agent as a local runtime system.
+
+Assistant responses stream into the active chat as they are generated. When the agent needs structured input, the latest clarification can render choices, a date field, or a number field; the selected labels are sent as an ordinary next turn and remain visible in the durable transcript.
 
 ```mermaid
 flowchart TD

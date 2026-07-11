@@ -7,6 +7,7 @@ import { MAX_CONVERSATION_HISTORY_TEXT_CHARS } from "../config/limits";
 import type { ChannelMessage } from "../channel/types";
 import type {
   AssistantTextStatus,
+  AssistantClarification,
   AssistantTextMessage,
   AssistantToolCallMessage,
   BotMessage,
@@ -15,6 +16,32 @@ import type {
 } from "../session/types";
 import type { RunMessageDeps } from "./run-message";
 import type { AxChatLogEntry } from "@ax-llm/ax";
+import type { EventBus } from "../events/bus";
+import type { TurnDelta } from "./turn-forward";
+
+export function createAgentStatusHandler(events: EventBus, conversationId: string) {
+  return (message: string, status: "success" | "failed") => {
+    events.emit({ type: "agent.status", conversationId, message, status });
+  };
+}
+
+export function createTurnDeltaPublisher(
+  events: EventBus,
+  conversationId: string,
+  turnKey: string,
+) {
+  let seq = 0;
+  return (delta: TurnDelta) => {
+    events.emit({
+      type: "agent.delta",
+      conversationId,
+      turnKey,
+      seq: ++seq,
+      text: delta.text,
+      ...(delta.reset ? { reset: true } : {}),
+    });
+  };
+}
 
 export function safeGetChatLog(program: unknown): readonly AxChatLogEntry[] {
   const fn = (program as { getChatLog?: () => unknown })?.getChatLog;
@@ -120,13 +147,14 @@ export function wrapSkillsSearch(
 
 export function assistantTextMessage(
   text: string,
-  options: { status?: AssistantTextStatus } = {},
+  options: { status?: AssistantTextStatus; clarification?: AssistantClarification } = {},
 ): AssistantTextMessage {
   return {
     role: "assistant",
     kind: "text",
     content: trimHistoryText(text),
     ...(options.status ? { status: options.status } : {}),
+    ...(options.clarification ? { clarification: options.clarification } : {}),
     createdAt: new Date().toISOString(),
   };
 }

@@ -26,6 +26,10 @@ export type SerializableBotMessage =
       kind: "text";
       content: string;
       status?: "completed" | "failed" | "cancelled";
+      clarification?: {
+        type: "text" | "number" | "date" | "single_choice" | "multiple_choice";
+        choices?: Array<{ label: string; value: string }>;
+      };
       thought?: string;
       usage?: { input: number; output: number; thought: number; total: number };
       createdAt: string;
@@ -127,6 +131,17 @@ export type WebLiveEvent =
       createdAt: string;
       streamId?: string;
       message: SerializableBotMessage;
+    }
+  | {
+      type: "message-delta";
+      id: string;
+      conversationId: string;
+      createdAt: string;
+      streamId?: string;
+      turnKey: string;
+      seq: number;
+      text: string;
+      reset?: boolean;
     }
   | {
       type: "sessions";
@@ -308,6 +323,26 @@ function liveEventFromBotEvent(event: BotEvent): WebLiveEvent | undefined {
   }
   if (event.type === "agent.turn") {
     return activity(event.conversationId, event.summary, event.detail);
+  }
+  if (event.type === "agent.status") {
+    return activity(
+      event.conversationId,
+      event.message,
+      { kind: "agent-status", message: event.message, status: event.status },
+      event.status === "failed" ? "danger" : "success",
+    );
+  }
+  if (event.type === "agent.delta") {
+    return {
+      type: "message-delta",
+      id: crypto.randomUUID(),
+      conversationId: event.conversationId,
+      createdAt: new Date().toISOString(),
+      turnKey: event.turnKey,
+      seq: event.seq,
+      text: event.text,
+      ...(event.reset ? { reset: true } : {}),
+    };
   }
   if (event.type === "agent.tool_call") {
     return messageEvent(event.conversationId, event.message);
