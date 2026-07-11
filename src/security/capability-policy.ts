@@ -82,6 +82,14 @@ export function permissionOptionsForCapability(
   if (capability === "web.search") {
     return [{ kind: "global", label: "Always allow web search", value: null }];
   }
+  if (capability.startsWith("mcp.")) {
+    return [
+      { kind: "global", label: "Always allow this MCP server", value: null },
+      ...(context.command
+        ? [{ kind: "exact_command" as const, label: "Always allow this tool", value: context.command }]
+        : []),
+    ];
+  }
   return [{ kind: "global", label: "Always allow this tool", value: null }];
 }
 

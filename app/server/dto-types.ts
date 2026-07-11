@@ -1,4 +1,4 @@
-import type { AiProviderProfile, SearchProviderId, SearchProviderProfile, StoredSettings } from "../../src/settings/types";
+import type { AiProviderProfile, McpServerProfile, SearchProviderId, SearchProviderProfile, StoredSettings } from "../../src/settings/types";
 import type { CustomSandboxImage, SandboxImageOption, SandboxImageSelection } from "../../src/sandbox/image-catalog";
 import type { SandboxHealthReport } from "../../src/sandbox/health";
 import type { LocalInferenceSettings } from "../../src/local-inference/settings";
@@ -89,6 +89,11 @@ export interface ParallelSearchTestDto {
   mode: "anonymous" | "api-key" | "grok-subscription";
   url: string;
   answer: string;
+}
+
+export interface McpSettingsStatusDto {
+  clients: Record<string, { profile: McpServerProfile; tokenConfigured: boolean }>;
+  server: { configured: boolean; running: boolean; port: number };
 }
 
 export interface GrokSubscriptionStatusDto {
@@ -433,6 +438,7 @@ export type SettingsPageStateDto = Pick<
   mesh: MeshStateDto;
   meshInferenceProviders: MeshInferenceProviderDto[];
   meshCatalogs: MeshLiveCatalogPeerDto[];
+  mcpStatus: McpSettingsStatusDto;
 };
 
 export interface MeshPageStateDto {

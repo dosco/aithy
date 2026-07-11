@@ -40,6 +40,17 @@ const localInferenceRuntimeInput = z.object({
   frequencyPenalty: z.number().min(0).max(3).optional(),
 });
 
+const mcpServerProfileInput = z.object({
+  label: z.string().trim().min(1).max(80),
+  url: z.string().trim().min(1).max(1_000),
+  transport: z.enum(["streamable-http", "sse"]),
+  authMode: z.enum(["none", "bearer", "header"]),
+  headerName: z.string().trim().max(100).optional().nullable(),
+  enabled: z.boolean(), exposePrompts: z.boolean().optional(), exposeResources: z.boolean().optional(),
+  allowLoopback: z.boolean().optional(), allowHttp: z.boolean().optional(),
+  secretVersion: z.number().int().min(0).optional(), validation: z.any().optional(),
+});
+
 export const sessionInput = z.object({
   conversationId: z.string().min(1).optional(),
 });
@@ -133,6 +144,10 @@ export const settingsInput = z.object({
     systemBashEnabled: z.boolean().optional(),
     trainingDataCaptureEnabled: z.boolean().optional(),
     traceEnabled: z.boolean().optional(),
+    mcpServers: z.record(z.string().regex(/^[a-z0-9-]{1,32}$/), mcpServerProfileInput).optional(),
+    mcpServerEnabled: z.boolean().optional(),
+    mcpServerPort: z.number().int().min(1024).max(65_535).optional(),
+    playbookLearningEnabled: z.boolean().optional(),
     globalMounts: z.array(z.object({ hostPath: z.string().min(1) })).optional(),
   }).optional(),
   ui: z.object({

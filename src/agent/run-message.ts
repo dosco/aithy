@@ -54,6 +54,8 @@ import {
 } from "./run-message-helpers";
 import type { ToolContext } from "./tool-context";
 import { createAgentTools } from "./tools";
+import { createMcpAgentTools } from "../mcp/agent-tools";
+import type { McpRegistrySnapshot } from "../mcp/types";
 import type { CapabilityBroker } from "../security/capability-broker";
 import type { RuntimeStore } from "../runtime/runtime-store";
 import type { SqliteTaskStore } from "../tasks/task-store";
@@ -104,6 +106,7 @@ export interface RunMessageDeps {
   runtimeStore?: RuntimeStore;
   tasks?: SqliteTaskStore;
   automations?: AutomationToolActions;
+  mcpSnapshots?: readonly McpRegistrySnapshot[];
   taskId?: string;
   flushSessionState?: () => Promise<void>;
   urlPrefetcher?: UrlPrefetcher;
@@ -193,7 +196,10 @@ export async function runMessage(
   const { program, llm } = agentFactory({
     config: deps.config,
     runtimeStore: deps.runtimeStore,
-    tools: createAgentTools(toolContext, deps.config),
+    tools: [
+      ...createAgentTools(toolContext, deps.config),
+      ...createMcpAgentTools(deps.mcpSnapshots ?? [], toolContext),
+    ],
     events: deps.events,
     conversationId: message.conversationId,
     soul: deps.soul,

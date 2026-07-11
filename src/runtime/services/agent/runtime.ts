@@ -36,6 +36,7 @@ import type { SoulProfile } from "../../../soul/types";
 import type { SetupStatusInput } from "../../../setup/status";
 import { SqliteUsageStore } from "../../../usage/usage-store";
 import { SqliteTrainingDataStore } from "../../../training-data/store";
+import { McpRegistry } from "../../../mcp/registry";
 import { LiveEventHub } from "../../../web/live-events";
 import { assertSupportedBunVersion } from "../../bun-version";
 import { loadBaseConfig, resolveEffectiveConfig } from "../../resolve-effective-config";
@@ -57,7 +58,6 @@ export class AgentWorkerRuntime {
   private shutdownPromise?: Promise<void>;
   private readonly localInferenceWarmup = new LocalInferenceWarmupGate();
   private lastQueueKey = "";
-
   private constructor(
     public config: Awaited<ReturnType<typeof resolveEffectiveConfig>>,
     private readonly settings: SqliteSettingsStore,
@@ -68,17 +68,14 @@ export class AgentWorkerRuntime {
     public readonly sessions: SessionManager,
     public readonly soul: SoulProfile,
     public readonly memory: SqliteMemoryStore, public readonly episodes: SqliteEpisodeStore, public readonly transcripts: SqliteTranscriptRecallStore,
-    public readonly artifacts: SqliteArtifactStore,
-    public readonly usage: SqliteUsageStore, public readonly trainingData: SqliteTrainingDataStore,
-    public readonly activeRuns: ActiveRunRegistry,
-    public readonly skills: SqliteSkillsStore,
-    public readonly runtimeStore: RuntimeStore,
-    public readonly tasks: SqliteTaskStore,
-    public readonly automations: SqliteAutomationStore,
+    public readonly artifacts: SqliteArtifactStore, public readonly usage: SqliteUsageStore,
+    public readonly trainingData: SqliteTrainingDataStore, public readonly activeRuns: ActiveRunRegistry,
+    public readonly skills: SqliteSkillsStore, public readonly runtimeStore: RuntimeStore,
+    public readonly tasks: SqliteTaskStore, public readonly automations: SqliteAutomationStore,
     public readonly automationActions: AutomationToolActions,
     private readonly automationQueue: AutomationQueue,
-    public readonly capabilities: CapabilityBroker,
-    public readonly notifications: SqliteNotificationStore,
+    public readonly capabilities: CapabilityBroker, public readonly notifications: SqliteNotificationStore,
+    public mcpRegistry: McpRegistry,
     private readonly dispatcher: AgentDispatcher,
     private readonly sessionState: RemoteSessionStateStore,
     public readonly memoryQueue: MemoryQueue,
@@ -91,22 +88,20 @@ export class AgentWorkerRuntime {
     private readonly stores: { close(): void }[],
     private readonly ownsBunqueueManager: boolean,
   ) {}
-
   static async create(queue: QueueServiceClient, options: { ownsBunqueueManager?: boolean } = {}): Promise<AgentWorkerRuntime> {
     assertSupportedBunVersion();
     const baseConfig = loadBaseConfig();
     const settings = new SqliteSettingsStore(baseConfig.stateDbPath);
     const config = await resolveEffectiveConfig(baseConfig, settings.load());
+    const mcpRegistry = new McpRegistry(settings.load().runtime.mcpServers ?? {}, config.botId);
     await mkdir(config.workspaceRoot, { recursive: true });
     await mkdir(config.outboxRoot, { recursive: true });
-
     await queue.services();
     const runtimeStore = new RuntimeStore(config.stateDbPath);
     const tasks = new SqliteTaskStore(config.stateDbPath);
     const automations = new SqliteAutomationStore(config.stateDbPath);
     const capabilities = new CapabilityBroker(runtimeStore);
     capabilities.ensureDefaultLocalGrants();
-
     const events = new EventBus();
     const live = new LiveEventHub();
     events.subscribe((event) => live.publishBotEvent(event));
@@ -340,6 +335,7 @@ export class AgentWorkerRuntime {
       automationQueue,
       capabilities,
       notifications,
+      mcpRegistry,
       dispatcher,
       sessionState,
       memoryQueue,
@@ -444,7 +440,11 @@ export class AgentWorkerRuntime {
   }
 
   private async reloadSettings(): Promise<void> {
-    const next = await resolveEffectiveConfig(loadBaseConfig(), this.settings.load());
+    const stored = this.settings.load();
+    const next = await resolveEffectiveConfig(loadBaseConfig(), stored);
+    const previousMcp = this.mcpRegistry;
+    this.mcpRegistry = new McpRegistry(stored.runtime.mcpServers ?? {}, next.botId);
+    previousMcp.retire();
     this.sessions.setTtlMs(next.sessionTtlMs);
     this.sessions.setIdleParkMs(next.idleParkMs);
     if (this.config.parallelAgents !== next.parallelAgents) this.dispatcher.setConcurrency(next.parallelAgents);
@@ -477,7 +477,7 @@ export class AgentWorkerRuntime {
       this.memoryExpiry.close(),
       this.automationQueue.close(),
       this.skillCandidateQueue.close(),
-      this.sessions.parkAll(),
+      Promise.resolve(this.mcpRegistry.close()), this.sessions.parkAll(),
       this.sessionState.flush(),
     ]);
     if (this.ownsBunqueueManager) {

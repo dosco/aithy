@@ -162,7 +162,9 @@ The runtime services are `web`, `queue-service`, `agent-worker`, `sandbox-worker
 
 Under the hood, Aithy uses Ax and Ax Agent with an RLM-style, DSPy-inspired flow: context distillation, JavaScript runtime execution, and final response generation. Deterministic work such as parsing, filtering, sorting, deduping, retrieval orchestration, and tool routing can happen in code while the model focuses on language, judgment, and response quality.
 
-MCP fits this shape naturally. Tools can become callable runtime functions instead of being stuffed into every model prompt, which gives Aithy room to grow without turning context into a junk drawer.
+MCP fits this shape naturally. Settings -> MCP can connect streamable HTTP or legacy HTTP+SSE servers. Each enabled server is lazily initialized, unavailable servers are omitted without failing unrelated chat, and remote tools are namespaced and permission-gated per server and exact tool. Tokens stay in Bun secrets; loopback and unencrypted HTTP targets require explicit exceptions, while remote descriptions and results are bounded and treated as untrusted data. Prompts and resources remain hidden unless enabled for that profile.
+
+Aithy can also expose its own read-only MCP endpoint at `http://127.0.0.1:3111/mcp` (default off). Enabling it generates a bearer token shown once; regeneration similarly shows only the replacement once. It exposes `memory.search`, `skills.list`, `skills.read`, `artifacts.list`, and `artifacts.read`. Memory searches do not mutate recall counters, skill reads do not change usage counters, and artifact reads return stored metadata/text previews rather than arbitrary files. These loopback-only, bearer-authenticated, read-only server tools sit outside agent permission governance because they cannot perform agent actions or writes. OAuth and `session.ask` are deferred.
 
 ## Memory, Skills, Dreams, and Attentions
 
@@ -185,6 +187,7 @@ Aithy is local-first by default. State, sessions, memories, skills, settings, us
 - Permission decisions can become scoped capability rules.
 - Slash commands such as `/help`, `/skills`, and `/session` are routed before they reach the agent.
 - Non-secret provider settings live in SQLite; credentials live in Bun secrets under Aithy-prefixed names.
+- MCP client tokens use `aithy.mcp.<server-id>.token`; Aithy's own server token uses `aithy.mcp-server.token`. DTOs expose only configured status.
 - Provider profiles are validated against URL, model or mode, and credential version before being marked valid.
 - Mesh TLS private keys stay in local secrets, paired certificate pins live in SQLite, and provider API keys are never sent to peers.
 - Mesh RPC uses pinned TLS with HTTP/3 preferred and pinned HTTPS fallback.

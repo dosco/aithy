@@ -16,6 +16,7 @@ import {
   resolveHfHubCacheDir,
 } from "../../src/local-inference/hf-cache";
 import type { AithyRuntime } from "../../src/runtime/aithy-runtime.server";
+import { readAithyMcpServerToken, readMcpServerToken } from "../../src/settings/secrets";
 import { RuntimeStore } from "../../src/runtime/runtime-store";
 import { taskSummary } from "../../src/tasks/summary";
 import { serializableMessage, serializablePermissionRequest } from "../../src/web/live-events";
@@ -313,6 +314,12 @@ export async function settingsPageStateDto(runtime: AithyRuntime): Promise<Setti
     mesh: runtime.mesh.snapshot(),
     meshInferenceProviders: runtime.mesh.snapshot().inferenceProviders,
     meshCatalogs: await runtime.mesh.liveCatalogs("all"),
+    mcpStatus: {
+      clients: Object.fromEntries(await Promise.all(Object.entries(settings.runtime.mcpServers ?? {}).map(async ([id, profile]) => [
+        id, { profile, tokenConfigured: Boolean(await readMcpServerToken(id, runtime.config.botId)) },
+      ]))),
+      server: { ...runtime.mcpServer.status(), configured: Boolean(await readAithyMcpServerToken(runtime.config.botId)) },
+    },
   };
 }
 

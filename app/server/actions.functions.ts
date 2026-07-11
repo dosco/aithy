@@ -55,3 +55,10 @@ export {
   setMeshPeerTrust,
   unpairMeshPeer,
 } from "./mesh.actions";
+export {
+  configureAithyMcpServer,
+  regenerateAithyMcpServerToken,
+  removeMcpServer,
+  saveMcpServer,
+  testMcpServer,
+} from "./mcp.actions";

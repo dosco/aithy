@@ -27,6 +27,7 @@ import type { RuntimeStore } from "./runtime-store";
 import type { SqliteTaskStore } from "../tasks/task-store";
 import type { AutomationToolActions } from "../automations/tool-actions";
 import { retrievalDiagnostics } from "../retrieval/diagnostics";
+import type { McpRegistry } from "../mcp/registry";
 
 interface RuntimeForUserChat {
   config: AppConfig;
@@ -53,6 +54,7 @@ interface RuntimeForUserChat {
   logRetrieval?(message: string, detail?: unknown): void;
   notify(input: NotificationCreate): NotificationEntry;
   notifications: SqliteNotificationStore;
+  mcpRegistry?: McpRegistry;
   flushSessionState?(): Promise<void>;
 }
 
@@ -72,7 +74,10 @@ export async function processUserChatJob(
     sessionId: data.conversationId,
     taskId: data.taskId,
   });
-  const reply = await runMessage(message, {
+  const mcpLease = await runtime.mcpRegistry?.acquire();
+  let reply: Awaited<ReturnType<typeof runMessage>>;
+  try {
+    reply = await runMessage(message, {
     config: runtime.config,
     events: runtime.events,
     sandbox: runtime.sandbox,
@@ -103,7 +108,11 @@ export async function processUserChatJob(
     onLoadedSkills: trackedSkills.onLoadedSkills,
     onUsedSkills: trackedSkills.onUsedSkills,
     logRetrieval: runtime.logRetrieval ? (message, detail) => runtime.logRetrieval?.(message, detail) : undefined,
-  });
+      mcpSnapshots: mcpLease?.snapshots,
+    });
+  } finally {
+    mcpLease?.release();
+  }
   await runtime.flushSessionState?.();
   await enqueuePostTurnBackgroundTasks(runtime, data.conversationId);
   const assistant = [...runtime.sessions.getTranscript(reply.conversationId)]

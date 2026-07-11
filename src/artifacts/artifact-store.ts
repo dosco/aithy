@@ -200,6 +200,20 @@ export class SqliteArtifactStore {
     return rows.map(entryFromRow);
   }
 
+  recent(limit = 50, sessionId?: string): ArtifactEntry[] {
+    const bounded = Math.max(1, Math.min(100, Math.floor(limit)));
+    const rows = sessionId
+      ? this.db.query(`
+          SELECT * FROM artifacts WHERE session_id = $sessionId
+          ORDER BY created_at DESC, id DESC LIMIT $limit
+        `).all({ $sessionId: sessionId, $limit: bounded })
+      : this.db.query(`
+          SELECT * FROM artifacts
+          ORDER BY created_at DESC, id DESC LIMIT $limit
+        `).all({ $limit: bounded });
+    return (rows as ArtifactRow[]).map(entryFromRow);
+  }
+
   listForRun(sessionId: string, runId: string): ArtifactEntry[] {
     const rows = this.db.query(`
       SELECT * FROM artifacts

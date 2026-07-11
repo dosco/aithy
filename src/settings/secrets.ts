@@ -32,6 +32,70 @@ export function oauthTokensSecretName(provider: string): string {
   return `aithy.oauth.${provider}.tokens`;
 }
 
+export function mcpServerSecretName(id: string): string {
+  return `aithy.mcp.${id}.token`;
+}
+
+export function aithyMcpServerTokenName(): string {
+  return "aithy.mcp-server.token";
+}
+
+export async function readMcpServerToken(
+  id: string,
+  botId: string,
+  secrets: SecretStore = BunSecretStore,
+): Promise<string | undefined> {
+  return (await safeSecretGet(secrets, {
+    service: aithySecretService(botId),
+    name: mcpServerSecretName(id),
+  })) ?? undefined;
+}
+
+export async function writeMcpServerToken(
+  id: string,
+  value: string,
+  botId: string,
+  secrets: SecretStore = BunSecretStore,
+): Promise<void> {
+  const options = { service: aithySecretService(botId), name: mcpServerSecretName(id) };
+  await secrets.set({ ...options, value });
+  if (await secrets.get(options) !== value) throw new Error("Could not read back the saved MCP token.");
+}
+
+export async function deleteMcpServerToken(
+  id: string,
+  botId: string,
+  secrets: SecretStore = BunSecretStore,
+): Promise<boolean> {
+  return secrets.delete({ service: aithySecretService(botId), name: mcpServerSecretName(id) });
+}
+
+export async function readAithyMcpServerToken(
+  botId: string,
+  secrets: SecretStore = BunSecretStore,
+): Promise<string | undefined> {
+  return (await safeSecretGet(secrets, {
+    service: aithySecretService(botId), name: aithyMcpServerTokenName(),
+  })) ?? undefined;
+}
+
+export async function writeAithyMcpServerToken(
+  value: string,
+  botId: string,
+  secrets: SecretStore = BunSecretStore,
+): Promise<void> {
+  const options = { service: aithySecretService(botId), name: aithyMcpServerTokenName() };
+  await secrets.set({ ...options, value });
+  if (await secrets.get(options) !== value) throw new Error("Could not read back Aithy's MCP server token.");
+}
+
+export async function deleteAithyMcpServerToken(
+  botId: string,
+  secrets: SecretStore = BunSecretStore,
+): Promise<boolean> {
+  return secrets.delete({ service: aithySecretService(botId), name: aithyMcpServerTokenName() });
+}
+
 export function aithySecretService(botId: string): string {
   return `aithy.${botId}`;
 }

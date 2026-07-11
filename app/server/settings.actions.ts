@@ -39,6 +39,7 @@ import {
   secretStatusForProvider,
 } from "./dto";
 import { prepareGlobalMounts } from "./settings-mounts";
+import { normalizeMcpProfile } from "../../src/mcp/profile";
 import { setupGateStateDto } from "./web-state.dto";
 
 export const saveSettings = createServerFn({ method: "POST" })
@@ -86,6 +87,10 @@ export const saveSettings = createServerFn({ method: "POST" })
           ? null
           : normalizeParallelSearchMcpUrl(runtimePatch.parallelSearchMcpUrl),
       };
+    }
+    if (runtimePatch?.mcpServers) {
+      runtimePatch = { ...runtimePatch, mcpServers: Object.fromEntries(Object.entries(runtimePatch.mcpServers)
+        .map(([id, profile]) => [id, normalizeMcpProfile(id, profile)])) };
     }
     await assertMeshAiSelection(runtime, currentSettings.runtime, runtimePatch, provider, fastProvider);
     await assertAiSettings(runtime.config, { ...data, runtime: runtimePatch });

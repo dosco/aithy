@@ -57,6 +57,21 @@ export interface SearchProviderProfile {
   validation?: ProviderValidationState;
 }
 
+export interface McpServerProfile {
+  label: string;
+  url: string;
+  transport: "streamable-http" | "sse";
+  authMode: "none" | "bearer" | "header";
+  headerName?: string | null;
+  enabled: boolean;
+  exposePrompts?: boolean;
+  exposeResources?: boolean;
+  allowLoopback?: boolean;
+  allowHttp?: boolean;
+  secretVersion?: number;
+  validation?: ProviderValidationState;
+}
+
 export interface RuntimeSettings {
   aiProvider?: string;
   aiApiUrl?: string | null;
@@ -85,6 +100,10 @@ export interface RuntimeSettings {
   systemBashEnabled?: boolean;
   trainingDataCaptureEnabled?: boolean;
   traceEnabled?: boolean;
+  mcpServers?: Record<string, McpServerProfile>;
+  mcpServerEnabled?: boolean;
+  mcpServerPort?: number;
+  playbookLearningEnabled?: boolean;
   globalMounts?: GlobalMount[];
 }
 

@@ -120,6 +120,15 @@ describe("SqliteArtifactStore", () => {
     store.close();
   });
 
+  test("lists recent artifacts globally with optional session filtering and a hard bound", async () => {
+    const { store } = await artifactStore();
+    await store.write({ sessionId: "one", runId: "run-1", runOutboxPath: "/outbox/one/run-1", path: "one.txt", content: "one" });
+    await store.write({ sessionId: "two", runId: "run-1", runOutboxPath: "/outbox/two/run-1", path: "two.txt", content: "two" });
+    expect(store.recent(1000).map((item) => item.sessionId).sort()).toEqual(["one", "two"]);
+    expect(store.recent(10, "one").map((item) => item.sessionId)).toEqual(["one"]);
+    store.close();
+  });
+
   test("rejects symlinks and classifies image, binary, and large text previews", async () => {
     const { store, outbox } = await artifactStore();
     const runOutbox = "/outbox/c/run-1";

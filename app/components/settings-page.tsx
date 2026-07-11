@@ -10,6 +10,7 @@ import { SandboxSettingsTab } from "@/components/settings-sandbox-tab";
 import { ObservabilitySettingsTab } from "@/components/settings-observability-tab";
 import { SearchSettingsTab } from "@/components/settings-search-tab";
 import { PermissionsSettingsTab } from "@/components/settings-permissions-tab";
+import { McpSettingsTab } from "@/components/settings-mcp-tab";
 import { ThemeSync } from "@/components/theme-sync";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { saveSettingsWithSetupGateRefresh } from "@/lib/setup-gate";
@@ -109,6 +110,7 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
           <TabsTrigger value="observability">Data</TabsTrigger>
           <TabsTrigger value="sandbox">Sandbox</TabsTrigger>
           <TabsTrigger value="permissions">Permissions</TabsTrigger>
+          <TabsTrigger value="mcp">MCP</TabsTrigger>
           <TabsTrigger value="profile">User</TabsTrigger>
           <TabsTrigger value="agent">Agent</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
@@ -168,6 +170,8 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
             onRulesChange={setPermissionRules}
           />
         </TabsContent>
+
+        <TabsContent value="mcp"><McpSettingsTab initial={initialState.mcpStatus} /></TabsContent>
 
         <TabsContent value="profile">
           <UserProfileSection profile={profile} onChange={setProfile} />

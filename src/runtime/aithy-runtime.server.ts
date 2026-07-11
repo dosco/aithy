@@ -51,6 +51,7 @@ import type { CapabilityMatchKind } from "../security/capability-policy";
 import { MeshRuntime } from "../mesh/runtime";
 import { currentRuntimeTopology } from "./topology";
 import { runtimeReloadCommandsForSettingsChange } from "./settings-reload-commands";
+import { AithyMcpServerManager } from "../mcp/aithy-server";
 export interface AithyRuntime {
   config: AppConfig;
   events: EventBus;
@@ -80,6 +81,7 @@ export interface AithyRuntime {
   tasks: SqliteTaskStore;
   automations: SqliteAutomationStore;
   mesh: MeshRuntime;
+  mcpServer: AithyMcpServerManager;
   respondSystemPermission(requestId: string, decision: "allowed" | "denied", persist?: CapabilityMatchKind): SystemPermissionRequest;
   assertReady(): void;
   updateSettings(patch: SettingsPatch, secrets?: RuntimeSecretOverrides): Promise<StoredSettings>;
@@ -167,8 +169,8 @@ class RuntimeImpl implements AithyRuntime {
     public readonly tasks: SqliteTaskStore,
     public readonly automations: SqliteAutomationStore,
     public readonly mesh: MeshRuntime,
+    public readonly mcpServer: AithyMcpServerManager,
   ) {}
-
   notify(input: NotificationCreate): NotificationEntry {
     const entry = this.notifications.push(input);
     this.live.publish({
@@ -185,7 +187,6 @@ class RuntimeImpl implements AithyRuntime {
     const topology = currentRuntimeTopology();
     const settings = new SqliteSettingsStore(baseConfig.stateDbPath);
     const config = await resolveEffectiveConfig(baseConfig, settings.load());
-
     const events = new EventBus();
     const live = new LiveEventHub();
     events.subscribe((event) => live.publishBotEvent(event));
@@ -245,6 +246,7 @@ class RuntimeImpl implements AithyRuntime {
 
     const memoryConsolidate = new MemoryConsolidateProducer(config.stateDbPath);
     const dispatcher = new UserChatCommandProducer(queue);
+    const mcpServer = new AithyMcpServerManager({ memory, skills, artifacts }, config.botId);
 
     const runtime = new RuntimeImpl(
       config,
@@ -276,10 +278,12 @@ class RuntimeImpl implements AithyRuntime {
       tasks,
       automations,
       mesh,
+      mcpServer,
     );
     runtimeRef = runtime;
     runtime.queueHandle = queueHandle;
     await runtime.mesh.start();
+    await runtime.mcpServer.reconfigure(settings.load().runtime);
     await runtime.queue.heartbeat("web", "ready", {
       placement: topology.kind === "packaged" ? "coordinator" : "process",
     });
@@ -336,6 +340,7 @@ class RuntimeImpl implements AithyRuntime {
       this.sessions.setGlobalMounts(nextConfig.globalMounts);
     }
     this.config = nextConfig;
+    await this.mcpServer.reconfigure(nextSettings.runtime);
     for (const command of reloadCommands) {
       await this.queue.submitCommand(command.role, command.kind);
     }
@@ -365,6 +370,7 @@ class RuntimeImpl implements AithyRuntime {
     }
     this.activeRuns.stopAll();
     await this.closeRuntimeServices("reset");
+    this.mcpServer.close();
     await this.mesh.close();
     await this.closeQueues();
     try {
@@ -395,6 +401,7 @@ class RuntimeImpl implements AithyRuntime {
       this.events.emit({ type: "error", message: `[shutdown] stopped ${stopped} active run(s)` });
     }
     await this.closeRuntimeServices("shutdown");
+    this.mcpServer.close();
     await this.mesh.close();
 
     await this.closeQueues();
@@ -479,10 +486,10 @@ class RuntimeImpl implements AithyRuntime {
 }
 async function doResetAithyRuntimeSystem(): Promise<AithyRuntime> {
   const runtime = await getAithyRuntime();
-  const impl = runtime as RuntimeImpl;
+  const impl = runtime as RuntimeImpl; const mcpServerIds = Object.keys(impl.settings.load().runtime.mcpServers ?? {});
   await impl.prepareForFullReset();
   runtimeState().runtimePromise = undefined;
-  await clearManagedProviderSecrets(impl.config.botId);
+  await clearManagedProviderSecrets(impl.config.botId, mcpServerIds);
   await removeMicrosandboxVm(impl.config.botId);
   await removeBotStateDir(path.dirname(impl.config.stateDbPath), impl.config.botId);
   await removeRuntimeCache(path.join(path.dirname(impl.config.stateDbPath), "cache"));
