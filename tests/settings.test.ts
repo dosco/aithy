@@ -21,10 +21,10 @@ import {
   writeProviderApiKey,
   deleteParallelApiKey,
   deleteProviderApiKey,
-  type SecretStore,
 } from "../src/settings/secrets";
 import { applyRuntimeSettings, runtimeSandboxChanged } from "../src/settings/resolve";
 import { SqliteSettingsStore } from "../src/settings/store";
+import { MemorySecretStore } from "./secret-store-mock";
 
 describe("web settings", () => {
   test("persists runtime settings and UI preferences in metadata", async () => {
@@ -454,25 +454,3 @@ describe("web settings", () => {
     }))).toBe(false);
   });
 });
-
-class MemorySecretStore implements SecretStore {
-  private readonly values = new Map<string, string>();
-  lastSet?: { service: string; name: string; value: string };
-
-  async get(options: { service: string; name: string }): Promise<string | null> {
-    return this.values.get(key(options)) ?? null;
-  }
-
-  async set(options: { service: string; name: string; value: string }): Promise<void> {
-    this.lastSet = options;
-    this.values.set(key(options), options.value);
-  }
-
-  async delete(options: { service: string; name: string }): Promise<boolean> {
-    return this.values.delete(key(options));
-  }
-}
-
-function key(options: { service: string; name: string }): string {
-  return `${options.service}:${options.name}`;
-}

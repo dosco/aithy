@@ -13,8 +13,10 @@ import {
   searchProfileFor,
 } from "../settings/provider-profiles";
 import {
+  BunSecretStore,
   readProviderApiKey,
   readSearchApiKey,
+  type SecretStore,
 } from "../settings/secrets";
 import type {
   AiProviderProfile,
@@ -38,6 +40,7 @@ interface CatalogInput {
   settings: RuntimeSettings;
   sharing: MeshSharingSettings;
   runtimeStore?: RuntimeStore;
+  secrets?: SecretStore;
 }
 
 interface InferenceOffering {
@@ -88,7 +91,7 @@ async function localInferenceOfferings(input: CatalogInput): Promise<InferenceOf
   for (const provider of Object.keys(input.settings.aiProviderProfiles ?? {}).sort()) {
     if (isMeshProvider(provider)) continue;
     const profile = aiProfileFor(input.settings, provider);
-    const key = await providerApiKey(provider, input.config);
+    const key = await providerApiKey(provider, input.config, input.secrets);
     for (const slot of inferenceSlots(profile)) {
       const model = slot.model?.trim();
       if (!model) continue;
@@ -137,7 +140,8 @@ async function parallelSearchOffering(input: CatalogInput): Promise<SearchOfferi
   if (profile.validation?.status !== "valid") return null;
   const url = profile.url?.trim() || input.config.parallelSearchMcpUrl;
   if (!url) return null;
-  const key = await readSearchApiKey(provider, input.config.botId) ?? input.config.parallelApiKey;
+  const key = await readSearchApiKey(provider, input.config.botId, input.secrets ?? BunSecretStore)
+    ?? input.config.parallelApiKey;
   const mode = profile.mode === "api-key"
     ? "api-key"
     : profile.mode === "anonymous"
@@ -230,10 +234,14 @@ function localModelReady(config: AppConfig, runtimeStore: RuntimeStore | undefin
   }
 }
 
-async function providerApiKey(provider: string, config: AppConfig): Promise<string | undefined> {
+async function providerApiKey(
+  provider: string,
+  config: AppConfig,
+  secrets: SecretStore = BunSecretStore,
+): Promise<string | undefined> {
   if (!providerRequiresApiKey(provider)) return undefined;
   if (provider === config.aiProvider && config.aiApiKey) return config.aiApiKey;
-  return readProviderApiKey(provider, config.botId);
+  return readProviderApiKey(provider, config.botId, secrets);
 }
 
 function validationMetadata(validation: ProviderValidationState | undefined): MeshCatalogValidation {

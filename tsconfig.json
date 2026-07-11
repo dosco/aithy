@@ -8,6 +8,7 @@
     "jsxImportSource": "react",
     "types": ["bun-types"],
     "skipLibCheck": true,
+    "ignoreDeprecations": "6.0",
     "noEmit": true,
     "allowImportingTsExtensions": true,
     "baseUrl": ".",

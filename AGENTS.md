@@ -8,6 +8,7 @@
 - Keep files short. The repo enforces a 500-line hard limit with `bun run check:lines`; prefer smaller files before getting near that limit.
 - Follow existing patterns before adding abstractions. Add an abstraction only when it removes real duplication or isolates a clear subsystem boundary.
 - When adding or materially changing user-facing features, update `README.md` in the same change so setup, security boundaries, and product capabilities stay accurate.
+- After upgrading `@ax-llm/ax`, manually refresh the project-local Claude skills with `bunx @ax-llm/ax setup-claude`. Keep this manual rather than adding Ax to `trustedDependencies`, and remove skill directories that the upstream CLI no longer owns.
 
 ## State And Sessions
 

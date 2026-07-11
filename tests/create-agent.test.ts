@@ -4,7 +4,7 @@ import { EventBus } from "../src/events/bus";
 import { defaultLocalInferenceSettings } from "../src/local-inference/settings";
 
 describe("createAithyAgent", () => {
-  test("constructs an Ax v20 agent with inline functions", () => {
+  test("constructs an Ax v23 agent with inline functions", () => {
     const created = createAithyAgent({
       config: {
         aiProvider: "openai",

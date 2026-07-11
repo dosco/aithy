@@ -8,7 +8,9 @@ import {
 } from "../src/mesh/catalog";
 import { meshInferenceProviderId } from "../src/mesh/types";
 import { validValidation, validationNotRequired } from "../src/settings/provider-profiles";
+import { apiKeySecretName, aithySecretService } from "../src/settings/secrets";
 import type { RuntimeSettings } from "../src/settings/types";
+import { MemorySecretStore } from "./secret-store-mock";
 
 describe("mesh live catalog", () => {
   test("publishes metadata-only validated local LLM and search services", async () => {
@@ -35,7 +37,12 @@ describe("mesh live catalog", () => {
       },
     };
 
-    const catalog = await localMeshLiveCatalog({ config, settings, sharing: { inference: true, search: true } });
+    const catalog = await localMeshLiveCatalog({
+      config,
+      settings,
+      sharing: { inference: true, search: true },
+      secrets: new MemorySecretStore(),
+    });
     expect(catalog.inference.map((service) => service.id)).toEqual(["custom-openai.primary"]);
     expect(catalog.search.map((service) => service.id)).toEqual(["parallel.search"]);
     expect(catalog.inference[0]?.models).toEqual([{ id: "local-slot-model", label: "local-slot-model" }]);
@@ -57,7 +64,12 @@ describe("mesh live catalog", () => {
         anthropic: { model: "claude", validation: { status: "unknown" } },
       },
     };
-    const catalog = await localMeshLiveCatalog({ config, settings, sharing: { inference: true, search: true } });
+    const catalog = await localMeshLiveCatalog({
+      config,
+      settings,
+      sharing: { inference: true, search: true },
+      secrets: new MemorySecretStore(),
+    });
     expect(catalog.inference).toEqual([]);
   });
 
@@ -73,7 +85,12 @@ describe("mesh live catalog", () => {
       },
     };
 
-    const catalog = await localMeshLiveCatalog({ config, settings, sharing: { inference: true, search: true } });
+    const catalog = await localMeshLiveCatalog({
+      config,
+      settings,
+      sharing: { inference: true, search: true },
+      secrets: new MemorySecretStore(),
+    });
     expect(catalog.search).toEqual([]);
   });
 
@@ -87,18 +104,75 @@ describe("mesh live catalog", () => {
         parallel: { mode: "anonymous", validation: validValidation("search") },
       },
     };
+    const secrets = new MemorySecretStore();
     await expect(resolveMeshInferenceService({
       config,
       settings,
       sharing: { inference: true, search: true },
       serviceId: "openai.primary",
       requestedModel: "not-advertised",
+      secrets,
     })).rejects.toThrow(/model/);
     await expect(resolveMeshSearchService({
       config,
       settings,
       sharing: { inference: true, search: true },
       serviceId: "missing.search",
+      secrets,
     })).rejects.toThrow(/search service/);
+  });
+
+  test("keeps the active config key ahead of an injected secret store", async () => {
+    const config = { ...loadConfig(), aiProvider: "openai", aiApiKey: "config-key" };
+    const secrets = new MemorySecretStore([{
+      service: aithySecretService(config.botId),
+      name: apiKeySecretName("openai"),
+      value: "other-store-key",
+    }]);
+    const resolved = await resolveMeshInferenceService({
+      config,
+      settings: { aiProviderProfiles: { openai: { model: "gpt-4.1", validation: validValidation("fp") } } },
+      sharing: { inference: true, search: false },
+      serviceId: "openai.primary",
+      secrets,
+    });
+    expect(resolved.aiApiKey).toBe("config-key");
+  });
+
+  test("reads provider and Parallel keys through scoped legacy-name fallbacks", async () => {
+    const config = { ...loadConfig(), aiProvider: "anthropic", aiApiKey: undefined };
+    const secrets = new MemorySecretStore([
+      {
+        service: aithySecretService(config.botId),
+        name: "ai.openai.api-key",
+        value: "legacy-openai",
+      },
+      {
+        service: aithySecretService(config.botId),
+        name: "parallel.search-api-key",
+        value: "legacy-parallel",
+      },
+    ]);
+    const settings: RuntimeSettings = {
+      aiProviderProfiles: {
+        openai: { model: "gpt-4.1", validation: validValidation("fp") },
+      },
+      searchProviderProfiles: {
+        parallel: {
+          url: "https://search.private.example/mcp",
+          mode: "api-key",
+          validation: validValidation("search"),
+        },
+      },
+    };
+
+    const catalog = await localMeshLiveCatalog({
+      config,
+      settings,
+      sharing: { inference: true, search: true },
+      secrets,
+    });
+    expect(catalog.inference.map((item) => item.id)).toEqual(["openai.primary"]);
+    expect(catalog.search.map((item) => item.id)).toEqual(["parallel.search"]);
   });
 });

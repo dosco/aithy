@@ -8,6 +8,7 @@ describe("SqliteNotificationStore actionable notifications", () => {
   test("stores action fields and lists active pending actions", async () => {
     const store = await notificationStore();
     try {
+      const actionExpiresAt = daysFromNow(30);
       const entry = store.push({
         kind: "session.clarification",
         title: "Aithy has a question",
@@ -15,13 +16,13 @@ describe("SqliteNotificationStore actionable notifications", () => {
         link: "/chat/session-a",
         conversationId: "session-a",
         actionStatus: "pending",
-        actionExpiresAt: "2026-05-27T00:00:00.000Z",
+        actionExpiresAt,
       });
 
       expect(entry).toMatchObject({
         conversationId: "session-a",
         actionStatus: "pending",
-        actionExpiresAt: "2026-05-27T00:00:00.000Z",
+        actionExpiresAt,
         resolvedAt: null,
       });
       expect(store.activeActions()).toHaveLength(1);
@@ -33,22 +34,23 @@ describe("SqliteNotificationStore actionable notifications", () => {
   test("expires stale actions and resolves pending clarification actions by conversation", async () => {
     const store = await notificationStore();
     try {
+      const now = new Date();
       store.push({
         kind: "session.clarification",
         title: "Old question",
         conversationId: "session-a",
         actionStatus: "pending",
-        actionExpiresAt: "2026-05-01T00:00:00.000Z",
+        actionExpiresAt: daysFrom(now, -1),
       });
       store.push({
         kind: "session.clarification",
         title: "Fresh question",
         conversationId: "session-b",
         actionStatus: "pending",
-        actionExpiresAt: "2026-05-30T00:00:00.000Z",
+        actionExpiresAt: daysFrom(now, 30),
       });
 
-      expect(store.expireActions(new Date("2026-05-02T00:00:00.000Z"))).toBe(1);
+      expect(store.expireActions(now)).toBe(1);
       expect(store.activeActions().map((item) => item.title)).toEqual(["Fresh question"]);
       expect(store.resolvePendingActions({
         conversationId: "session-b",
@@ -64,4 +66,14 @@ describe("SqliteNotificationStore actionable notifications", () => {
 async function notificationStore(): Promise<SqliteNotificationStore> {
   const dir = await mkdtemp(path.join(tmpdir(), "aithy-notifications-"));
   return new SqliteNotificationStore(path.join(dir, "state.db"));
+}
+
+function daysFromNow(days: number): string {
+  return daysFrom(new Date(), days);
+}
+
+function daysFrom(date: Date, days: number): string {
+  const next = new Date(date);
+  next.setUTCDate(next.getUTCDate() + days);
+  return next.toISOString();
 }

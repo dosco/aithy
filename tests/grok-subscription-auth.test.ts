@@ -24,7 +24,8 @@ import {
   writeGrokSubscriptionTokens,
 } from "../src/grok-subscription/store";
 import type { GrokSubscriptionTokens } from "../src/grok-subscription/types";
-import { oauthTokensSecretName, type SecretStore } from "../src/settings/secrets";
+import { oauthTokensSecretName } from "../src/settings/secrets";
+import { MemorySecretStore } from "./secret-store-mock";
 
 describe("Grok subscription auth", () => {
   test("builds a PKCE sign-in URL with public subscription copy elsewhere", () => {
@@ -192,24 +193,4 @@ function readMetadataKeys(dbPath: string): string[] {
   } finally {
     db.close();
   }
-}
-
-class MemorySecretStore implements SecretStore {
-  values = new Map<string, string>();
-
-  async get(options: { service: string; name: string }): Promise<string | null> {
-    return this.values.get(key(options)) ?? null;
-  }
-
-  async set(options: { service: string; name: string; value: string }): Promise<void> {
-    this.values.set(key(options), options.value);
-  }
-
-  async delete(options: { service: string; name: string }): Promise<boolean> {
-    return this.values.delete(key(options));
-  }
-}
-
-function key(options: { service: string; name: string }): string {
-  return `${options.service}:${options.name}`;
 }

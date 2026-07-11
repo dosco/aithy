@@ -3,6 +3,8 @@ import {
   AxJSRuntime,
   agent,
   type AxAgentFunctionCall,
+  type AxAgentMemoriesSearchFn,
+  type AxAgentMemoryResult,
   type AxAgentSkillResult,
   type AxAgentSkillsSearchFn,
   type AxAgentUsedSkill,
@@ -18,15 +20,7 @@ import type { AithyAgentProgram, AxAgentConfigBoundary, AxServiceHandle } from "
 import { createAiService, createFastAiService } from "./ai-service";
 import { aithySignature } from "./signatures";
 
-// Mirror of @ax-llm/ax's AxAgentMemoriesSearchFn (it's exported from the
-// runtime but the agent-config typing on `agent()` doesn't currently surface
-// it cleanly). The framework passes `alreadyLoaded` so the callback can
-// dedupe against memories the agent has already seen this run.
-export type AxAgentMemoryResult = { id: string; content: string };
-export type AxAgentMemoriesSearchFn = (
-  searches: readonly string[],
-  alreadyLoaded: readonly AxAgentMemoryResult[],
-) => readonly AxAgentMemoryResult[] | Promise<readonly AxAgentMemoryResult[]>;
+export type { AxAgentMemoriesSearchFn, AxAgentMemoryResult };
 
 export interface CreatedAgent {
   program: AithyAgentProgram;
@@ -48,6 +42,7 @@ export interface CreateAithyAgentOptions {
   onLoadedSkills?: (results: readonly AxAgentSkillResult[]) => void | Promise<void>;
   onUsedSkills?: (usedSkills: readonly AxAgentUsedSkill[]) => void | Promise<void>;
   onMemoriesSearch?: AxAgentMemoriesSearchFn;
+  onAgentStatus?: (message: string, status: "success" | "failed") => void | Promise<void>;
   onFunctionCall?: AgentFunctionCallHandler;
 }
 
@@ -175,6 +170,7 @@ export function createAithyAgent({
   onLoadedSkills,
   onUsedSkills,
   onMemoriesSearch,
+  onAgentStatus,
   onFunctionCall,
 }: CreateAithyAgentOptions): CreatedAgent {
   const aiInput = { config, runtimeStore };
@@ -209,10 +205,14 @@ export function createAithyAgent({
     contextPolicy: { preset: "checkpointed", budget: "balanced" },
     runtime: new AxJSRuntime(),
     functionDiscovery: false,
+    directResponse: "auto",
+    autoUpgrade: { functionDiscovery: false, contextFields: true },
+    relevanceRanking: true,
     onSkillsSearch,
     onLoadedSkills,
     onUsedSkills,
     onMemoriesSearch,
+    agentStatusCallback: onAgentStatus,
     onFunctionCall: onFunctionCall
       ? (call: unknown) => onFunctionCall(call as AxFunctionCallTrace | AxAgentFunctionCall)
       : undefined,
