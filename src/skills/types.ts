@@ -1,6 +1,8 @@
 import type { SkillFileInput } from "./bundle";
+import type { SkillEvalDefinition } from "./evals";
 
 export interface SkillEntry {
+  evals: SkillEvalDefinition[];
   id: string;
   name: string;
   description: string;
@@ -27,9 +29,11 @@ export interface SkillEntry {
   updated_at: string;
 }
 
+
 export type SkillSourceKind = "user" | "builtin";
 
 export interface SkillUpsert {
+  evals?: readonly SkillEvalDefinition[];
   id: string;
   name: string;
   description: string;

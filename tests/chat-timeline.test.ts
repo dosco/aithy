@@ -63,6 +63,16 @@ describe("buildTimeline day dividers", () => {
       "assistant",
     ]);
   });
+
+  test("attaches feedback only to persisted assistant messages", () => {
+    const timeline = buildTestTimeline({ sessionId: "chat", messages: [
+      item(42, assistant("persisted", "2026-05-01T12:00:00.000Z")),
+      item("optimistic", assistant("live", "2026-05-01T12:00:01.000Z")),
+    ] });
+    const assistants = timeline.filter((entry) => entry.kind === "assistant");
+    expect(assistants[0]).toMatchObject({ feedback: { sessionId: "chat", messageId: 42 } });
+    expect(assistants[1]).not.toHaveProperty("feedback");
+  });
 });
 
 function buildTestTimeline(input: {
@@ -75,6 +85,7 @@ function buildTestTimeline(input: {
     label: string;
   }>;
   details?: boolean;
+  sessionId?: string;
 } = {}) {
   return buildTimeline({
     messages: input.messages ?? [],
@@ -87,6 +98,7 @@ function buildTestTimeline(input: {
     retryDisabled: false,
     details: input.details ?? false,
     sending: false,
+    sessionId: input.sessionId,
   });
 }
 
@@ -190,7 +202,7 @@ describe("working status labels", () => {
   });
 });
 
-function item(id: string, message: SerializableBotMessage): ChatMessageItem {
+function item(id: string | number, message: SerializableBotMessage): ChatMessageItem {
   return { id, message };
 }
 

@@ -4,6 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Field, FormError, FormTextarea, fieldClass, slugify } from "@/components/lib/form-bits";
 import type { SkillForm } from "./skill-card";
 import type { SkillUsageDto } from "@/server/dto";
+import { Link } from "@tanstack/react-router";
+import type { SkillEvalRunSummary } from "../../../src/skills/evals";
 
 export type SkillDrawerMode = "new" | "edit" | "import";
 
@@ -14,6 +16,8 @@ export interface SkillDrawerProps {
   error: string | null;
   links?: string[];
   recentUsage?: SkillUsageDto[];
+  evalRuns?: SkillEvalRunSummary[];
+  evalBusy?: boolean;
   onChange: (next: SkillForm) => void;
   onPasteTextChange: (value: string) => void;
   onParse: () => void;
@@ -23,6 +27,7 @@ export interface SkillDrawerProps {
   onDuplicate?: () => void | Promise<void>;
   onDisable?: () => void | Promise<void>;
   onEnable?: () => void | Promise<void>;
+  onTest?: () => void;
 }
 
 export function SkillDrawer({
@@ -32,6 +37,8 @@ export function SkillDrawer({
   error,
   links = [],
   recentUsage = [],
+  evalRuns = [],
+  evalBusy = false,
   onChange,
   onPasteTextChange,
   onParse,
@@ -41,6 +48,7 @@ export function SkillDrawer({
   onDuplicate,
   onDisable,
   onEnable,
+  onTest,
 }: SkillDrawerProps) {
   const nameRef = useRef<HTMLInputElement>(null);
   const pasteRef = useRef<HTMLTextAreaElement>(null);
@@ -96,6 +104,8 @@ export function SkillDrawer({
             error={error}
             links={links}
             recentUsage={recentUsage}
+            evalRuns={evalRuns}
+            evalBusy={evalBusy}
             editing={editing}
             readOnly={builtIn}
             onChange={onChange}
@@ -105,6 +115,7 @@ export function SkillDrawer({
             onDuplicate={onDuplicate}
             onDisable={onDisable}
             onEnable={onEnable}
+            onTest={onTest}
           />
         )}
       </aside>
@@ -121,7 +132,11 @@ function drawerTitle(mode: SkillDrawerMode): string {
 function formatDate(iso: string): string {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "unknown";
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
+  const minutes = Math.round((date.getTime() - Date.now()) / 60_000);
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  if (Math.abs(minutes) < 60) return formatter.format(minutes, "minute");
+  const hours = Math.round(minutes / 60);
+  return Math.abs(hours) < 24 ? formatter.format(hours, "hour") : formatter.format(Math.round(hours / 24), "day");
 }
 
 function FileEditor({
@@ -240,6 +255,8 @@ function EditorBody({
   error,
   links,
   recentUsage,
+  evalRuns,
+  evalBusy,
   editing,
   readOnly,
   onChange,
@@ -249,12 +266,15 @@ function EditorBody({
   onDuplicate,
   onDisable,
   onEnable,
+  onTest,
 }: {
   form: SkillForm;
   nameRef: RefObject<HTMLInputElement | null>;
   error: string | null;
   links: string[];
   recentUsage: SkillUsageDto[];
+  evalRuns: SkillEvalRunSummary[];
+  evalBusy: boolean;
   editing: boolean;
   readOnly: boolean;
   onChange: (next: SkillForm) => void;
@@ -264,6 +284,7 @@ function EditorBody({
   onDuplicate?: () => void | Promise<void>;
   onDisable?: () => void | Promise<void>;
   onEnable?: () => void | Promise<void>;
+  onTest?: () => void;
 }) {
   function onKeyDown(event: ReactKeyboardEvent) {
     if (!readOnly && (event.metaKey || event.ctrlKey) && event.key === "Enter") {
@@ -370,6 +391,16 @@ function EditorBody({
           />
         </section>
         <FileEditor form={form} onChange={onChange} readOnly={readOnly} />
+        <section className="mt-5 grid gap-3">
+          <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-[rgb(var(--muted-foreground))]">Authored evals (JSON)</h3>
+          <FormTextarea rows={8} value={form.evalsJson} readOnly={readOnly}
+            placeholder={'[{ "request": "...", "criteria": "..." }]'}
+            onChange={(event) => onChange({ ...form, evalsJson: event.target.value })} className="resize-y font-mono text-xs" />
+          <p className="text-xs text-[rgb(var(--muted-foreground))]">Up to five cases. Bundle authors can use <code>evals: |</code> with this JSON array.</p>
+        </section>
+        {editing ? <section className="mt-5 grid gap-3">
+          <div className="flex items-center justify-between gap-3"><h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-[rgb(var(--muted-foreground))]">Eval runs</h3><Button type="button" variant="soft" disabled={evalBusy} onClick={onTest}>{evalBusy ? "Queued…" : "Test this skill"}</Button></div>
+          {evalRuns.length === 0 ? <p className="text-sm text-[rgb(var(--muted-foreground))]">No eval runs yet.</p> : evalRuns.map((run) => <div key={run.id} className="rounded-lg border border-[rgb(var(--border))] p-3 text-sm"><div className="flex justify-between gap-2"><span>{run.status}</span><span>{run.score === null ? "—" : `${Math.round(run.score * 100)}%`}</span></div><p className="mt-1 text-xs text-[rgb(var(--muted-foreground))]">{formatDate(run.createdAt)} · {run.caseCount} cases{run.error ? ` · ${run.error}` : ""}</p></div>)}</section> : null}
         {links.length > 0 || recentUsage.length > 0 ? (
           <section className="mt-5 grid gap-3">
             <h3 className="font-mono text-[10px] uppercase tracking-[0.2em] text-[rgb(var(--muted-foreground))]">
@@ -382,7 +413,7 @@ function EditorBody({
             ) : null}
             {recentUsage.map((event) => (
               <p key={`${event.createdAt}-${event.reason}`} className="text-sm text-[rgb(var(--muted-foreground))]">
-                {event.reason || "Used"} {event.stage ? `(${event.stage})` : ""} · {formatDate(event.createdAt)}
+                {event.sessionId ? <Link className="underline" to="/chat/$sessionId" params={{ sessionId: event.sessionId }}>{event.reason || "Used"}</Link> : event.reason || "Used"} {event.stage ? `(${event.stage})` : ""} · {formatDate(event.createdAt)}
               </p>
             ))}
           </section>

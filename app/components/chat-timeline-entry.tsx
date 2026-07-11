@@ -4,6 +4,7 @@ import { ArtifactCard } from "@/components/artifact-card";
 import { Markdown } from "@/components/markdown";
 import { PermissionCard } from "@/components/permission-card";
 import { ClarificationControls } from "@/components/clarification-controls";
+import { ChatFeedbackControls } from "@/components/chat-feedback-controls";
 import type { LayoutName } from "../../src/settings/types";
 import type { SessionSummaryDto } from "@/server/dto";
 import type {
@@ -36,6 +37,7 @@ export type TimelineEntry =
       usage?: Usage;
       clarification?: Extract<SerializableBotMessage, { kind: "text" }>["clarification"];
       clarificationInteractive?: boolean;
+      feedback?: { sessionId: string; messageId: number };
     }
   | { kind: "artifact"; key: string; message: Extract<SerializableBotMessage, { kind: "artifact" }> }
   | { kind: "permission"; key: string; message: Extract<SerializableBotMessage, { kind: "permission" }> }
@@ -134,6 +136,8 @@ export function TimelineItem({
         {item.clarification && item.clarificationInteractive
           ? <ClarificationControls clarification={item.clarification} onSubmit={onClarificationSubmit} />
           : null}
+        {item.feedback && item.status !== "failed" && item.status !== "cancelled"
+          ? <ChatFeedbackControls sessionId={item.feedback.sessionId} messageId={item.feedback.messageId} /> : null}
       </motion.div>
     );
   }

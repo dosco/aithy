@@ -30,6 +30,7 @@ import type { TrainingDataSummaryDto } from "./training-data.dto";
 import type { StoredSettings } from "../../src/settings/types";
 import { resolveSandboxImageConfig } from "../../src/sandbox/image-catalog";
 import type { RuntimeServiceStatus } from "../../src/runtime/protocol/types";
+import type { SkillEvalRunSummary } from "../../src/skills/evals";
 
 export function sessionDto(session: BotSessionSummary): SessionSummaryDto {
   return serializableSession(session);
@@ -69,6 +70,7 @@ export function configDto(config: AppConfig, settings?: StoredSettings): ConfigD
     systemBashEnabled: config.systemBashEnabled,
     trainingDataCaptureEnabled: config.trainingDataCaptureEnabled,
     traceEnabled: config.traceEnabled,
+    playbookLearningEnabled: settings?.runtime.playbookLearningEnabled === true,
     botId: config.botId,
     stateDbPath: config.stateDbPath,
     workspaceRoot: config.workspaceRoot,
@@ -185,8 +187,10 @@ export function memoryDto(entry: MemoryEntry): MemoryDto {
   };
 }
 
-export function skillDto(skill: SkillEntry): SkillDto {
+export function skillDto(skill: SkillEntry, evalRuns: SkillEvalRunSummary[] = []): SkillDto {
   return {
+    evals: skill.evals,
+    evalRuns,
     id: skill.id,
     name: skill.name,
     description: skill.description,
@@ -211,6 +215,7 @@ export function skillDto(skill: SkillEntry): SkillDto {
     })),
     links: skill.links,
     recentUsage: skill.recent_usage.map((event) => ({
+      sessionId: event.session_id,
       reason: event.reason,
       stage: event.stage,
       createdAt: event.created_at,

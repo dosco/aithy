@@ -18,7 +18,10 @@ import {
   setBuiltInSkillDisabled,
   setBuiltInSkillEnabled,
   upsertSkill,
+  listSkillEvalRuns,
+  runSkillEval,
 } from "@/server/skills-memory.functions";
+import type { SkillEvalRunSummary } from "../../src/skills/evals";
 import type { SkillDto, SkillsCursor, SkillsPageStateDto } from "@/server/dto";
 import { frontmatterBoolean, frontmatterString, parseSkillMarkdown } from "../../src/skills/frontmatter";
 import { SkillDeck } from "./mind/skill-deck";
@@ -41,6 +44,8 @@ export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto 
   const [filteredCount, setFilteredCount] = useState(initialState.skillsCount);
   const [toolUniverse, setToolUniverse] = useState(initialState.skillsToolUniverse);
   const [refreshToken, setRefreshToken] = useState(0);
+  const [evalRuns, setEvalRuns] = useState<SkillEvalRunSummary[]>([]);
+  const [evalBusy, setEvalBusy] = useState(false);
 
   const debouncedFilter = useDebouncedValue(filter, 200);
   const queryArg = debouncedFilter.trim();
@@ -52,7 +57,7 @@ export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto 
         data: {
           cursor,
           query: queryArg || undefined,
-          sort: "retrieved",
+          sort: "used",
         },
       });
       if (cursor === null && res.total !== null) {
@@ -83,6 +88,21 @@ export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto 
     setForm(skillToForm(skill));
     setPasteText("");
     setError(null);
+    setEvalRuns(skill.evalRuns);
+    void refreshEvalRuns(skill.id);
+  }
+
+  async function refreshEvalRuns(skillId: string) {
+    setEvalRuns(await listSkillEvalRuns({ data: { skillId } }));
+  }
+
+  async function testCurrentSkill() {
+    if (!openId) return;
+    setEvalBusy(true); setError(null);
+    try {
+      await runSkillEval({ data: { skillId: openId } });
+      setTimeout(() => { void refreshEvalRuns(openId).finally(() => setEvalBusy(false)); }, 1_500);
+    } catch (err) { setEvalBusy(false); setError(err instanceof Error ? err.message : "Failed to queue skill eval"); }
   }
 
   function startNew() {
@@ -136,6 +156,7 @@ export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto 
           disableModelInvocation: form.disableModelInvocation,
           userInvocable: form.userInvocable,
           files: form.files,
+          evalsJson: form.evalsJson,
         },
       });
       const editing = drawerMode === "edit" && openId !== null;
@@ -182,6 +203,7 @@ export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto 
       disabledAt: null,
       duplicatedFromSourceId: null,
       files: [],
+      evalsJson: frontmatterString(parsed.frontmatter, ["evals"]) ?? "[]",
     });
     setPasteText("");
     setError(null);
@@ -339,6 +361,8 @@ export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto 
         error={error}
         links={openId ? skills.find((skill) => skill.id === openId)?.links : []}
         recentUsage={openId ? skills.find((skill) => skill.id === openId)?.recentUsage : []}
+        evalRuns={evalRuns}
+        evalBusy={evalBusy}
         onChange={setForm}
         onPasteTextChange={setPasteText}
         onParse={applyPaste}
@@ -348,6 +372,7 @@ export function SkillsPage({ initialState }: { initialState: SkillsPageStateDto 
         onDuplicate={duplicateCurrentBuiltIn}
         onDisable={() => void setCurrentBuiltInDisabled(true)}
         onEnable={() => void setCurrentBuiltInDisabled(false)}
+        onTest={() => void testCurrentSkill()}
       />
       {pendingUpload ? (
         <SkillUploadReview
@@ -376,6 +401,7 @@ function skillToForm(skill: SkillDto): SkillForm {
     disabledAt: skill.disabledAt,
     duplicatedFromSourceId: skill.duplicatedFromSourceId,
     files: skill.files.map((file) => ({ path: file.path, content: file.content })),
+    evalsJson: JSON.stringify(skill.evals, null, 2),
   };
 }
 

@@ -8,9 +8,11 @@ import {
   type SkillFileRow,
 } from "./skills-store-helpers";
 import type { SkillEntry, SkillUsageEvent } from "./types";
+import { parseSkillEvalsJson } from "./evals";
 
 export function skillEntryFromRow(db: Database, row: SkillRow): SkillEntry {
   return {
+    evals: parseSkillEvalsJson(row.evals_json),
     id: row.id,
     name: row.name,
     description: row.description,

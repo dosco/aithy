@@ -5,6 +5,7 @@ import { MEMORY_GUIDANCE_VALUES, MEMORY_KINDS, MEMORY_SCOPE_KINDS, MEMORY_SUBJEC
 import { assertLoopbackRequest } from "../../src/settings/localhost";
 import { getAithyRuntime } from "../../src/runtime/aithy-runtime.server";
 import { diffSkillBundle, parseSkillBundleFiles } from "../../src/skills/bundle";
+import { parseAuthoredEvals, skillEvalRunSummary, SqliteSkillEvalStore } from "../../src/skills/evals";
 import {
   MEMORIES_PAGE_SIZE,
   SKILLS_PAGE_SIZE,
@@ -26,6 +27,7 @@ const skillUpsertInput = z.object({
     path: z.string().min(1).max(240),
     content: z.string().max(100_000),
   })).max(40).optional(),
+  evalsJson: z.string().max(40_000).optional(),
 });
 
 export const upsertSkill = createServerFn({ method: "POST" })
@@ -37,7 +39,9 @@ export const upsertSkill = createServerFn({ method: "POST" })
     if (existing?.source_kind === "builtin") {
       throw new Error("Built-in skills are read-only. Duplicate the skill before editing it.");
     }
+    const evals = parseAuthoredEvals(data.evalsJson ?? "");
     const entry = runtime.skills.upsert({
+      evals,
       id: data.id,
       name: data.name.trim(),
       description: data.description.trim(),
@@ -94,6 +98,7 @@ export const saveSkillBundleUpload = createServerFn({ method: "POST" })
     }
     if (exists && !data.confirmedOverwrite) throw new Error("This skill already exists; review the update before saving");
     const entry = runtime.skills.upsert({
+      evals: bundle.evals,
       id: bundle.id,
       name: bundle.name,
       description: bundle.description,
@@ -155,11 +160,39 @@ export const setBuiltInSkillEnabled = createServerFn({ method: "POST" })
     return { skill: skillDto((await getAithyRuntime()).skills.setBuiltInSkillEnabled(data.sourceId)) };
   });
 
+export const runSkillEval = createServerFn({ method: "POST" })
+  .inputValidator(z.object({ skillId: z.string().min(1).max(120) }))
+  .handler(async ({ data }) => {
+    assertLoopbackRequest(getRequest());
+    const runtime = await getAithyRuntime();
+    const skill = runtime.skills.get(data.skillId);
+    if (!skill) throw new Error(`Skill not found: ${data.skillId}`);
+    const task = runtime.tasks.create({ kind: "skill.eval", title: `Test ${skill.name}`,
+      reason: "Queued for isolated skill evaluation", metadata: { skillId: skill.id } });
+    runtime.events.emit({ type: "task.status", task });
+    try {
+      const commandId = await runtime.queue.submitCommand("agent-worker", "skill.eval", { skillId: skill.id, taskId: task.id });
+      const queued = runtime.tasks.update(task.id, { runtimeCommandId: commandId }) ?? task;
+      return { task: { id: queued.id, status: queued.status } };
+    } catch (error) {
+      runtime.tasks.update(task.id, { status: "failed", errorSummary: error instanceof Error ? error.message : String(error) });
+      throw error;
+    }
+  });
+
+export const listSkillEvalRuns = createServerFn({ method: "GET" })
+  .inputValidator(z.object({ skillId: z.string().min(1).max(120) }))
+  .handler(async ({ data }) => {
+    const runtime = await getAithyRuntime();
+    const store = new SqliteSkillEvalStore(runtime.config.stateDbPath);
+    try { return store.recent(data.skillId, 20).map(skillEvalRunSummary); } finally { store.close(); }
+  });
+
 const skillsPageInput = z.object({
-  cursor: z.object({ name: z.string(), id: z.string(), retrievedCount: z.number().optional() }).nullable().optional(),
+  cursor: z.object({ name: z.string(), id: z.string(), retrievedCount: z.number().optional(), usedCount: z.number().optional() }).nullable().optional(),
   query: z.string().max(200).optional(),
   limit: z.number().int().positive().max(200).optional(),
-  sort: z.enum(["name", "retrieved"]).optional(),
+  sort: z.enum(["name", "retrieved", "used"]).optional(),
   activeOnly: z.boolean().optional(),
 });
 
@@ -176,7 +209,7 @@ export const listSkillsPaged = createServerFn({ method: "GET" })
       activeOnly: data.activeOnly,
     });
     return {
-      items: result.items.map(skillDto),
+      items: result.items.map((skill) => skillDto(skill)),
       nextCursor: result.nextCursor,
       total: data.cursor ? null : runtime.skills.count({ query: data.query, activeOnly: data.activeOnly }),
     };

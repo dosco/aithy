@@ -33,6 +33,7 @@ import {
   selectSkillColumns,
   type SkillFileRow,
 } from "./skills-store-helpers";
+import { ensureSkillEvalSchema, setSkillEvals, type SkillEvalDefinition } from "./evals";
 
 export class SqliteSkillsStore {
   private readonly db: Database;
@@ -41,8 +42,7 @@ export class SqliteSkillsStore {
   private readonly vecEnabled: boolean;
   private readonly onDirtyIndex?: (input: { skills: string[] }) => void;
 
-  constructor(
-    dbPath: string,
+  constructor(dbPath: string,
     options: { embedder?: Embedder; reranker?: Reranker; log?: (msg: string) => void; onDirtyIndex?: (input: { skills: string[] }) => void } = {},
   ) {
     mkdirSync(path.dirname(dbPath), { recursive: true });
@@ -56,6 +56,7 @@ export class SqliteSkillsStore {
     this.onDirtyIndex = options.onDirtyIndex;
     const vecLoad = this.embedder ? tryLoadVecExtension(this.db, options.log ?? (() => {})) : { ok: false as const };
     applySqliteMigrations(this.db, "session", sessionMigrations);
+    ensureSkillEvalSchema(this.db);
     this.vecEnabled = vecLoad.ok && this.tableExists("skills_vec");
     backfillSkillSearchChunks(this.db, this.getAll());
   }
@@ -131,8 +132,8 @@ export class SqliteSkillsStore {
           $duplicatedFromSourceId: duplicatedFrom,
           $updatedAt: updatedAt,
         } as never);
-      this.replaceFiles(skill.id, files, updatedAt);
-      this.replaceLinks(skill.id, links);
+      this.replaceFiles(skill.id, files, updatedAt); this.replaceLinks(skill.id, links);
+      if (skill.evals !== undefined) setSkillEvals(this.db, skill.id, skill.evals);
       replaceSkillSearchChunks(this.db, skill, files, updatedAt);
       if (shouldClearEmbeddings) clearSkillEmbeddingChunks(this.db, skill.id, this.vecEnabled);
       this.db.exec("COMMIT;");
@@ -160,6 +161,8 @@ export class SqliteSkillsStore {
     }
     return res.changes > 0;
   }
+
+  setEvals(id: string, evals: readonly SkillEvalDefinition[]): SkillEntry { setSkillEvals(this.db, id, evals); return this.get(id)!; }
 
   isHybridReady(): boolean {
     return this.vecEnabled && (this.embedder?.available() ?? false);
@@ -245,21 +248,20 @@ export class SqliteSkillsStore {
   }
 
   page(opts: {
-    cursor: { name: string; id: string; retrievedCount?: number } | null;
+    cursor: { name: string; id: string; retrievedCount?: number; usedCount?: number } | null;
     limit: number;
     query?: string;
-    sort?: "name" | "retrieved";
+    sort?: "name" | "retrieved" | "used";
     activeOnly?: boolean;
-  }): { items: SkillEntry[]; nextCursor: { name: string; id: string; retrievedCount?: number } | null } {
+  }): { items: SkillEntry[]; nextCursor: { name: string; id: string; retrievedCount?: number; usedCount?: number } | null } {
     const limit = Math.max(1, opts.limit);
     const sort = opts.sort ?? "name";
     const where = buildSkillsWhere({ query: opts.query, cursor: opts.cursor, sort });
     const whereSql = opts.activeOnly
       ? `${where.sql || "WHERE"} ${where.sql ? "AND " : ""}${activeSkillSql("skills")}`
       : where.sql;
-    const orderBy = sort === "retrieved"
-      ? "retrieved_count DESC, name ASC, id ASC"
-      : "name ASC, id ASC";
+    const orderBy = sort === "retrieved" ? "retrieved_count DESC, name ASC, id ASC"
+      : sort === "used" ? "used_count DESC, name ASC, id ASC" : "name ASC, id ASC";
     const rows = this.db
       .query(
         `SELECT ${selectSkillColumns()}
@@ -273,7 +275,8 @@ export class SqliteSkillsStore {
     const items = (more ? rows.slice(0, limit) : rows).map((row) => this.entry(row));
     const last = items[items.length - 1];
     const nextCursor = more && last
-      ? { name: last.name, id: last.id, ...(sort === "retrieved" ? { retrievedCount: last.retrieved_count } : {}) }
+      ? { name: last.name, id: last.id, ...(sort === "retrieved" ? { retrievedCount: last.retrieved_count } : {}),
+        ...(sort === "used" ? { usedCount: last.used_count } : {}) }
       : null;
     return { items, nextCursor };
   }

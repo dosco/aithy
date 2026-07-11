@@ -37,6 +37,10 @@ import type { SetupStatusInput } from "../../../setup/status";
 import { SqliteUsageStore } from "../../../usage/usage-store";
 import { SqliteTrainingDataStore } from "../../../training-data/store";
 import { McpRegistry } from "../../../mcp/registry";
+import { SkillEvalQueue } from "../../../skills/eval-queue";
+import { SqliteFeedbackStore } from "../../../feedback/store";
+import { ResponderPlaybookCache, ResponderPlaybookStore } from "../../../playbook/store";
+import { PlaybookUpdateQueue } from "../../../playbook/update-queue";
 import { LiveEventHub } from "../../../web/live-events";
 import { assertSupportedBunVersion } from "../../bun-version";
 import { loadBaseConfig, resolveEffectiveConfig } from "../../resolve-effective-config";
@@ -81,9 +85,9 @@ export class AgentWorkerRuntime {
     public readonly memoryQueue: MemoryQueue,
     public readonly dreamQueue: DreamQueue,
     private readonly memoryConsolidate: MemoryConsolidateQueue,
-    private readonly memoryExpiry: MemoryExpiryQueue,
-    public readonly skillCandidates: SqliteSkillCandidateStore,
-    public readonly skillCandidateQueue: SkillCandidateQueue,
+    private readonly memoryExpiry: MemoryExpiryQueue, public readonly skillCandidates: SqliteSkillCandidateStore,
+    public readonly skillCandidateQueue: SkillCandidateQueue, private readonly skillEvalQueue: SkillEvalQueue,
+    public readonly playbookCache: ResponderPlaybookCache, private readonly playbookQueue: PlaybookUpdateQueue,
     public readonly skillPromotions: SqliteSkillPromotionStore,
     private readonly stores: { close(): void }[],
     private readonly ownsBunqueueManager: boolean,
@@ -313,46 +317,28 @@ export class AgentWorkerRuntime {
       onQueueError,
     });
     const automationActions = createAutomationActions({ automations, queue: automationQueue });
+    const skillEvalQueue = new SkillEvalQueue({ config, events, sessions, sandbox, skills, tasks, usage });
+    const feedback = new SqliteFeedbackStore(config.stateDbPath); const playbookStore = new ResponderPlaybookStore(config.stateDbPath);
+    const playbookCache = new ResponderPlaybookCache(playbookStore);
+    const playbookQueue = new PlaybookUpdateQueue({ config, runtimeStore, events, tasks, feedback, store: playbookStore, cache: playbookCache, usage, notify });
 
     const runtime = new AgentWorkerRuntime(
-      config,
-      settings,
-      queue,
-      events,
-      live,
-      sandbox,
-      sessions,
-      soul,
-      memory, episodes, transcripts,
-      artifacts,
-      usage, trainingData,
-      activeRuns,
-      skills,
-      runtimeStore,
-      tasks,
-      automations,
-      automationActions,
-      automationQueue,
-      capabilities,
-      notifications,
-      mcpRegistry,
-      dispatcher,
-      sessionState,
-      memoryQueue,
-      dreamQueue,
-      memoryConsolidate,
-      memoryExpiry,
-      skillCandidates,
-      skillCandidateQueue,
+      config, settings, queue, events, live,
+      sandbox, sessions, soul,
+      memory, episodes, transcripts, artifacts, usage, trainingData, activeRuns, skills,
+      runtimeStore, tasks, automations,
+      automationActions, automationQueue, capabilities, notifications, mcpRegistry,
+      dispatcher, sessionState, memoryQueue, dreamQueue, memoryConsolidate, memoryExpiry,
+      skillCandidates, skillCandidateQueue, skillEvalQueue,
+      playbookCache, playbookQueue,
       skillPromotions,
-      [settings, skills, skillCandidates, skillPromotions, memory, episodes, transcripts, memoryRuns, artifacts, notifications, usage, trainingData, soulStore, runtimeStore, tasks, automations],
+      [settings, skills, skillCandidates, skillPromotions, memory, episodes, transcripts, memoryRuns, artifacts, notifications, usage, trainingData, soulStore, runtimeStore, tasks, automations, feedback, playbookStore],
       options.ownsBunqueueManager ?? true,
     );
     runtimeRef = runtime;
     await automationQueue.syncSchedules();
     return runtime;
   }
-
   notify(input: NotificationCreate): NotificationEntry {
     const entry = this.notifications.push(input);
     this.live.publish({ type: "notification", id: crypto.randomUUID(), createdAt: entry.createdAt, notification: { ...entry } });
@@ -413,6 +399,17 @@ export class AgentWorkerRuntime {
       await this.reloadSettings();
       return { reloaded: true };
     }
+    if (command.kind === "skill.eval") {
+      const skillId = payloadString(command.payload, "skillId"); const taskId = payloadString(command.payload, "taskId");
+      if (!skillId || !taskId) throw new Error("skill.eval requires skillId and taskId");
+      this.skillEvalQueue.enqueue(skillId, taskId); return { queued: true };
+    }
+    if (command.kind === "playbook.update") {
+      const feedbackId = payloadString(command.payload, "feedbackId"); const taskId = payloadString(command.payload, "taskId");
+      if (!feedbackId || !taskId) throw new Error("playbook.update requires feedbackId and taskId");
+      this.playbookQueue.enqueue(feedbackId, taskId); return { queued: true };
+    }
+    if (command.kind === "playbook.reset") { this.playbookCache.reset(); return { reset: true }; }
     if (command.kind === "automations.sync") {
       await this.automationQueue.syncSchedules();
       return { synced: true };
@@ -460,7 +457,7 @@ export class AgentWorkerRuntime {
     this.memoryQueue.updateConfig(next);
     this.memoryConsolidate.updateConfig(next);
     this.dreamQueue.updateConfig(next);
-    this.skillCandidateQueue.updateConfig(next);
+    this.skillCandidateQueue.updateConfig(next); this.skillEvalQueue.updateConfig(next); this.playbookQueue.updateConfig(next);
     this.config = next;
     this.publishQueueStatus();
   }
@@ -477,6 +474,8 @@ export class AgentWorkerRuntime {
       this.memoryExpiry.close(),
       this.automationQueue.close(),
       this.skillCandidateQueue.close(),
+      this.skillEvalQueue.close(),
+      this.playbookQueue.close(),
       Promise.resolve(this.mcpRegistry.close()), this.sessions.parkAll(),
       this.sessionState.flush(),
     ]);

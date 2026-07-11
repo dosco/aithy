@@ -4,6 +4,8 @@ export type UsagePurpose =
   | "memory.consolidate"
   | "memory.dream"
   | "skill.promote"
+  | "skill.eval"
+  | "playbook.update"
   | "other";
 
 export interface UsageRecord {

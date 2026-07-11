@@ -14,7 +14,9 @@ export type TaskKind =
   | "memory.expiry"
   | "memory.dream"
   | "skill.candidate"
-  | "skill.promote";
+  | "skill.promote"
+  | "skill.eval"
+  | "playbook.update";
 
 export type TaskQueryStatus = "active" | "not-active";
 

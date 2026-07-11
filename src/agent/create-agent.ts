@@ -3,6 +3,7 @@ import {
   AxJSRuntime,
   agent,
   type AxAgentFunctionCall,
+  type AxAgentCatalogSkill,
   type AxAgentMemoriesSearchFn,
   type AxAgentMemoryResult,
   type AxAgentSkillResult,
@@ -17,6 +18,7 @@ import { missingCapabilitySummary, type SandboxCapabilityGroup, type SandboxHeal
 import { combineResponderDescription } from "../profile/service";
 import type { SoulProfile } from "../soul/types";
 import type { AithyAgentProgram, AxAgentConfigBoundary, AxServiceHandle } from "./ax-boundary";
+import type { AxPlaybookSnapshot } from "./ax-boundary";
 import { createAiService, createFastAiService } from "./ai-service";
 import { aithySignature } from "./signatures";
 
@@ -39,11 +41,13 @@ export interface CreateAithyAgentOptions {
   conversationId: string;
   soul?: SoulProfile;
   onSkillsSearch?: AxAgentSkillsSearchFn;
+  skillsCatalog?: readonly AxAgentCatalogSkill[];
   onLoadedSkills?: (results: readonly AxAgentSkillResult[]) => void | Promise<void>;
   onUsedSkills?: (usedSkills: readonly AxAgentUsedSkill[]) => void | Promise<void>;
   onMemoriesSearch?: AxAgentMemoriesSearchFn;
   onAgentStatus?: (message: string, status: "success" | "failed") => void | Promise<void>;
   onFunctionCall?: AgentFunctionCallHandler;
+  responderPlaybook?: AxPlaybookSnapshot | null;
 }
 
 const contextDescription = `You are the context distiller for the agent pipeline. Your job is to use the JavaScript runtime to inspect chat history, resolve the user's latest message into a self-contained request, gather only the evidence the executor needs, and then call final(resolvedRequest, evidence). The executor will not see raw conversationHistory, so resolvedRequest must carry forward any relevant prior intent, entities, locations, constraints, and answers to clarifying questions.
@@ -167,11 +171,13 @@ export function createAithyAgent({
   conversationId,
   soul,
   onSkillsSearch,
+  skillsCatalog,
   onLoadedSkills,
   onUsedSkills,
   onMemoriesSearch,
   onAgentStatus,
   onFunctionCall,
+  responderPlaybook,
 }: CreateAithyAgentOptions): CreatedAgent {
   const aiInput = { config, runtimeStore };
   const llm = createAiService(aiInput);
@@ -209,6 +215,7 @@ export function createAithyAgent({
     autoUpgrade: { functionDiscovery: false, contextFields: true },
     relevanceRanking: true,
     onSkillsSearch,
+    skillsCatalog,
     onLoadedSkills,
     onUsedSkills,
     onMemoriesSearch,
@@ -219,6 +226,10 @@ export function createAithyAgent({
     // debug: true,
   };
   const program = agent(aithySignature, agentConfig as never) as unknown as AithyAgentProgram;
+  if (responderPlaybook && program.playbook) {
+    program.playbook({ target: "responder", apply: true, studentAI: fastLlm ?? llm, teacherAI: fastLlm ?? llm } as never)
+      .load(responderPlaybook);
+  }
 
   return { program, llm };
 }

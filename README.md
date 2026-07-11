@@ -176,6 +176,10 @@ Dreams turn completed work into searchable episodes with task, approach, outcome
 
 Aithy ships a source-managed built-in skills catalog for sandbox work: Docling conversion, OCR, PDF repair/assembly/optimization, media inspection/extraction, spreadsheet and CSV cleanup, web/table extraction, downloads, and artifact packaging. Built-ins are read-only, can be disabled without deletion, and can be duplicated into normal editable user skills.
 
+Skills Lab ranks skills by actual use, links recent use back to its chat, and supports authored evals. Put a JSON array of up to five `{ "request": string, "criteria": string }` cases under an `evals: |` block in `SKILL.md`, or edit the same raw JSON in the skill drawer. “Test this skill” runs authored cases first, synthesizes only enough to reach three, uses a fresh agent for each case, records tool calls, and scores the response with the fast model. Eval agents never receive system shell, MCP, web, memory-write, or artifact-publishing tools; permission failures are recorded as blocked instead of opening approval prompts.
+
+Persisted thumbs feedback always uses the verified assistant response, preceding request, and bounded history read from SQLite rather than client-supplied transcript text. Optional comments amend the same feedback row. When Settings -> Data responder learning is explicitly enabled, Aithy uses that feedback to update a capped responder playbook for later chats. Learned guidance can affect tone and formatting only; it cannot alter tool policy, permissions, sandboxing, host access, instruction hierarchy, or factual authority. Oversized playbooks are discarded and reset rather than partially persisted.
+
 ## Built for Trust
 
 Aithy is local-first by default. State, sessions, memories, skills, settings, usage, opt-in training traces, runtime status, and Mesh peer records live under your Aithy config directory unless you deliberately point them elsewhere.

@@ -40,7 +40,7 @@ import {
   createArtifactRunContext,
 } from "./artifact-turn";
 import { shouldRequireArtifactForRequest } from "./artifact-intent";
-import { createAithyAgent, type AxAgentMemoriesSearchFn } from "./create-agent";
+import { createAithyAgent, type AxAgentMemoriesSearchFn, type CreateAithyAgentOptions } from "./create-agent";
 import {
   assistantTextMessage,
   conversationHistoryForAgent,
@@ -94,6 +94,8 @@ export interface RunMessageDeps {
   skillsSearch?: AxAgentSkillsSearchFn;
   skills?: readonly AxAgentSkillResult[];
   skillsStore?: SqliteSkillsStore;
+  skillsCatalog?: CreateAithyAgentOptions["skillsCatalog"];
+  responderPlaybook?: CreateAithyAgentOptions["responderPlaybook"];
   loadedSkillIds?: Set<string>;
   onLoadedSkills?: (results: readonly AxAgentSkillResult[]) => void | Promise<void>;
   onUsedSkills?: (usedSkills: readonly AxAgentUsedSkill[]) => void | Promise<void>;
@@ -203,6 +205,7 @@ export async function runMessage(
     events: deps.events,
     conversationId: message.conversationId,
     soul: deps.soul,
+    skillsCatalog: deps.skillsCatalog, responderPlaybook: deps.responderPlaybook,
     onSkillsSearch,
     onLoadedSkills: deps.onLoadedSkills,
     onUsedSkills: deps.onUsedSkills,

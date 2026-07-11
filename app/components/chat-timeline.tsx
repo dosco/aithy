@@ -94,6 +94,7 @@ export function ChatTimeline({
       details,
       sending,
       localTurnPhase,
+      sessionId: resetKey,
     }),
     [
       messages,
@@ -108,6 +109,7 @@ export function ChatTimeline({
       details,
       sending,
       localTurnPhase,
+      resetKey,
     ],
   );
 
@@ -234,6 +236,7 @@ export function buildTimeline(input: {
   details: boolean;
   sending: boolean;
   localTurnPhase?: LocalChatTurnPhase;
+  sessionId?: string | null;
 }): TimelineEntry[] {
   const entries: Array<{ at: string; entry: TimelineEntry }> = [];
   const messageDayKeys = new Set<string>();
@@ -272,6 +275,7 @@ export function buildTimeline(input: {
           clarificationInteractive: !input.sending
             && Boolean(message.clarification)
             && id === latestAssistantTextId,
+          ...(input.sessionId && typeof id === "number" ? { feedback: { sessionId: input.sessionId, messageId: id } } : {}),
         });
       }
     } else if (message.kind === "permission") {

@@ -71,6 +71,7 @@ export function SettingsPage({ initialState }: { initialState: SettingsPageState
               : {}),
             systemBashEnabled: config.systemBashEnabled,
             trainingDataCaptureEnabled: config.trainingDataCaptureEnabled,
+            playbookLearningEnabled: config.playbookLearningEnabled,
             globalMounts: config.globalMounts
               .map((m) => ({ hostPath: m.hostPath.trim() }))
               .filter((m) => m.hostPath.length > 0),

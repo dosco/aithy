@@ -65,6 +65,7 @@ import {
   type WebStateDto,
 } from "./dto-types";
 import { notificationAttentionDto } from "./notification-attention";
+import { skillEvalRunSummary, SqliteSkillEvalStore } from "../../src/skills/evals";
 
 const SERVICE_READY_FRESH_MS = 15_000;
 
@@ -77,7 +78,7 @@ export async function webStateDto(
     await preloadExistingSessionMessagePage(runtime, activeSessionId, { limit: 10 });
   }
   const settings = runtime.settings.load();
-  const skillsPage = runtime.skills.page({ cursor: null, limit: SKILLS_PAGE_SIZE, sort: "retrieved" });
+  const skillsPage = runtime.skills.page({ cursor: null, limit: SKILLS_PAGE_SIZE, sort: "used" });
   const memoriesPage = runtime.memory.page({ cursor: null, limit: MEMORIES_PAGE_SIZE });
   const mostRecent = runtime.memory.mostRecent();
   const messagePage = activeSessionId ? initialSessionMessagePage(runtime, activeSessionId) : emptyMessagePageDto();
@@ -97,7 +98,7 @@ export async function webStateDto(
     parallelSearch: await parallelSearchStatus(runtime.config, settings),
     soul: soulDto(runtime.soul),
     profile: profileDto(runtime.profile),
-    skills: skillsPage.items.map(skillDto),
+    skills: skillsPage.items.map((skill) => skillDto(skill)),
     skillsCount: runtime.skills.count(),
     skillsToolUniverse: runtime.skills.countDistinctTools(),
     skillsNextCursor: skillsPage.nextCursor,
@@ -284,10 +285,13 @@ export function memoryPageStateDto(runtime: AithyRuntime): MemoryPageStateDto {
 }
 
 export function skillsPageStateDto(runtime: AithyRuntime): SkillsPageStateDto {
-  const skillsPage = runtime.skills.page({ cursor: null, limit: SKILLS_PAGE_SIZE, sort: "retrieved" });
+  const skillsPage = runtime.skills.page({ cursor: null, limit: SKILLS_PAGE_SIZE, sort: "used" });
+  const evals = new SqliteSkillEvalStore(runtime.config.stateDbPath);
+  const skills = skillsPage.items.map((skill) => skillDto(skill, evals.recent(skill.id, 5).map(skillEvalRunSummary)));
+  evals.close();
   return {
     settings: runtime.settings.load(),
-    skills: skillsPage.items.map(skillDto),
+    skills,
     skillsCount: runtime.skills.count(),
     skillsToolUniverse: runtime.skills.countDistinctTools(),
     skillsNextCursor: skillsPage.nextCursor,

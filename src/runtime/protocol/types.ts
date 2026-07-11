@@ -56,7 +56,10 @@ export type AgentCommandKind =
   | "enqueue_user_chat"
   | "stop_conversation"
   | "stop_all"
-  | "reload_settings";
+  | "reload_settings"
+  | "skill.eval"
+  | "playbook.update"
+  | "playbook.reset";
 
 export type SandboxCommand =
   | {

@@ -1,4 +1,5 @@
 import { parseSkillMarkdown, frontmatterBoolean, frontmatterString } from "./frontmatter";
+import { parseAuthoredEvals, type SkillEvalDefinition } from "./evals";
 
 export const SKILL_ENTRYPOINT = "SKILL.md";
 export const MAX_SKILL_FILE_BYTES = 100_000;
@@ -20,6 +21,7 @@ export interface ParsedSkillBundle {
   disableModelInvocation: boolean;
   userInvocable: boolean;
   files: SkillFileInput[];
+  evals: SkillEvalDefinition[];
 }
 
 export interface SkillBundleDiff {
@@ -63,6 +65,7 @@ export function parseSkillBundleFiles(files: readonly SkillFileInput[]): ParsedS
     tags: frontmatterString(frontmatter, ["tags"]),
     disableModelInvocation: frontmatterBoolean(frontmatter, ["disable-model-invocation", "disable_model_invocation"], false),
     userInvocable: frontmatterBoolean(frontmatter, ["user-invocable", "user_invocable"], true),
+    evals: parseAuthoredEvals(frontmatterString(frontmatter, ["evals"]) ?? ""),
     files: normalizeSkillFiles(supporting),
   };
 }
@@ -131,6 +134,7 @@ export function diffSkillBundle(
     changed("tags", existing.tags ?? "", next.tags ?? ""),
     changed("disable_model_invocation", String(existing.disable_model_invocation), String(next.disableModelInvocation)),
     changed("user_invocable", String(existing.user_invocable), String(next.userInvocable)),
+    changed("evals", JSON.stringify((existing as { evals?: unknown }).evals ?? []), JSON.stringify(next.evals)),
   ].filter((item): item is string => Boolean(item));
   const before = new Map((existing.files ?? []).map((file) => [file.path, file.content]));
   const after = new Map(next.files.map((file) => [file.path, file.content]));

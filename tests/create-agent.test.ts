@@ -130,6 +130,18 @@ describe("createAithyAgent", () => {
     expect(description).toContain("treat that URL as concrete context");
     expect(contextHistoryPromptChars(created.program)).toBe(2_000);
   });
+
+  test("applies a cached responder playbook after soul guidance", () => {
+    const seed = createAithyAgent({ config: configFixture("disabled"), tools: [], events: new EventBus(), conversationId: "seed" });
+    const handle = seed.program.playbook!({ target: "responder", apply: true, studentAI: seed.llm, teacherAI: seed.llm } as never);
+    const created = createAithyAgent({ config: configFixture("disabled"), tools: [], events: new EventBus(), conversationId: "probe",
+      soul: { name: "Aithy", description: "Helper", coreNature: "", communicationStyle: "", behaviour: "", negativeBehavior: "",
+        responderDescription: "Soul guidance marker.", updatedAt: new Date().toISOString() }, responderPlaybook: handle.getState() });
+    const description = responderDescription(created.program);
+    expect(description).toContain("Soul guidance marker.");
+    expect(description).toContain("## Context Playbook");
+    expect(description.indexOf("Soul guidance marker.")).toBeLessThan(description.indexOf("## Context Playbook"));
+  });
 });
 
 function configFixture(sandboxProvider: "microsandbox" | "disabled") {

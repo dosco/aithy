@@ -23,6 +23,7 @@ import type {
   WebLiveEvent,
 } from "../../src/web/live-events";
 import type { NotificationAttentionDto, NotificationDto } from "./notification.dto-types";
+import type { SkillEvalRunSummary } from "../../src/skills/evals";
 
 export type SessionSummaryDto = SerializableSessionSummary;
 
@@ -59,6 +60,7 @@ export interface ConfigDto {
   systemBashEnabled: boolean;
   trainingDataCaptureEnabled: boolean;
   traceEnabled: boolean;
+  playbookLearningEnabled?: boolean;
   botId: string;
   stateDbPath: string;
   workspaceRoot: string;
@@ -217,6 +219,8 @@ export type MeshLiveCatalogPeerDto = MeshLiveCatalogPeer;
 export type PermissionRuleDto = CapabilityPolicyRule;
 
 export interface SkillDto {
+  evals: Array<{ request: string; criteria: string }>;
+  evalRuns: SkillEvalRunSummary[];
   id: string;
   name: string;
   description: string;
@@ -251,6 +255,7 @@ export interface SkillFileDto {
 }
 
 export interface SkillUsageDto {
+  sessionId: string | null;
   reason: string | null;
   stage: string | null;
   createdAt: string;
@@ -370,7 +375,7 @@ export interface AutomationDto {
   recentRuns: AutomationRunDto[];
 }
 
-export type SkillsCursor = { name: string; id: string; retrievedCount?: number };
+export type SkillsCursor = { name: string; id: string; retrievedCount?: number; usedCount?: number };
 export type MemoriesCursor = { updatedAt: string; id: string; retrievedCount?: number };
 
 export const SKILLS_PAGE_SIZE = 60;

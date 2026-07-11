@@ -57,6 +57,7 @@ export interface SkillRow {
   last_retrieved_at: string | null;
   last_used_at: string | null;
   updated_at: string;
+  evals_json: string;
 }
 
 export const sessionMigrations = [

@@ -31,6 +31,7 @@ export const skillColumns = [
   "last_retrieved_at",
   "last_used_at",
   "updated_at",
+  "evals_json",
 ] as const;
 
 export function selectSkillColumns(alias?: string): string {
@@ -91,8 +92,8 @@ export function quoteForFts5(raw: string): string {
 
 export function buildSkillsWhere(opts: {
   query?: string;
-  cursor: { name: string; id: string; retrievedCount?: number } | null;
-  sort?: "name" | "retrieved";
+  cursor: { name: string; id: string; retrievedCount?: number; usedCount?: number } | null;
+  sort?: "name" | "retrieved" | "used";
 }): { sql: string; params: Record<string, SQLQueryBindings> } {
   const clauses: string[] = [];
   const params: Record<string, SQLQueryBindings> = {};
@@ -106,11 +107,13 @@ export function buildSkillsWhere(opts: {
   if (opts.cursor) {
     params.$__cur_name = opts.cursor.name;
     params.$__cur_id = opts.cursor.id;
-    if (opts.sort === "retrieved") {
+    if (opts.sort === "retrieved" || opts.sort === "used") {
+      const column = opts.sort === "used" ? "used_count" : "retrieved_count";
+      const parameter = opts.sort === "used" ? "$__cur_used" : "$__cur_retrieved";
       clauses.push(
-        "(retrieved_count < $__cur_retrieved OR (retrieved_count = $__cur_retrieved AND (name > $__cur_name OR (name = $__cur_name AND id > $__cur_id))))",
+        `(${column} < ${parameter} OR (${column} = ${parameter} AND (name > $__cur_name OR (name = $__cur_name AND id > $__cur_id))))`,
       );
-      params.$__cur_retrieved = opts.cursor.retrievedCount ?? 0;
+      params[parameter] = opts.sort === "used" ? opts.cursor.usedCount ?? 0 : opts.cursor.retrievedCount ?? 0;
     } else {
       clauses.push("(name > $__cur_name OR (name = $__cur_name AND id > $__cur_id))");
     }

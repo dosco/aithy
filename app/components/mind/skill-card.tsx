@@ -17,6 +17,7 @@ export interface SkillForm {
   disabledAt: string | null;
   duplicatedFromSourceId: string | null;
   files: Array<{ path: string; content: string }>;
+  evalsJson: string;
 }
 
 export const emptySkillForm: SkillForm = {
@@ -34,6 +35,7 @@ export const emptySkillForm: SkillForm = {
   disabledAt: null,
   duplicatedFromSourceId: null,
   files: [],
+  evalsJson: "[]",
 };
 
 function splitWords(value: string | null | undefined): string[] {
@@ -48,7 +50,7 @@ export function skillToolCount(allowedTools: string | null | undefined): number 
 export function SkillCard({ entry, onOpen }: { entry: SkillDto; onOpen: () => void }) {
   const tools = skillToolCount(entry.allowedTools);
   const tags = splitWords(entry.tags);
-  const updated = formatUpdated(entry.updatedAt);
+  const lastUsed = entry.lastUsedAt ? `last used ${relativeTime(entry.lastUsedAt)}` : "never used";
   const badges = [
     entry.sourceKind === "builtin" ? "Built-in" : "User",
     entry.disabledAt ? "Disabled" : null,
@@ -125,7 +127,7 @@ export function SkillCard({ entry, onOpen }: { entry: SkillDto; onOpen: () => vo
           <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[rgb(var(--muted-foreground))]">
             <span>{entry.usedCount > 0 ? `used ${entry.usedCount}x` : "not used yet"}</span>
             <span>{entry.retrievedCount > 0 ? `loaded ${entry.retrievedCount}x` : "not loaded yet"}</span>
-            <span>{updated}</span>
+            <span>{lastUsed}</span>
           </div>
         </div>
       </button>
@@ -133,11 +135,15 @@ export function SkillCard({ entry, onOpen }: { entry: SkillDto; onOpen: () => vo
   );
 }
 
-function formatUpdated(iso: string): string {
+function relativeTime(iso: string): string {
   const date = new Date(iso);
-  if (Number.isNaN(date.getTime())) return "updated unknown";
-  return `updated ${date.toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  })}`;
+  if (Number.isNaN(date.getTime())) return "unknown";
+  const seconds = Math.round((date.getTime() - Date.now()) / 1000);
+  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
+  if (Math.abs(seconds) < 60) return formatter.format(seconds, "second");
+  const minutes = Math.round(seconds / 60);
+  if (Math.abs(minutes) < 60) return formatter.format(minutes, "minute");
+  const hours = Math.round(minutes / 60);
+  if (Math.abs(hours) < 24) return formatter.format(hours, "hour");
+  return formatter.format(Math.round(hours / 24), "day");
 }

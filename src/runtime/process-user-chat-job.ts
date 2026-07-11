@@ -28,6 +28,8 @@ import type { SqliteTaskStore } from "../tasks/task-store";
 import type { AutomationToolActions } from "../automations/tool-actions";
 import { retrievalDiagnostics } from "../retrieval/diagnostics";
 import type { McpRegistry } from "../mcp/registry";
+import { skillsCatalog } from "../skills/catalog";
+import type { ResponderPlaybookCache } from "../playbook/store";
 
 interface RuntimeForUserChat {
   config: AppConfig;
@@ -55,6 +57,7 @@ interface RuntimeForUserChat {
   notify(input: NotificationCreate): NotificationEntry;
   notifications: SqliteNotificationStore;
   mcpRegistry?: McpRegistry;
+  playbookCache?: ResponderPlaybookCache;
   flushSessionState?(): Promise<void>;
 }
 
@@ -102,6 +105,8 @@ export async function processUserChatJob(
     flushSessionState: runtime.flushSessionState ? () => runtime.flushSessionState?.() ?? Promise.resolve() : undefined,
     skills: trackedSkills.skills,
     skillsStore: runtime.skills,
+    skillsCatalog: skillsCatalog(runtime.skills),
+    responderPlaybook: runtime.playbookCache?.snapshot(),
     loadedSkillIds: trackedSkills.loadedSkillIds,
     userMessagePersisted: true,
     skillsSearch: trackedSkills.skillsSearch,
