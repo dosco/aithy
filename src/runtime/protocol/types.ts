@@ -104,8 +104,8 @@ export type EmbeddingCommand =
   | { kind: "embedding.backfill_now"; payload: Record<string, never>; result: { done: number; skipped: number } }
   | {
       kind: "embedding.indexTargets";
-      payload: { memories?: string[]; episodes?: string[]; skills?: string[] };
-      result: { memories: TargetIndexCounts; episodes: TargetIndexCounts; skills: TargetIndexCounts };
+      payload: { memories?: string[]; episodes?: string[]; skills?: string[]; knowledge?: string[] };
+      result: { memories: TargetIndexCounts; episodes: TargetIndexCounts; skills: TargetIndexCounts; knowledge: TargetIndexCounts };
     }
   | { kind: "embedding.reload_settings"; payload: Record<string, never>; result: void };
 

@@ -33,6 +33,7 @@ export interface LocalEmbeddingHealth {
   memories: EmbeddingHealthStats;
   episodes: EmbeddingHealthStats;
   skills: EmbeddingHealthStats;
+  knowledge: EmbeddingHealthStats;
   lastTargetedIndexAt: string | null;
   lastBackfillAt: string | null;
   lastIndexError: string | null;
@@ -110,11 +111,13 @@ function embeddingHealth(value: unknown): LocalEmbeddingHealth | undefined {
   const memories = embeddingStats(detail.memories);
   const episodes = embeddingStats(detail.episodes);
   const skills = embeddingStats(detail.skills);
-  if (!memories || !episodes || !skills) return undefined;
+  const knowledge = embeddingStats(detail.knowledge);
+  if (!memories || !episodes || !skills || !knowledge) return undefined;
   return {
     memories,
     episodes,
     skills,
+    knowledge,
     lastTargetedIndexAt: stringOrNull(detail.lastTargetedIndexAt),
     lastBackfillAt: stringOrNull(detail.lastBackfillAt),
     lastIndexError: stringOrNull(detail.lastIndexError),

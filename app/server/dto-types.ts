@@ -205,6 +205,7 @@ export interface LocalEmbeddingHealthDto {
   memories: LocalEmbeddingStatsDto;
   episodes: LocalEmbeddingStatsDto;
   skills: LocalEmbeddingStatsDto;
+  knowledge: LocalEmbeddingStatsDto;
   lastTargetedIndexAt: string | null;
   lastBackfillAt: string | null;
   lastIndexError: string | null;

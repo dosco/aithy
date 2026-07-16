@@ -6,7 +6,7 @@
     <title>Aithy - private local AI runtime</title>
     <meta
       name="description"
-      content="Aithy is a private local AI runtime for state-of-the-art agent research, local inference, sandboxed tools, durable memory, and LAN Mesh resource sharing."
+      content="Aithy is a private local AI runtime with local inference, sandboxed tools, durable memory, a DB-backed Knowledge Library, and LAN Mesh resource sharing."
     >
     <link rel="stylesheet" href="styles.css">
   </head>
@@ -15,6 +15,7 @@
       <a class="wordmark" href="#top" aria-label="Aithy home">Aithy</a>
       <nav aria-label="Page navigation">
         <a href="#models">Models</a>
+        <a href="#knowledge">Knowledge</a>
         <a href="#homelab">Mesh</a>
         <a href="#research">Research</a>
         <a href="https://github.com/dosco/aithy">GitHub</a>
@@ -25,7 +26,7 @@
       <section class="hero">
         <p class="eyebrow">Local-first agent runtime</p>
         <h1>A state-of-the-<wbr>art agent you can run at home.</h1>
-        <p class="lede">Aithy is a local-first agent for experimenting with the latest research, local and hosted inference, DSPy, RLM, sandboxed tools, durable memory, and agent mesh networks.</p>
+        <p class="lede">Aithy is a local-first agent for experimenting with the latest research, local and hosted inference, DSPy, RLM, sandboxed tools, durable memory, curated knowledge, and agent mesh networks.</p>
         <div class="actions" aria-label="Primary links">
           <a class="button primary" href="https://github.com/dosco/aithy/releases/latest">Download build</a>
           <a class="button" href="#start">Start from code</a>
@@ -35,6 +36,7 @@
           <span>checkpointed context</span>
           <span>sandboxed tools</span>
           <span>local inference</span>
+          <span>knowledge library</span>
           <span>LAN Mesh</span>
         </div>
       </section>
@@ -80,6 +82,36 @@
           <h2>Tools stay behind clear boundaries.</h2>
           <p>Agent commands run through sandbox and permission gates, with host files exposed through explicit attachments or mounts.</p>
         </article>
+        <article class="feature-card mint">
+          <p class="eyebrow">Knowledge</p>
+          <h2>A library the agent can cite, not silently rewrite.</h2>
+          <p>Keep curated concepts in SQLite, review agent proposals, and exchange portable OKF v0.1 bundles without making files the live database.</p>
+        </article>
+      </section>
+
+      <section id="knowledge" class="story-section">
+        <div>
+          <p class="eyebrow">Knowledge Library</p>
+          <h2>Database truth, portable interchange.</h2>
+          <p>
+            Author concepts, follow citations and backlinks, search bounded summaries, and approve
+            proposed updates in one local surface. SQLite stays canonical; reviewed OKF folders are
+            imported and exported when knowledge needs to move between tools.
+          </p>
+          <div class="pills" aria-label="Knowledge capabilities">
+            <span>SQLite + FTS5</span>
+            <span>sqlite-vec</span>
+            <span>OKF v0.1</span>
+            <span>reviewed proposals</span>
+          </div>
+        </div>
+        <figure class="screenshot">
+          <a class="screenshot-link" href="assets/screenshots/12-knowledge-library-light@2x.png" target="_blank" rel="noopener">
+            <img src="assets/screenshots/12-knowledge-library-light.png" srcset="assets/screenshots/12-knowledge-library-light.png 1x, assets/screenshots/12-knowledge-library-light@2x.png 2x" width="1000" height="833" alt="Aithy Knowledge Library with demo-safe runbooks, policies, and data concepts">
+            <span>View full size</span>
+          </a>
+          <figcaption>Curated concepts, retrieval controls, provenance, and proposal review stay visible.</figcaption>
+        </figure>
       </section>
 
       <section id="models" class="story-section">
@@ -115,11 +147,11 @@
         <div class="flow-diagram" aria-label="Aithy service architecture">
           <div class="flow-column">
             <article><strong>Chat + files</strong><span>User intent, uploads, artifacts, and prior sessions</span></article>
-            <article><strong>Skills + memory</strong><span>Searchable workflows, facts, episodes, and transcript evidence</span></article>
+            <article><strong>Knowledge + memory</strong><span>Reviewed concepts, durable context, episodes, and transcript evidence</span></article>
           </div>
           <div class="flow-node core">
             <strong>Aithy runtime</strong>
-            <span>Ax Agent loop, context distillation, queues, permissions, and tool traces</span>
+            <span>Ax Agent loop, DB-backed knowledge, context distillation, queues, permissions, and tool traces</span>
           </div>
           <div class="flow-column">
             <article><strong>Sandbox</strong><span>Governed commands, staged attachments, mounts, and published artifacts</span></article>

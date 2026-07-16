@@ -7,22 +7,19 @@ import { UserChatCommandProducer, type UserChatQueueClient } from "../agent/disp
 import type { AppConfig } from "../config/env";
 import { assertStartupConfig } from "../config/validate";
 import { EventBus } from "../events/bus";
-import { SqliteMemoryStore } from "../memory/memory-store";
-import { SqliteEpisodeStore } from "../episodes/episode-store";
+import { SqliteMemoryStore } from "../memory/memory-store"; import { SqliteEpisodeStore } from "../episodes/episode-store";
 import { SqliteTranscriptRecallStore } from "../retrieval/transcript-recall";
 import { SqliteMemoryRunsStore } from "../memory/memory-runs";
 import { MemoryConsolidateProducer, type MemoryConsolidateHandle } from "../memory/consolidate-queue";
 import { shutdownManager } from "bunqueue/client";
 import { SqliteNotificationStore } from "../notifications/notification-store";
 import type { NotificationCreate, NotificationEntry } from "../notifications/types";
-import { SqliteUsageStore } from "../usage/usage-store";
-import { SqliteTrainingDataStore } from "../training-data/store";
+import { SqliteUsageStore } from "../usage/usage-store"; import { SqliteTrainingDataStore } from "../training-data/store";
 import type { SandboxProvider } from "../sandbox/provider";
 import { UnavailableSandboxProvider } from "../sandbox/unavailable-provider";
 import { SessionManager } from "../session/session-manager";
 import { syncBuiltInSkills } from "../skills/seed";
-import { SqliteSkillsStore } from "../skills/skills-store";
-import { SqliteSkillCandidateStore } from "../skills/candidate-store";
+import { SqliteSkillsStore } from "../skills/skills-store"; import { SqliteSkillCandidateStore } from "../skills/candidate-store";
 import { SqliteSkillPromotionStore } from "../skills/promote-store";
 import { loadOrSeedSoul, saveSoul } from "../soul/service";
 import { SqliteSoulStore } from "../soul/sqlite-soul-store";
@@ -34,8 +31,7 @@ import { globalMountsChanged } from "../settings/resolve";
 import { SqliteSettingsStore } from "../settings/store";
 import type { SettingsPatch, StoredSettings } from "../settings/types";
 import { SqliteArtifactStore } from "../artifacts/artifact-store";
-import { SqliteTaskStore } from "../tasks/task-store";
-import { clearManagedProviderSecrets, removeBotStateDir, removeMicrosandboxVm, removeRuntimeCache, removeSqliteFiles } from "./reset-files";
+import { SqliteTaskStore } from "../tasks/task-store"; import { clearManagedProviderSecrets, removeBotStateDir, removeMicrosandboxVm, removeRuntimeCache, removeSqliteFiles } from "./reset-files";
 import { describe, registerSignalHandlers } from "./signals";
 import { assertSupportedBunVersion } from "./bun-version";
 import { loadBaseConfig, resolveEffectiveConfig, type RuntimeSecretOverrides } from "./resolve-effective-config";
@@ -51,7 +47,7 @@ import type { CapabilityMatchKind } from "../security/capability-policy";
 import { MeshRuntime } from "../mesh/runtime";
 import { currentRuntimeTopology } from "./topology";
 import { runtimeReloadCommandsForSettingsChange } from "./settings-reload-commands";
-import { AithyMcpServerManager } from "../mcp/aithy-server";
+import { AithyMcpServerManager } from "../mcp/aithy-server"; import { SqliteKnowledgeStore } from "../knowledge/knowledge-store";
 export interface AithyRuntime {
   config: AppConfig;
   events: EventBus;
@@ -65,6 +61,7 @@ export interface AithyRuntime {
   skills: SqliteSkillsStore;
   artifacts: SqliteArtifactStore;
   memory: SqliteMemoryStore;
+  knowledge: SqliteKnowledgeStore;
   episodes: SqliteEpisodeStore;
   transcripts: SqliteTranscriptRecallStore;
   notifications: SqliteNotificationStore;
@@ -86,11 +83,9 @@ export interface AithyRuntime {
   assertReady(): void;
   updateSettings(patch: SettingsPatch, secrets?: RuntimeSecretOverrides): Promise<StoredSettings>;
   updateSoul(fields: SoulFields): SoulProfile;
-  updateProfile(fields: UserProfileFields): UserProfile;
-  updateProfileImage(kind: ProfileImageKind, image: StoredProfileImage): UserProfile;
+  updateProfile(fields: UserProfileFields): UserProfile; updateProfileImage(kind: ProfileImageKind, image: StoredProfileImage): UserProfile;
   clearProfileImage(kind: ProfileImageKind): UserProfile;
-  shutdown(): Promise<void>;
-  isShuttingDown(): boolean;
+  shutdown(): Promise<void>; isShuttingDown(): boolean;
   isResetting(): boolean;
 }
 
@@ -153,6 +148,7 @@ class RuntimeImpl implements AithyRuntime {
     public skills: SqliteSkillsStore,
     public artifacts: SqliteArtifactStore,
     public memory: SqliteMemoryStore,
+    public knowledge: SqliteKnowledgeStore,
     public episodes: SqliteEpisodeStore,
     public transcripts: SqliteTranscriptRecallStore,
     public memoryRuns: SqliteMemoryRunsStore,
@@ -199,6 +195,7 @@ class RuntimeImpl implements AithyRuntime {
     const skillPromotions = new SqliteSkillPromotionStore(config.stateDbPath);
     const skillCandidates = new SqliteSkillCandidateStore(config.stateDbPath);
     const memory = new SqliteMemoryStore(config.stateDbPath, { onDirtyIndex: queueTargetedIndex });
+    const knowledge = new SqliteKnowledgeStore(config.stateDbPath, { onDirtyIndex: queueTargetedIndex });
     const episodes = new SqliteEpisodeStore(config.stateDbPath, { onDirtyIndex: queueTargetedIndex });
     const transcripts = new SqliteTranscriptRecallStore(config.stateDbPath);
     const artifacts = new SqliteArtifactStore(config.stateDbPath, config.workspaceRoot, config.outboxRoot);
@@ -246,7 +243,7 @@ class RuntimeImpl implements AithyRuntime {
 
     const memoryConsolidate = new MemoryConsolidateProducer(config.stateDbPath);
     const dispatcher = new UserChatCommandProducer(queue);
-    const mcpServer = new AithyMcpServerManager({ memory, skills, artifacts }, config.botId);
+    const mcpServer = new AithyMcpServerManager({ memory, knowledge, skills, artifacts }, config.botId);
 
     const runtime = new RuntimeImpl(
       config,
@@ -262,6 +259,7 @@ class RuntimeImpl implements AithyRuntime {
       skills,
       artifacts,
       memory,
+      knowledge,
       episodes,
       transcripts,
       memoryRuns,
@@ -474,6 +472,7 @@ class RuntimeImpl implements AithyRuntime {
     this.skillPromotions.close();
     this.skillCandidates.close();
     this.memory.close();
+    this.knowledge.close();
     this.episodes.close();
     this.transcripts.close();
     this.memoryRuns.close();

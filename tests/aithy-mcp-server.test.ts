@@ -16,8 +16,14 @@ describe("Aithy read-only MCP server", () => {
 
   test("exposes bounded read-only stores without marking memory recalled", async () => {
     let searchOptions: unknown;
+    let knowledgeSearchOptions: unknown;
+    let knowledgeReadOptions: unknown;
     const stores = {
       memory: { search: async (_queries: string[], options: unknown) => { searchOptions = options; return [{ id: "m1", title: "Memory" }]; } },
+      knowledge: {
+        searchSemantic: (_query: string, options: unknown) => { knowledgeSearchOptions = options; return [{ id: "11111111-1111-4111-8111-111111111111", title: "Runbook" }]; },
+        read: (_id: string, options: unknown) => { knowledgeReadOptions = options; return { id: "11111111-1111-4111-8111-111111111111", title: "Runbook", body: "évidence ".repeat(10_000) }; },
+      },
       skills: {
         getAll: () => [{ id: "skill", name: "Skill", description: "Useful", when_to_use: null, disabled_at: null, disable_model_invocation: false }],
         get: () => ({ id: "skill", name: "Skill", description: "Useful", when_to_use: null, body: "Do it", files: [], allowed_tools: null }),
@@ -35,10 +41,16 @@ describe("Aithy read-only MCP server", () => {
 
     const listed = await client.listTools();
     expect(listed.tools.map((tool) => tool.name).sort()).toEqual([
-      "artifacts.list", "artifacts.read", "memory.search", "skills.list", "skills.read",
+      "artifacts.list", "artifacts.read", "knowledge.read", "knowledge.search", "memory.search", "skills.list", "skills.read",
     ]);
     await client.callTool({ name: "memory.search", arguments: { query: "project" } });
     expect(searchOptions).toMatchObject({ markRecalled: false, limit: 8 });
+    await client.callTool({ name: "knowledge.search", arguments: { query: "runbook", limit: 10 } });
+    expect(knowledgeSearchOptions).toMatchObject({ increment: false, limit: 10 });
+    const knowledgeRead = await client.callTool({ name: "knowledge.read", arguments: { id: "11111111-1111-4111-8111-111111111111" } });
+    expect(knowledgeReadOptions).toMatchObject({ increment: false });
+    expect(new TextEncoder().encode((knowledgeRead.content as Array<{ text: string }>)[0]?.text).byteLength).toBeLessThanOrEqual(32_000);
+    expect((knowledgeRead.content as Array<{ text: string }>)[0]?.text).toContain("[truncated]");
     const artifacts = await client.callTool({ name: "artifacts.list", arguments: { sessionId: "s2" } });
     expect((artifacts.content as Array<{ text: string }>)[0]?.text).toContain('"sessionId": "s2"');
     await client.close();

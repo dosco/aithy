@@ -6,12 +6,14 @@ import type { SqliteMemoryStore } from "../memory/memory-store";
 import { aithyMcpServerTokenName, aithySecretService, BunSecretStore, type SecretStore } from "../settings/secrets";
 import type { RuntimeSettings } from "../settings/types";
 import { formatSkillContent, type SqliteSkillsStore } from "../skills/skills-store";
+import type { SqliteKnowledgeStore } from "../knowledge/knowledge-store";
 
 const DEFAULT_PORT = 3111;
 const MAX_RESPONSE_CHARS = 32_000;
 
 export interface AithyMcpServerStores {
   memory: SqliteMemoryStore;
+  knowledge: SqliteKnowledgeStore;
   skills: SqliteSkillsStore;
   artifacts: SqliteArtifactStore;
 }
@@ -77,6 +79,27 @@ export function createAithyMcpServer(stores: AithyMcpServerStores): McpServer {
     inputSchema: { query: z.string().min(1).max(2_000), limit: z.number().int().min(1).max(20).optional() },
     annotations: readOnlyAnnotations(),
   }, async ({ query, limit }) => textResult(await stores.memory.search([query], { limit: limit ?? 8, markRecalled: false })));
+  server.registerTool("knowledge.search", {
+    description: "Search enabled Knowledge Library bundles without changing retrieval counters.",
+    inputSchema: {
+      query: z.string().min(1).max(2_000),
+      bundleId: z.string().uuid().optional(),
+      type: z.string().min(1).max(200).optional(),
+      tags: z.array(z.string().min(1).max(100)).max(20).optional(),
+      limit: z.number().int().min(1).max(10).optional(),
+    },
+    annotations: readOnlyAnnotations(),
+  }, async ({ query, bundleId, type, tags, limit }) => textResult(await stores.knowledge.searchSemantic(query, {
+    bundleId, type, tags, limit: limit ?? 5, increment: false,
+  })));
+  server.registerTool("knowledge.read", {
+    description: "Read one bounded Knowledge Library concept or section without changing retrieval counters.",
+    inputSchema: { id: z.string().uuid(), section: z.string().min(1).max(500).optional() },
+    annotations: readOnlyAnnotations(),
+  }, async ({ id, section }) => {
+    const concept = stores.knowledge.read(id, { section, increment: false });
+    return concept ? textResult(concept) : errorResult("Knowledge concept or section not found");
+  });
   server.registerTool("skills.list", {
     description: "List enabled model-invocable skills.", inputSchema: {}, annotations: readOnlyAnnotations(),
   }, async () => textResult(stores.skills.getAll()
@@ -133,7 +156,9 @@ function artifactPreview(entry: ReturnType<SqliteArtifactStore["get"]> extends i
 
 function textResult(value: unknown) {
   const json = JSON.stringify(value, null, 2);
-  const text = json.length <= MAX_RESPONSE_CHARS ? json : `${json.slice(0, MAX_RESPONSE_CHARS - 13)} [truncated]`;
+  const bytes = new TextEncoder().encode(json);
+  const text = bytes.length <= MAX_RESPONSE_CHARS ? json
+    : `${new TextDecoder().decode(bytes.slice(0, MAX_RESPONSE_CHARS - 13))} [truncated]`;
   return { content: [{ type: "text" as const, text }] };
 }
 

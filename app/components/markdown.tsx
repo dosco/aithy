@@ -11,6 +11,7 @@ export function Markdown({ text }: { text: string }) {
 
 type Block =
   | { kind: "p"; lines: string[] }
+  | { kind: "heading"; depth: number; text: string }
   | { kind: "code"; lang: string; body: string }
   | { kind: "ul"; items: string[] }
   | { kind: "ol"; items: string[] };
@@ -21,6 +22,12 @@ function parseBlocks(text: string): Block[] {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
+    const heading = line.match(/^(#{1,6})\s+(.+?)\s*#*$/);
+    if (heading) {
+      blocks.push({ kind: "heading", depth: heading[1].length, text: heading[2] });
+      i += 1;
+      continue;
+    }
     const fence = line.match(/^```([\w-]*)\s*$/);
     if (fence) {
       const lang = fence[1] ?? "";
@@ -76,6 +83,10 @@ function parseBlocks(text: string): Block[] {
 }
 
 function renderBlock(block: Block, index: number): ReactNode {
+  if (block.kind === "heading") {
+    const Tag = `h${block.depth}` as "h1" | "h2" | "h3" | "h4" | "h5" | "h6";
+    return <Tag key={index} className="mt-6 font-semibold leading-tight first:mt-0">{renderInline(block.text)}</Tag>;
+  }
   if (block.kind === "code") {
     return (
       <pre

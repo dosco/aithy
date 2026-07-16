@@ -26,6 +26,7 @@ import { assertVecExtensionReady, probeAndConfigureSqlite } from "../../../memor
 import { SqliteEpisodeStore } from "../../../episodes/episode-store";
 import { SqliteMemoryStore } from "../../../memory/memory-store";
 import { SqliteSkillsStore } from "../../../skills/skills-store";
+import { SqliteKnowledgeStore } from "../../../knowledge/knowledge-store";
 import { activeStatus, failedStatus, readyStatus, type SetupStatusInput } from "../../../setup/status";
 import { SqliteSettingsStore } from "../../../settings/store";
 import { LiveEventHub } from "../../../web/live-events";
@@ -78,6 +79,7 @@ export class LocalInferenceWorkerRuntime {
   private memory!: SqliteMemoryStore;
   private episodes!: SqliteEpisodeStore;
   private skills!: SqliteSkillsStore;
+  private knowledge!: SqliteKnowledgeStore;
   private lastTargetedIndexAt: string | null = null;
   private lastBackfillAt: string | null = null;
   private lastIndexError: string | null = null;
@@ -129,6 +131,11 @@ export class LocalInferenceWorkerRuntime {
       log,
     });
     runtime.skills = new SqliteSkillsStore(runtime.config.stateDbPath, {
+      embedder: runtime.embedder,
+      reranker: runtime.reranker,
+      log,
+    });
+    runtime.knowledge = new SqliteKnowledgeStore(runtime.config.stateDbPath, {
       embedder: runtime.embedder,
       reranker: runtime.reranker,
       log,
@@ -317,8 +324,9 @@ export class LocalInferenceWorkerRuntime {
       const result = await this.memory.backfillEmbeddings();
       const episodeResult = await this.episodes.backfillEmbeddings();
       const skillResult = await this.skills.backfillEmbeddings();
-      const done = result.done + episodeResult.done + skillResult.done;
-      const skipped = result.skipped + episodeResult.skipped + skillResult.skipped;
+      const knowledgeResult = await this.knowledge.backfillEmbeddings();
+      const done = result.done + episodeResult.done + skillResult.done + knowledgeResult.done;
+      const skipped = result.skipped + episodeResult.skipped + skillResult.skipped + knowledgeResult.skipped;
       this.lastBackfillAt = new Date().toISOString();
       this.lastIndexError = null;
       if (done > 0 || source !== "timer") {
@@ -326,8 +334,8 @@ export class LocalInferenceWorkerRuntime {
           role: "local-inference-worker",
           level: "info",
           source: "backfill",
-          message: `embedding backfill ${source}: memories ${result.done}, episodes ${episodeResult.done}, skills ${skillResult.done}`,
-          detail: { memoryDone: result.done, episodeDone: episodeResult.done, skillDone: skillResult.done, skipped },
+          message: `embedding backfill ${source}: memories ${result.done}, episodes ${episodeResult.done}, skills ${skillResult.done}, knowledge ${knowledgeResult.done}`,
+          detail: { memoryDone: result.done, episodeDone: episodeResult.done, skillDone: skillResult.done, knowledgeDone: knowledgeResult.done, skipped },
         });
       }
       return { done, skipped };
@@ -339,16 +347,18 @@ export class LocalInferenceWorkerRuntime {
     }
   }
 
-  private async indexTargets(payload: Record<string, unknown>): Promise<{ memories: TargetIndexCounts; episodes: TargetIndexCounts; skills: TargetIndexCounts }> {
+  private async indexTargets(payload: Record<string, unknown>): Promise<{ memories: TargetIndexCounts; episodes: TargetIndexCounts; skills: TargetIndexCounts; knowledge: TargetIndexCounts }> {
     this.assertReady();
     const memories = optionalStringArray(payload, "memories");
     const episodes = optionalStringArray(payload, "episodes");
     const skills = optionalStringArray(payload, "skills");
+    const knowledge = optionalStringArray(payload, "knowledge");
     try {
-      const [memoryResult, episodeResult, skillResult] = await Promise.all([
+      const [memoryResult, episodeResult, skillResult, knowledgeResult] = await Promise.all([
         memories.length ? this.memory.indexEmbeddings(memories) : emptyIndexCounts(),
         episodes.length ? this.episodes.indexEmbeddings(episodes) : emptyIndexCounts(),
         skills.length ? this.skills.indexEmbeddings(skills) : emptyIndexCounts(),
+        knowledge.length ? this.knowledge.indexEmbeddings(knowledge) : emptyIndexCounts(),
       ]);
       this.lastTargetedIndexAt = new Date().toISOString();
       this.lastIndexError = null;
@@ -357,9 +367,9 @@ export class LocalInferenceWorkerRuntime {
         level: "info",
         source: "retrieval",
         message: "targeted embedding index",
-        detail: { memories: memoryResult, episodes: episodeResult, skills: skillResult },
+        detail: { memories: memoryResult, episodes: episodeResult, skills: skillResult, knowledge: knowledgeResult },
       });
-      return { memories: memoryResult, episodes: episodeResult, skills: skillResult };
+      return { memories: memoryResult, episodes: episodeResult, skills: skillResult, knowledge: knowledgeResult };
     } catch (error) {
       this.lastIndexError = error instanceof Error ? error.message : String(error);
       throw error;
@@ -392,6 +402,7 @@ export class LocalInferenceWorkerRuntime {
     this.memory.close();
     this.episodes.close();
     this.skills.close();
+    this.knowledge.close();
     this.settings.close();
     this.queue.close();
   }
@@ -448,6 +459,7 @@ export class LocalInferenceWorkerRuntime {
     memories: EmbeddingHealthStats;
     episodes: EmbeddingHealthStats;
     skills: EmbeddingHealthStats;
+    knowledge: EmbeddingHealthStats;
     lastTargetedIndexAt: string | null;
     lastBackfillAt: string | null;
     lastIndexError: string | null;
@@ -457,6 +469,7 @@ export class LocalInferenceWorkerRuntime {
       memories: this.memory.embeddingStats(),
       episodes: this.episodes.embeddingStats(),
       skills: this.skills.embeddingStats(),
+      knowledge: this.knowledge.embeddingStats(),
       lastTargetedIndexAt: this.lastTargetedIndexAt,
       lastBackfillAt: this.lastBackfillAt,
       lastIndexError: this.lastIndexError,

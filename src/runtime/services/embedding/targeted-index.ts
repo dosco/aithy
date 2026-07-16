@@ -4,6 +4,7 @@ export type DirtyIndexInput = {
   memories?: string[];
   episodes?: string[];
   skills?: string[];
+  knowledge?: string[];
 };
 
 export function createTargetedIndexQueue(

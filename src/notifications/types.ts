@@ -2,6 +2,7 @@ export type NotificationKind =
   | "memory.written"
   | "memory.consolidated"
   | "memory.failed"
+  | "knowledge.proposed"
   | "session.message"
   | "session.clarification"
   | "skill.suggested"

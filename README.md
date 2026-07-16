@@ -94,6 +94,11 @@ These light-mode screenshots are captured from the real app with a disposable lo
     <td><img src="screenshots/light/04-skills-library-light.png" alt="Skills gallery" width="280"><br><sub>Teach repeatable workflows and reusable abilities</sub></td>
     <td><img src="screenshots/light/03-themes-palette-list-light.png" alt="Theme gallery" width="280"><br><sub>Tune the surface without changing the agent</sub></td>
   </tr>
+  <tr>
+    <td><img src="screenshots/light/12-knowledge-library-light.png" alt="Aithy Knowledge Library with demo-safe concepts" width="280"><br><sub>Curate DB-backed knowledge and exchange reviewed OKF bundles</sub></td>
+    <td></td>
+    <td></td>
+  </tr>
 </table>
 
 ## Use the Models You Already Have
@@ -152,6 +157,7 @@ flowchart TD
   Queue --> Sandbox["sandbox-worker"]
   Queue --> Local["local-inference-worker"]
   Agent --> SQLite["SQLite state"]
+  SQLite --> Knowledge["Knowledge bundles, concepts, links, and proposals"]
   Sandbox --> Workspace["sandbox workspace"]
   Local --> Llama["llama.cpp router"]
   Local --> SQLite
@@ -164,17 +170,35 @@ Under the hood, Aithy uses Ax and Ax Agent with an RLM-style, DSPy-inspired flow
 
 MCP fits this shape naturally. Settings -> MCP can connect streamable HTTP or legacy HTTP+SSE servers. Each enabled server is lazily initialized, unavailable servers are omitted without failing unrelated chat, and remote tools are namespaced and permission-gated per server and exact tool. Tokens stay in Bun secrets; loopback and unencrypted HTTP targets require explicit exceptions, while remote descriptions and results are bounded and treated as untrusted data. Prompts and resources remain hidden unless enabled for that profile.
 
-Aithy can also expose its own read-only MCP endpoint at `http://127.0.0.1:3111/mcp` (default off). Enabling it generates a bearer token shown once; regeneration similarly shows only the replacement once. It exposes `memory.search`, `skills.list`, `skills.read`, `artifacts.list`, and `artifacts.read`. Memory searches do not mutate recall counters, skill reads do not change usage counters, and artifact reads return stored metadata/text previews rather than arbitrary files. These loopback-only, bearer-authenticated, read-only server tools sit outside agent permission governance because they cannot perform agent actions or writes. OAuth and `session.ask` are deferred.
+Aithy can also expose its own read-only MCP endpoint at `http://127.0.0.1:3111/mcp` (default off). Enabling it generates a bearer token shown once; regeneration similarly shows only the replacement once. It exposes `memory.search`, `knowledge.search`, `knowledge.read`, `skills.list`, `skills.read`, `artifacts.list`, and `artifacts.read`. MCP memory and knowledge searches do not mutate retrieval counters, skill reads do not change usage counters, and artifact reads return stored metadata/text previews rather than arbitrary files. These loopback-only, bearer-authenticated, read-only server tools sit outside agent permission governance because they cannot perform agent actions or writes. OAuth and `session.ask` are deferred.
 
-## Memory, Skills, Dreams, and Attentions
+## Knowledge, Memory, Skills, Episodes, and Artifacts
+
+Aithy's Knowledge Library is the curated, reusable source for organization and project facts: schemas, policies, metrics, runbooks, APIs, references, and provenance. SQLite is canonical. Bundles, concepts, links, chunks, vector metadata, and review proposals live in the per-bot `state.db`; OKF v0.1 is reviewed import/export interchange, not a second live store.
+
+The product surfaces are deliberately separate:
+
+- **Knowledge** is reviewed domain evidence with types, tags, resources, citations, links, backlinks, timestamps, and stable bundle paths.
+- **Memory** preserves user/project continuity, preferences, decisions, and operational lessons across conversations.
+- **Skills** describe reusable procedures and tool workflows.
+- **Episodes (Dreams)** record completed work so retrieval can reuse prior approaches and outcomes.
+- **Artifacts** are files and deliverables produced for the user.
+
+Open Knowledge after Memory to create manual bundles and concepts, enable or disable a bundle for agent retrieval, search and filter concepts, inspect rendered Markdown and provenance, and review pending agent proposals. Folder import validates an OKF snapshot before saving: it reports added, changed, removed, invalid, and broken-link counts, then replaces an imported bundle atomically only after removals are confirmed. Export downloads `<slug>-okf.tar.gz`; manual bundles synthesize a root `index.md`, while imported frontmatter and reserved `index.md`/`log.md` files round-trip semantically.
+
+Concepts are split at Markdown heading and paragraph boundaries into roughly 2,000-character chunks, indexed by SQLite FTS5 and sqlite-vec when available, and ranked one result per concept. Each chat turn receives at most three matching summaries and 1,800 total characters in a separate knowledge context; full bodies require `knowledge.read`. The permission-exempt `knowledge.search`, `knowledge.read`, and `knowledge.list` tools are bounded closed-world database reads. `knowledge.propose` is capability-audited and can only create a review item for a create/update—never a direct write or delete.
+
+OKF import accepts up to 1,000 Markdown files, 1 MiB per file, and 25 MiB total. It rejects absolute/traversal/duplicate paths, NULs, malformed YAML, missing concept types, and invalid reserved-file frontmatter. Unknown types and JSON-safe frontmatter are retained, and broken links remain visible warnings. Knowledge text, frontmatter, citations, and linked resources are untrusted evidence: they cannot change tool policy, permissions, sandbox behavior, identity, or instruction priority.
+
+## Durable Retrieval and Attentions
 
 Aithy keeps durable conversation history and separate durable memory for facts worth keeping. Memories are typed by subject (`user`, `project`, or `agent`), scope (`global`, `workspace`, or `session`), and guidance strength (`context` or `standing_request`). Agent memories are operational lessons and failure modes only; they are advisory context and cannot change tool policy, sandbox boundaries, or permissions. Every chat turn performs deterministic first-turn recall before the agent starts: exact lexical anchors such as paths, filenames, commands, quoted text, and error codes are searched with SQLite FTS, semantic sqlite-vec candidates fill in fuzzy recall across memories and episodes, and local reranking is the final ordering authority when available. The agent sees only a small evidence pack, not every retrieved candidate, and workspace/session scoped memories are recalled only in matching contexts.
 
-Writes to memories, episodes, and skills queue targeted local embedding immediately, while startup and periodic backfill stay in place as a safety net if the local inference worker was offline. Agent-triggered recall uses the same combined retrieval coordinator as pre-recall, and tool details include compact diagnostics for FTS candidates, vector candidates, fused candidates, reranker state, fallback errors, and latency. The Local Inference page shows retrieval health for memory rows, episode rows, and semantic skill chunks, plus the last targeted index and backfill times.
+Writes to memories, episodes, skills, and knowledge queue targeted local embedding immediately, while startup and periodic backfill stay in place as a safety net if the local inference worker was offline. Agent-triggered recall uses the same combined retrieval coordinator as pre-recall, and tool details include compact diagnostics for FTS candidates, vector candidates, fused candidates, reranker state, fallback errors, and latency. The Local Inference page shows retrieval health for memory rows, episode rows, skill chunks, and knowledge chunks, plus the last targeted index and backfill times.
 
 Dreams turn completed work into searchable episodes with task, approach, outcome, notes, tools, errors, artifacts, and evidence. Actionable dream notes can also become scoped operational agent memories so future turns can reuse lessons without treating them as user facts. Transcript recall can surface small raw snippets from prior messages, tool calls, and artifact metadata when exact evidence matters. Skills capture reusable workflows, including Claude-style skill folders and portable `SKILL.md` bundles with supporting files; skill cards, bodies, and attached files are chunked for semantic indexing and reranked discovery, while exact skill ids and names still take precedence. Attentions are ongoing reminders, briefings, watches, and tasks that need to come back later.
 
-Aithy ships a source-managed built-in skills catalog for sandbox work: Docling conversion, OCR, PDF repair/assembly/optimization, media inspection/extraction, spreadsheet and CSV cleanup, web/table extraction, downloads, and artifact packaging. Built-ins are read-only, can be disabled without deletion, and can be duplicated into normal editable user skills.
+Aithy ships source-managed `knowledge-grounded-research` and `knowledge-curation` skills for primary-concept provenance and evidence-backed, review-only proposals. `knowledge-base-prep` can prepare a conformant OKF folder without importing it automatically. The sandbox catalog also covers Docling conversion, OCR, PDF repair/assembly/optimization, media inspection/extraction, spreadsheet and CSV cleanup, web/table extraction, downloads, and artifact packaging. Built-ins are read-only, can be disabled without deletion, and can be duplicated into normal editable user skills.
 
 Skills Lab ranks skills by actual use, links recent use back to its chat, and supports authored evals. Put a JSON array of up to five `{ "request": string, "criteria": string }` cases under an `evals: |` block in `SKILL.md`, or edit the same raw JSON in the skill drawer. “Test this skill” runs authored cases first, synthesizes only enough to reach three, uses a fresh agent for each case, records tool calls, and scores the response with the fast model. Eval agents never receive system shell, MCP, web, memory-write, or artifact-publishing tools; permission failures are recorded as blocked instead of opening approval prompts.
 
@@ -182,7 +206,7 @@ Persisted thumbs feedback always uses the verified assistant response, preceding
 
 ## Built for Trust
 
-Aithy is local-first by default. State, sessions, memories, skills, settings, usage, opt-in training traces, runtime status, and Mesh peer records live under your Aithy config directory unless you deliberately point them elsewhere.
+Aithy is local-first by default. State, sessions, knowledge, memories, skills, settings, usage, opt-in training traces, runtime status, and Mesh peer records live under your Aithy config directory unless you deliberately point them elsewhere.
 
 - Microsandbox mode runs agent commands in a Linux sandbox.
 - Host files are exposed through explicit attachments or mounts.
@@ -258,6 +282,7 @@ src/agent/            Ax agent setup, message runner, tools
 src/automations/      attentions, schedules, and background actions
 src/commands/         shared slash commands
 src/episodes/         dreams, episodic memory, and episode retrieval
+src/knowledge/        SQLite knowledge, OKF interchange, links, proposals, and retrieval
 src/memory/           memory storage, retrieval, embedding, and consolidation
 src/mesh/             LAN discovery, pairing, pinned mesh RPC, and shared service proxies
 src/runtime/          multi-service runtime, workers, queues, permissions

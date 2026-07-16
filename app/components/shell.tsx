@@ -3,6 +3,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import {
   BarChart3,
   BookOpen,
+  LibraryBig,
   Brain,
   Bug,
   Cpu,
@@ -34,6 +35,7 @@ import { HOME_SESSION_ID } from "../../src/session/home-session";
 const navItems = [
   { to: "/skills", label: "Skills", icon: BookOpen },
   { to: "/memory", label: "Memory", icon: Brain },
+  { to: "/knowledge", label: "Knowledge", icon: LibraryBig },
   { to: "/attentions", label: "Attentions", icon: Eye },
   { to: "/tasks", label: "Tasks", icon: ListChecks },
   { to: "/mesh", label: "Mesh", icon: Network },

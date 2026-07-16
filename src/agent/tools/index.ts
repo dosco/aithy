@@ -3,6 +3,7 @@ import type { ToolContext } from "../tool-context";
 import { createArtifactTools } from "./artifact-tools";
 import { createAutomationTools } from "./automation-tools";
 import { createMemoryTools } from "./memory-tools";
+import { createKnowledgeTools } from "./knowledge-tools";
 import { createMountTools } from "./mount-tools";
 import { createSandboxTools } from "./sandbox-tools";
 import { createSkillTools } from "./skill-tools";
@@ -21,6 +22,7 @@ export function createAgentTools(ctx: ToolContext, config: AppConfig) {
     ...createSkillTools(ctx),
     ...createAutomationTools(ctx),
     ...createMemoryTools(ctx),
+    ...createKnowledgeTools(ctx),
     ...createTaskTools(ctx),
   ];
   if (config.sandboxProvider === "microsandbox") {

@@ -1,8 +1,7 @@
 import { mkdir } from "node:fs/promises";
 import { shutdownManager } from "bunqueue/client";
 import { ActiveRunRegistry } from "../../../agent/active-runs";
-import { SqliteArtifactStore } from "../../../artifacts/artifact-store";
-import { createAutomationActions } from "../../../automations/actions";
+import { SqliteArtifactStore } from "../../../artifacts/artifact-store"; import { createAutomationActions } from "../../../automations/actions";
 import { completeAutomationRun, failAutomationRun } from "../../../automations/completion";
 import { AutomationQueue, sessionsEvent } from "../../../automations/queue";
 import { SqliteAutomationStore } from "../../../automations/store";
@@ -13,33 +12,29 @@ import { MemoryConsolidateQueue } from "../../../memory/consolidate-queue";
 import { MemoryExpiryQueue } from "../../../memory/expiry-queue";
 import { SqliteMemoryRunsStore } from "../../../memory/memory-runs";
 import { MemoryQueue } from "../../../memory/memory-queue";
-import { SqliteMemoryStore } from "../../../memory/memory-store";
-import { DreamQueue } from "../../../episodes/dream-queue";
+import { SqliteMemoryStore } from "../../../memory/memory-store"; import { DreamQueue } from "../../../episodes/dream-queue";
 import { SqliteEpisodeStore } from "../../../episodes/episode-store";
 import { SqliteTranscriptRecallStore } from "../../../retrieval/transcript-recall";
 import { SqliteNotificationStore } from "../../../notifications/notification-store";
 import type { NotificationCreate, NotificationEntry } from "../../../notifications/types";
 import { CapabilityBroker } from "../../../security/capability-broker";
-import { SqliteTaskStore } from "../../../tasks/task-store";
-import type { TaskRecord } from "../../../tasks/types";
+import { SqliteTaskStore } from "../../../tasks/task-store"; import type { TaskRecord } from "../../../tasks/types";
 import { SessionManager } from "../../../session/session-manager";
 import { globalMountsChanged, runtimeSandboxChanged } from "../../../settings/resolve";
 import { SqliteSettingsStore } from "../../../settings/store";
 import { syncBuiltInSkills } from "../../../skills/seed";
 import { SqliteSkillCandidateStore } from "../../../skills/candidate-store";
 import { SkillCandidateQueue } from "../../../skills/candidate-queue";
-import { SqliteSkillPromotionStore } from "../../../skills/promote-store";
-import { SqliteSkillsStore } from "../../../skills/skills-store";
+import { SqliteSkillPromotionStore } from "../../../skills/promote-store"; import { SqliteSkillsStore } from "../../../skills/skills-store";
+import { SqliteKnowledgeStore } from "../../../knowledge/knowledge-store";
 import { loadOrSeedSoul } from "../../../soul/service";
 import { SqliteSoulStore } from "../../../soul/sqlite-soul-store";
 import type { SoulProfile } from "../../../soul/types";
 import type { SetupStatusInput } from "../../../setup/status";
-import { SqliteUsageStore } from "../../../usage/usage-store";
-import { SqliteTrainingDataStore } from "../../../training-data/store";
+import { SqliteUsageStore } from "../../../usage/usage-store"; import { SqliteTrainingDataStore } from "../../../training-data/store";
 import { McpRegistry } from "../../../mcp/registry";
 import { SkillEvalQueue } from "../../../skills/eval-queue";
-import { SqliteFeedbackStore } from "../../../feedback/store";
-import { ResponderPlaybookCache, ResponderPlaybookStore } from "../../../playbook/store";
+import { SqliteFeedbackStore } from "../../../feedback/store"; import { ResponderPlaybookCache, ResponderPlaybookStore } from "../../../playbook/store";
 import { PlaybookUpdateQueue } from "../../../playbook/update-queue";
 import { LiveEventHub } from "../../../web/live-events";
 import { assertSupportedBunVersion } from "../../bun-version";
@@ -71,7 +66,7 @@ export class AgentWorkerRuntime {
     public sandbox: SandboxCommandClient,
     public readonly sessions: SessionManager,
     public readonly soul: SoulProfile,
-    public readonly memory: SqliteMemoryStore, public readonly episodes: SqliteEpisodeStore, public readonly transcripts: SqliteTranscriptRecallStore,
+    public readonly memory: SqliteMemoryStore, public readonly knowledge: SqliteKnowledgeStore, public readonly episodes: SqliteEpisodeStore, public readonly transcripts: SqliteTranscriptRecallStore,
     public readonly artifacts: SqliteArtifactStore, public readonly usage: SqliteUsageStore,
     public readonly trainingData: SqliteTrainingDataStore, public readonly activeRuns: ActiveRunRegistry,
     public readonly skills: SqliteSkillsStore, public readonly runtimeStore: RuntimeStore,
@@ -125,6 +120,12 @@ export class AgentWorkerRuntime {
       embedder,
       reranker,
       inlineEmbeds: false,
+      log: logMemory,
+      onDirtyIndex: queueTargetedIndex,
+    });
+    const knowledge = new SqliteKnowledgeStore(config.stateDbPath, {
+      embedder,
+      reranker,
       log: logMemory,
       onDirtyIndex: queueTargetedIndex,
     });
@@ -325,14 +326,14 @@ export class AgentWorkerRuntime {
     const runtime = new AgentWorkerRuntime(
       config, settings, queue, events, live,
       sandbox, sessions, soul,
-      memory, episodes, transcripts, artifacts, usage, trainingData, activeRuns, skills,
+      memory, knowledge, episodes, transcripts, artifacts, usage, trainingData, activeRuns, skills,
       runtimeStore, tasks, automations,
       automationActions, automationQueue, capabilities, notifications, mcpRegistry,
       dispatcher, sessionState, memoryQueue, dreamQueue, memoryConsolidate, memoryExpiry,
       skillCandidates, skillCandidateQueue, skillEvalQueue,
       playbookCache, playbookQueue,
       skillPromotions,
-      [settings, skills, skillCandidates, skillPromotions, memory, episodes, transcripts, memoryRuns, artifacts, notifications, usage, trainingData, soulStore, runtimeStore, tasks, automations, feedback, playbookStore],
+      [settings, skills, skillCandidates, skillPromotions, memory, knowledge, episodes, transcripts, memoryRuns, artifacts, notifications, usage, trainingData, soulStore, runtimeStore, tasks, automations, feedback, playbookStore],
       options.ownsBunqueueManager ?? true,
     );
     runtimeRef = runtime;

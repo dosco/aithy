@@ -147,7 +147,7 @@ describe("built-in skills", () => {
   });
 
   test("every bundled skill parses cleanly and avoids unavailable tool claims", () => {
-    expect(builtInSkillSources).toHaveLength(25);
+    expect(builtInSkillSources).toHaveLength(27);
     for (const source of builtInSkillSources) {
       const { frontmatter, body } = parseSkillMarkdown(source.raw);
       const description = frontmatterString(frontmatter, ["description"]);
@@ -162,5 +162,19 @@ describe("built-in skills", () => {
       expect(tools).not.toMatch(/Bash\(zip/i);
       expect(body.toLowerCase()).not.toContain("pandoc");
     }
+  });
+
+  test("knowledge skills have deterministic DB-only workflows", () => {
+    const research = builtInSkillSources.find((source) => source.sourceId === "knowledge-grounded-research")!;
+    const curation = builtInSkillSources.find((source) => source.sourceId === "knowledge-curation")!;
+    const prep = builtInSkillSources.find((source) => source.sourceId === "knowledge-base-prep")!;
+    const researchParsed = parseSkillMarkdown(research.raw);
+    const curationParsed = parseSkillMarkdown(curation.raw);
+    expect(frontmatterString(researchParsed.frontmatter, ["tools"])).toBe("knowledge.search knowledge.read knowledge.list");
+    expect(researchParsed.body).toContain("If the library has no support");
+    expect(frontmatterString(curationParsed.frontmatter, ["tools"])).toContain("knowledge.propose");
+    expect(curationParsed.body).toContain("persistence awaits user approval");
+    expect(prep.raw).toContain("do not import it automatically");
+    expect(prep.raw).toContain("OKF v0.1");
   });
 });

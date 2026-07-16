@@ -4,25 +4,20 @@ import {
   type AxAgentSkillsSearchFn,
   type AxAgentUsedSkill,
 } from "@ax-llm/ax";
-import type { ActiveRunRegistry } from "./active-runs";
-import type { StoppableProgram } from "./active-runs";
+import type { ActiveRunRegistry, StoppableProgram } from "./active-runs";
 import type { ChannelMessage, ChannelReply } from "../channel/types";
 import type { AppConfig } from "../config/env";
 import type { EventBus } from "../events/bus";
-import type { SqliteMemoryStore } from "../memory/memory-store";
-import type { SqliteEpisodeStore } from "../episodes/episode-store";
+import type { SqliteMemoryStore } from "../memory/memory-store"; import type { SqliteEpisodeStore } from "../episodes/episode-store";
 import type { SqliteTranscriptRecallStore } from "../retrieval/transcript-recall";
-import type { SqliteArtifactStore } from "../artifacts/artifact-store";
-import type { MemoryQueue } from "../memory/memory-queue";
+import type { SqliteArtifactStore } from "../artifacts/artifact-store"; import type { MemoryQueue } from "../memory/memory-queue";
 import type { NotificationCreate } from "../notifications/types";
-import type { SqliteUsageStore } from "../usage/usage-store";
-import type { SqliteTrainingDataStore } from "../training-data/store";
-import type { SqliteSkillsStore } from "../skills/skills-store";
+import type { SqliteUsageStore } from "../usage/usage-store"; import type { SqliteTrainingDataStore } from "../training-data/store";
+import type { SqliteSkillsStore } from "../skills/skills-store"; import type { SqliteKnowledgeStore } from "../knowledge/knowledge-store";
 import { captureProgramUsage, usageAttributionForConfig } from "../usage/capture";
 import type { SandboxProvider } from "../sandbox/provider";
 import type { SessionManager } from "../session/session-manager";
-import type { UserProfile } from "../profile/types";
-import { userProfileForAgent } from "../profile/service";
+import type { UserProfile } from "../profile/types"; import { userProfileForAgent } from "../profile/service";
 import type { SoulProfile } from "../soul/types";
 import type { AssistantToolCallMessage } from "../session/types";
 import { isClarificationPause } from "./clarification";
@@ -58,8 +53,7 @@ import { createMcpAgentTools } from "../mcp/agent-tools";
 import type { McpRegistrySnapshot } from "../mcp/types";
 import type { CapabilityBroker } from "../security/capability-broker";
 import type { RuntimeStore } from "../runtime/runtime-store";
-import type { SqliteTaskStore } from "../tasks/task-store";
-import type { AutomationToolActions } from "../automations/tool-actions";
+import type { SqliteTaskStore } from "../tasks/task-store"; import type { AutomationToolActions } from "../automations/tool-actions";
 import {
   prefetchUrlsForMessage,
   type UrlPrefetcher,
@@ -75,7 +69,7 @@ import {
   preRecallQueries,
   recallForAgent,
 } from "./memory-recall-context";
-import { forwardTurnWithArtifactRepair } from "./turn-forward";
+import { forwardTurnWithArtifactRepair } from "./turn-forward"; import { knowledgeContextText, preloadKnowledge } from "./knowledge-context";
 
 export interface RunMessageDeps {
   config: AppConfig;
@@ -85,6 +79,7 @@ export interface RunMessageDeps {
   soul?: SoulProfile;
   profile?: UserProfile;
   memory?: SqliteMemoryStore;
+  knowledge?: SqliteKnowledgeStore;
   episodes?: SqliteEpisodeStore;
   transcripts?: SqliteTranscriptRecallStore;
   artifacts?: SqliteArtifactStore;
@@ -138,6 +133,7 @@ export async function runMessage(
     workspacePath: deps.config.workspaceRoot,
     events: deps.events,
     memory: deps.memory,
+    knowledge: deps.knowledge,
     skills: deps.skillsStore,
     loadedSkillIds: deps.loadedSkillIds,
     enqueueRemember: memoryQueue
@@ -246,8 +242,9 @@ export async function runMessage(
         onToolCall: recordToolCall,
       });
     }
-    const preRecall = memoryStore || episodeStore || transcriptStore
-      ? await recallForAgent({
+    const [preRecall, knowledgeMatches] = await Promise.all([
+      memoryStore || episodeStore || transcriptStore
+      ? recallForAgent({
           searches: preRecallQueries(session, message),
           alreadyLoadedIds: [],
           memoryStore,
@@ -260,18 +257,21 @@ export async function runMessage(
           limit: 8,
           beforeCreatedAt: message.createdAt.toISOString(),
         })
-      : undefined;
+      : undefined,
+      Promise.resolve(preloadKnowledge(deps.knowledge, message.text)),
+    ]);
     if (preRecall) {
       preRecall.hitIds.forEach((id) => preloadedMemoryIds.add(id));
       toolCallMessages.push(preRecall.toolMessage);
       publishToolCall(preRecall.toolMessage);
       deps.logRetrieval?.("memory preload", preRecall.toolMessage.toolResult);
     }
-    const userProfile = userProfileForAgent(deps.profile);
-    const input = {
+    if (knowledgeMatches.length) deps.logRetrieval?.("knowledge preload", { source: "knowledge", mode: deps.knowledge?.isRerankReady() ? "hybrid-reranked" : deps.knowledge?.isHybridReady() ? "hybrid" : "fts-only", finalMatches: knowledgeMatches.length });
+    const userProfile = userProfileForAgent(deps.profile); const input = {
       ...(userProfile ? { userProfile } : {}),
       userRequest: message.text,
       ...(preRecall ? { memoryContext: memoryContextText(preRecall.memories) } : {}),
+      ...(knowledgeMatches.length ? { knowledgeContext: knowledgeContextText(knowledgeMatches) } : {}),
       ...(urlPrefetch?.context ? { urlContext: urlPrefetch.context } : {}),
       ...(searchPrefetch?.context ? { searchContext: searchPrefetch.context } : {}),
       artifactContext: artifactContextText(

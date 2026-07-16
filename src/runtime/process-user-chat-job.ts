@@ -30,6 +30,7 @@ import { retrievalDiagnostics } from "../retrieval/diagnostics";
 import type { McpRegistry } from "../mcp/registry";
 import { skillsCatalog } from "../skills/catalog";
 import type { ResponderPlaybookCache } from "../playbook/store";
+import type { SqliteKnowledgeStore } from "../knowledge/knowledge-store";
 
 interface RuntimeForUserChat {
   config: AppConfig;
@@ -39,6 +40,7 @@ interface RuntimeForUserChat {
   soul: SoulProfile;
   profile?: UserProfile;
   memory: SqliteMemoryStore;
+  knowledge: SqliteKnowledgeStore;
   episodes?: SqliteEpisodeStore;
   transcripts?: SqliteTranscriptRecallStore;
   artifacts: SqliteArtifactStore;
@@ -88,6 +90,7 @@ export async function processUserChatJob(
     soul: runtime.soul,
     profile: runtime.profile,
     memory: runtime.memory,
+    knowledge: runtime.knowledge,
     episodes: runtime.episodes,
     transcripts: runtime.transcripts,
     artifacts: runtime.artifacts,

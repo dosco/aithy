@@ -11,6 +11,7 @@ import type { SqliteArtifactStore } from "../artifacts/artifact-store";
 import type { SqliteTaskStore } from "../tasks/task-store";
 import type { AutomationToolActions } from "../automations/tool-actions";
 import type { SqliteSkillsStore } from "../skills/skills-store";
+import type { SqliteKnowledgeStore } from "../knowledge/knowledge-store";
 
 export interface RememberRequest {
   hint: string;
@@ -24,6 +25,8 @@ export interface ToolContext {
   workspacePath: string;
   events: EventBus;
   memory?: SqliteMemoryStore;
+  /** Canonical, DB-backed knowledge available through bounded tools. */
+  knowledge?: SqliteKnowledgeStore;
   /** DB-backed skill bundles available to permission-free skill helper tools. */
   skills?: SqliteSkillsStore;
   /** Skill ids loaded into the current agent turn. */

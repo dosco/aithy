@@ -10,6 +10,8 @@ import downloadAndStageFiles from "../../config/skills/builtin/download-and-stag
 import htmlTableExtraction from "../../config/skills/builtin/html-table-extraction.md" with { type: "text" };
 import imagePrepForOcr from "../../config/skills/builtin/image-prep-for-ocr.md" with { type: "text" };
 import knowledgeBasePrep from "../../config/skills/builtin/knowledge-base-prep.md" with { type: "text" };
+import knowledgeGroundedResearch from "../../config/skills/builtin/knowledge-grounded-research.md" with { type: "text" };
+import knowledgeCuration from "../../config/skills/builtin/knowledge-curation.md" with { type: "text" };
 import mediaInspectionExtraction from "../../config/skills/builtin/media-inspection-extraction.md" with { type: "text" };
 import officeDocumentExtraction from "../../config/skills/builtin/office-document-extraction.md" with { type: "text" };
 import pdfFastTextExtraction from "../../config/skills/builtin/pdf-fast-text-extraction.md" with { type: "text" };
@@ -27,7 +29,7 @@ import webPageToMarkdown from "../../config/skills/builtin/web-page-to-markdown.
 import { frontmatterString, parseSkillMarkdown } from "./frontmatter";
 import type { SqliteSkillsStore, SkillUpsert } from "./skills-store";
 
-export const BUILT_IN_SKILL_SOURCE_VERSION = "2026.05-sandbox-capability-aware";
+export const BUILT_IN_SKILL_SOURCE_VERSION = "2026.07-knowledge-library";
 
 export interface BuiltInSkillSource {
   sourceId: string;
@@ -41,6 +43,8 @@ export const builtInSkillSources: BuiltInSkillSource[] = [
   source("office-document-extraction", officeDocumentExtraction),
   source("research-paper-extraction", researchPaperExtraction),
   source("knowledge-base-prep", knowledgeBasePrep),
+  source("knowledge-grounded-research", knowledgeGroundedResearch),
+  source("knowledge-curation", knowledgeCuration),
   source("scanned-document-ocr", scannedDocumentOcr),
   source("image-prep-for-ocr", imagePrepForOcr),
   source("batch-ocr-workflow", batchOcrWorkflow),

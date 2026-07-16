@@ -20,6 +20,7 @@ import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as MeshRouteImport } from './routes/mesh'
 import { Route as MemoryRouteImport } from './routes/memory'
 import { Route as LocalInferenceRouteImport } from './routes/local-inference'
+import { Route as KnowledgeRouteImport } from './routes/knowledge'
 import { Route as InferenceRouteImport } from './routes/inference'
 import { Route as ConsoleRouteImport } from './routes/console'
 import { Route as ChatRouteImport } from './routes/chat'
@@ -28,6 +29,7 @@ import { Route as AttentionsRouteImport } from './routes/attentions'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as ChatSessionIdRouteImport } from './routes/chat.$sessionId'
 import { Route as ApiEventsRouteImport } from './routes/api.events'
+import { Route as ApiKnowledgeBundleIdRouteImport } from './routes/api.knowledge.$bundleId'
 import { Route as ApiArtifactsArtifactIdRouteImport } from './routes/api.artifacts.$artifactId'
 
 const UsageRoute = UsageRouteImport.update({
@@ -85,6 +87,11 @@ const LocalInferenceRoute = LocalInferenceRouteImport.update({
   path: '/local-inference',
   getParentRoute: () => rootRouteImport,
 } as any)
+const KnowledgeRoute = KnowledgeRouteImport.update({
+  id: '/knowledge',
+  path: '/knowledge',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const InferenceRoute = InferenceRouteImport.update({
   id: '/inference',
   path: '/inference',
@@ -125,6 +132,11 @@ const ApiEventsRoute = ApiEventsRouteImport.update({
   path: '/api/events',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiKnowledgeBundleIdRoute = ApiKnowledgeBundleIdRouteImport.update({
+  id: '/api/knowledge/$bundleId',
+  path: '/api/knowledge/$bundleId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiArtifactsArtifactIdRoute = ApiArtifactsArtifactIdRouteImport.update({
   id: '/api/artifacts/$artifactId',
   path: '/api/artifacts/$artifactId',
@@ -138,6 +150,7 @@ export interface FileRoutesByFullPath {
   '/chat': typeof ChatRouteWithChildren
   '/console': typeof ConsoleRoute
   '/inference': typeof InferenceRoute
+  '/knowledge': typeof KnowledgeRoute
   '/local-inference': typeof LocalInferenceRoute
   '/memory': typeof MemoryRoute
   '/mesh': typeof MeshRoute
@@ -152,6 +165,7 @@ export interface FileRoutesByFullPath {
   '/api/events': typeof ApiEventsRoute
   '/chat/$sessionId': typeof ChatSessionIdRoute
   '/api/artifacts/$artifactId': typeof ApiArtifactsArtifactIdRoute
+  '/api/knowledge/$bundleId': typeof ApiKnowledgeBundleIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -160,6 +174,7 @@ export interface FileRoutesByTo {
   '/chat': typeof ChatRouteWithChildren
   '/console': typeof ConsoleRoute
   '/inference': typeof InferenceRoute
+  '/knowledge': typeof KnowledgeRoute
   '/local-inference': typeof LocalInferenceRoute
   '/memory': typeof MemoryRoute
   '/mesh': typeof MeshRoute
@@ -174,6 +189,7 @@ export interface FileRoutesByTo {
   '/api/events': typeof ApiEventsRoute
   '/chat/$sessionId': typeof ChatSessionIdRoute
   '/api/artifacts/$artifactId': typeof ApiArtifactsArtifactIdRoute
+  '/api/knowledge/$bundleId': typeof ApiKnowledgeBundleIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -183,6 +199,7 @@ export interface FileRoutesById {
   '/chat': typeof ChatRouteWithChildren
   '/console': typeof ConsoleRoute
   '/inference': typeof InferenceRoute
+  '/knowledge': typeof KnowledgeRoute
   '/local-inference': typeof LocalInferenceRoute
   '/memory': typeof MemoryRoute
   '/mesh': typeof MeshRoute
@@ -197,6 +214,7 @@ export interface FileRoutesById {
   '/api/events': typeof ApiEventsRoute
   '/chat/$sessionId': typeof ChatSessionIdRoute
   '/api/artifacts/$artifactId': typeof ApiArtifactsArtifactIdRoute
+  '/api/knowledge/$bundleId': typeof ApiKnowledgeBundleIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -207,6 +225,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/console'
     | '/inference'
+    | '/knowledge'
     | '/local-inference'
     | '/memory'
     | '/mesh'
@@ -221,6 +240,7 @@ export interface FileRouteTypes {
     | '/api/events'
     | '/chat/$sessionId'
     | '/api/artifacts/$artifactId'
+    | '/api/knowledge/$bundleId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -229,6 +249,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/console'
     | '/inference'
+    | '/knowledge'
     | '/local-inference'
     | '/memory'
     | '/mesh'
@@ -243,6 +264,7 @@ export interface FileRouteTypes {
     | '/api/events'
     | '/chat/$sessionId'
     | '/api/artifacts/$artifactId'
+    | '/api/knowledge/$bundleId'
   id:
     | '__root__'
     | '/'
@@ -251,6 +273,7 @@ export interface FileRouteTypes {
     | '/chat'
     | '/console'
     | '/inference'
+    | '/knowledge'
     | '/local-inference'
     | '/memory'
     | '/mesh'
@@ -265,6 +288,7 @@ export interface FileRouteTypes {
     | '/api/events'
     | '/chat/$sessionId'
     | '/api/artifacts/$artifactId'
+    | '/api/knowledge/$bundleId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -274,6 +298,7 @@ export interface RootRouteChildren {
   ChatRoute: typeof ChatRouteWithChildren
   ConsoleRoute: typeof ConsoleRoute
   InferenceRoute: typeof InferenceRoute
+  KnowledgeRoute: typeof KnowledgeRoute
   LocalInferenceRoute: typeof LocalInferenceRoute
   MemoryRoute: typeof MemoryRoute
   MeshRoute: typeof MeshRoute
@@ -287,6 +312,7 @@ export interface RootRouteChildren {
   UsageRoute: typeof UsageRoute
   ApiEventsRoute: typeof ApiEventsRoute
   ApiArtifactsArtifactIdRoute: typeof ApiArtifactsArtifactIdRoute
+  ApiKnowledgeBundleIdRoute: typeof ApiKnowledgeBundleIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -368,6 +394,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LocalInferenceRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/knowledge': {
+      id: '/knowledge'
+      path: '/knowledge'
+      fullPath: '/knowledge'
+      preLoaderRoute: typeof KnowledgeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/inference': {
       id: '/inference'
       path: '/inference'
@@ -424,6 +457,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiEventsRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/knowledge/$bundleId': {
+      id: '/api/knowledge/$bundleId'
+      path: '/api/knowledge/$bundleId'
+      fullPath: '/api/knowledge/$bundleId'
+      preLoaderRoute: typeof ApiKnowledgeBundleIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/artifacts/$artifactId': {
       id: '/api/artifacts/$artifactId'
       path: '/api/artifacts/$artifactId'
@@ -451,6 +491,7 @@ const rootRouteChildren: RootRouteChildren = {
   ChatRoute: ChatRouteWithChildren,
   ConsoleRoute: ConsoleRoute,
   InferenceRoute: InferenceRoute,
+  KnowledgeRoute: KnowledgeRoute,
   LocalInferenceRoute: LocalInferenceRoute,
   MemoryRoute: MemoryRoute,
   MeshRoute: MeshRoute,
@@ -464,6 +505,7 @@ const rootRouteChildren: RootRouteChildren = {
   UsageRoute: UsageRoute,
   ApiEventsRoute: ApiEventsRoute,
   ApiArtifactsArtifactIdRoute: ApiArtifactsArtifactIdRoute,
+  ApiKnowledgeBundleIdRoute: ApiKnowledgeBundleIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,7 +1,7 @@
 export type RetrievalMode = "fts-only" | "hybrid" | "hybrid-reranked" | "fallback";
 
 export interface RetrievalSourceStats {
-  source: "memories" | "episodes" | "skills" | "transcripts";
+  source: "memories" | "episodes" | "skills" | "transcripts" | "knowledge";
   ftsCandidates: number;
   vectorCandidates: number;
   fusedCandidates: number;
@@ -9,7 +9,7 @@ export interface RetrievalSourceStats {
 }
 
 export interface RetrievalDiagnostics {
-  source: "preload" | "recall" | "skills" | "store";
+  source: "preload" | "recall" | "skills" | "knowledge" | "store";
   mode: RetrievalMode;
   queryCount: number;
   rerankerAvailable: boolean;
