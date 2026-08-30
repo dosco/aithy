@@ -12,7 +12,7 @@ export const listNotifications = createServerFn({ method: "GET" })
   });
 
 export const markNotificationRead = createServerFn({ method: "POST" })
-  .inputValidator(notificationIdInput)
+  .validator(notificationIdInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();

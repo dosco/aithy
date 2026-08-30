@@ -13,7 +13,7 @@ const messagePageInput = z.object({
 });
 
 export const getSessionMessages = createServerFn({ method: "GET" })
-  .inputValidator(messagePageInput)
+  .validator(messagePageInput)
   .handler(async ({ data }) => {
     const runtime = await getAithyRuntime();
     return sessionMessagesPageState(runtime, data);

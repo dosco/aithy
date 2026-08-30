@@ -21,7 +21,7 @@ const imageInput = z.object({
 });
 
 export const saveProfile = createServerFn({ method: "POST" })
-  .inputValidator(profileInput)
+  .validator(profileInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -33,7 +33,7 @@ export const saveProfile = createServerFn({ method: "POST" })
   });
 
 export const saveProfileImage = createServerFn({ method: "POST" })
-  .inputValidator(imageInput)
+  .validator(imageInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -42,7 +42,7 @@ export const saveProfileImage = createServerFn({ method: "POST" })
   });
 
 export const clearProfileImage = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ kind: imageKind }))
+  .validator(z.object({ kind: imageKind }))
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();

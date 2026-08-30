@@ -9,7 +9,7 @@ import { taskSummary } from "../../src/tasks/summary";
 const taskIdInput = z.object({ taskId: z.string().min(1) });
 
 export const cancelTask = createServerFn({ method: "POST" })
-  .inputValidator(taskIdInput)
+  .validator(taskIdInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -28,7 +28,7 @@ export const cancelTask = createServerFn({ method: "POST" })
   });
 
 export const retryTask = createServerFn({ method: "POST" })
-  .inputValidator(taskIdInput)
+  .validator(taskIdInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();

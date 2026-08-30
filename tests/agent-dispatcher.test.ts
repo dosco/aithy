@@ -1,8 +1,8 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { describe, expect, test } from "bun:test";
-import { Queue } from "bunqueue/client";
+import { afterEach, describe, expect, test } from "bun:test";
+import { Queue, shutdownManager } from "bunqueue/client";
 import {
   AgentDispatcher,
   UserChatCommandProducer,
@@ -13,6 +13,12 @@ import {
 import { bunqueueDataPath } from "../src/queue/embedded";
 import { RuntimeStore } from "../src/runtime/runtime-store";
 import type { SetupStatusInput } from "../src/setup/status";
+
+afterEach(() => {
+  try {
+    shutdownManager();
+  } catch {}
+});
 
 async function makeDispatcher(opts: {
   parallelAgents: number;

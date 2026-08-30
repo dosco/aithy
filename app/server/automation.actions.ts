@@ -46,7 +46,7 @@ const updateAutomationInput = z.object({
 const idInput = z.object({ id: z.string().min(1) });
 
 export const createAutomation = createServerFn({ method: "POST" })
-  .inputValidator(createAutomationInput)
+  .validator(createAutomationInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -70,7 +70,7 @@ export const createAutomation = createServerFn({ method: "POST" })
   });
 
 export const updateAutomation = createServerFn({ method: "POST" })
-  .inputValidator(updateAutomationInput)
+  .validator(updateAutomationInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -99,7 +99,7 @@ export const updateAutomation = createServerFn({ method: "POST" })
   });
 
 export const pauseAutomation = createServerFn({ method: "POST" })
-  .inputValidator(idInput)
+  .validator(idInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -108,7 +108,7 @@ export const pauseAutomation = createServerFn({ method: "POST" })
   });
 
 export const resumeAutomation = createServerFn({ method: "POST" })
-  .inputValidator(idInput)
+  .validator(idInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -117,7 +117,7 @@ export const resumeAutomation = createServerFn({ method: "POST" })
   });
 
 export const archiveAutomation = createServerFn({ method: "POST" })
-  .inputValidator(idInput)
+  .validator(idInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -126,7 +126,7 @@ export const archiveAutomation = createServerFn({ method: "POST" })
   });
 
 export const runAutomationNow = createServerFn({ method: "POST" })
-  .inputValidator(idInput)
+  .validator(idInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();

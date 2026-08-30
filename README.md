@@ -51,7 +51,7 @@ Intel Mac and Windows archives are not published yet because the packaged sandbo
 
 ### Start from code
 
-Use this path if you want to run from the repo, hack on Aithy, or follow the code as it changes. You need [Bun](https://bun.sh/) 1.3.14 or newer.
+Use this path if you want to run from the repo, hack on Aithy, or follow the code as it changes. You need [Bun](https://bun.sh/) 1.4.0 or newer.
 
 ```bash
 bun install

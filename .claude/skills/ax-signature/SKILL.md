@@ -1,7 +1,7 @@
 ---
 name: ax-signature
 description: This skill helps an LLM generate correct DSPy signature code using @ax-llm/ax. Use when the user asks about signatures, s(), f(), field types, string syntax, fluent builder API, validation constraints, or type-safe inputs/outputs.
-version: "23.0.0"
+version: "24.0.15"
 ---
 
 # Ax Signature Reference
@@ -39,6 +39,113 @@ Date, datetime, and range fields are AI-friendly but strict. They accept ISO-sty
 'tags:string[] -> processedTags:string[]'  // arrays
 'query:string, context?:string -> response:string'  // optional with ?
 'problem:string -> reasoning!:string, solution:string'  // internal with !
+```
+
+## Extended String Grammar (Modifier Bags + Nested Objects)
+
+The string form is constraint-complete: everything the fluent API expresses
+(except Standard Schema fields) can be written in the string. A type takes an
+optional comma-separated, order-free **modifier bag** in parentheses, and
+objects declare structured fields inline.
+
+```typescript
+`userAge:number(min 0, max 120), contactEmail:string(format email, cache), codeSnippet:code(python)
+ -> userName:string(pattern "^[a-z_]+$" "lowercase name"), tagList:string(item "a short tag")[] "all tags",
+    profileList:object{ fullName:string, userAge?:number(min 0) }[] "matched profiles"`
+```
+
+| Modifier | Applies to | Effect |
+|----------|-----------|--------|
+| `min N` / `max N` | `string`, `number` | String length bounds / numeric value bounds |
+| `format email\|uri\|date\|date-time` | `string` | Format validation |
+| `pattern "regex" ["desc"]` | `string` | Regex validation with optional description |
+| `cache` | top-level input | Prefix-cache breakpoint |
+| `item "desc"` | arrays | Per-item description: `tags:string(item "a tag")[]` |
+| `<language>` | `code` | Language of the snippet: `snippet:code(python)` |
+
+- `object{ field:type, opt?:type }` nests recursively; append `[]` for an array of objects.
+- Optional goes on the **name** (`userAge?:number`), never after the type.
+- The string API is **strict**: a modifier that does not apply to its type (e.g. `min` on a boolean) is a parse error, where the fluent API silently ignores it.
+- Inside `object{ ... }`, the `!` internal marker, media types, `cache`, and `item` are rejected (they only apply at the top level).
+- In quoted values, backslashes are doubled — a regex `\d` is written `pattern "\\d+"`.
+- `AxSignature.toString()` renders every construct back to this grammar losslessly, so a signature round-trips — this is what lets a whole flow serialize its node contracts into mermaid `%%ax` directives (see the ax-flow skill).
+
+## Signature Gallery
+
+Real-world contracts, one line each — every entry below parses with `s()` as written (`#` lines are captions, not part of the signature):
+
+```text
+# Support triage: several class outputs plus a capped reply draft
+ticketText:string -> priorityClass:class "p0, p1, p2", sentimentClass:class "angry, neutral, happy", replyDraft:string(max 500)
+
+# Invoice extraction: regex-validated id, bounded totals, structured line items
+invoiceText:string -> invoiceNumber:string(pattern "^INV-\\d+$" "INV- then digits"), totalAmount:number(min 0), lineItems:object{ description:string, quantity:number(min 1), unitPrice:number }[]
+
+# Contact enrichment: optional format-validated outputs
+bioText:string -> contactEmail?:string(format email), websiteUrl?:string(format uri), birthDate?:string(format date)
+
+# RAG: cached corpus input plus per-item described citations
+corpusText:string(cache), userQuestion:string -> answerText:string, citedChunks:string(item "verbatim quote")[]
+
+# Code generation: language-tagged code outputs
+taskBrief:string -> pythonScript:code(python), testCases:code(python), riskNotes?:string
+
+# Chain of thought: internal reasoning stripped from the result
+problemText:string -> reasoning!:string, solutionText:string
+
+# Resume parsing: nested objects inside nested arrays
+resumeText:string -> candidateProfile:object{ fullName:string, yearsExperience:number(min 0), skillList:string[], education:object{ schoolName:string, degreeName?:string }[] }
+
+# Lead scoring: signature-level description, bounded score, class next step
+"Score sales leads" leadNotes:string -> fitScore:number(min 0, max 100) "0-100 fit", nextStep:class "call, email, drop"
+
+# Multimodal: top-level image input with an optional question
+productPhoto:image, question?:string -> productDescription:string, detectedObjects:string[]
+
+# Meeting audio: audio input, capped summary, per-item action list
+meetingAudio:audio -> meetingSummary:string(max 1000), actionItems:string(item "one action item")[]
+
+# Moderation: class verdict plus structured flagged spans
+postText:string -> moderationVerdict:class "allow, review, block", flaggedSpans:object{ spanText:string, reasonNote:string }[]
+
+# Translation: optional locale input
+sourceText:string, targetLocale?:string -> translatedText:string, glossaryHits:string[]
+
+# Text-to-SQL: cached schema plus SQL-tagged output
+schemaText:string(cache), questionText:string -> sqlQuery:code(sql), queryNotes?:string(max 200)
+
+# Calendar extraction: datetime fields and an optional end
+emailText:string -> eventTitle:string, startsAt:datetime, endsAt?:datetime, attendeeNames:string[]
+
+# Booking window: date range, bounded party size, and flexibility flag
+requestText:string -> stayWindow:dateRange, partySize:number(min 1, max 12), flexibleDates:boolean
+
+# Contract dates: date fields plus bounded notice period
+contractText:string -> effectiveDate:date, expiryDate?:date, autoRenews:boolean, noticeDays?:number(min 0)
+
+# Link audit: URL arrays and an optional primary URL
+pageText:string -> referencedUrls:url[], primaryUrl?:url
+
+# Config generation: JSON output plus per-item warnings
+requirementsText:string -> serviceConfig:json, setupWarnings:string(item "one warning")[]
+
+# Claims gate: cached policy, bounded confidence, and optional citation
+claimText:string, policyText:string(cache) -> isCovered:boolean, confidenceScore:number(min 0, max 1), citedClause?:string
+
+# Earnings extraction: structured period data plus a class outlook
+filingText:string(cache) -> revenueByPeriod:object{ periodLabel:string, amountUsd:number }[], guidanceTone:class "raise, hold, cut"
+
+# Pull request review: diff code, cached guide, structured comments, and verdict
+diffText:code(diff), styleGuide?:string(cache) -> reviewComments:object{ filePath:string, lineNumber:number(min 1), commentText:string(max 300) }[], overallVerdict:class "approve, revise"
+
+# Incident triage: severity class, optional service, and per-item runbook steps
+alertLog:string -> incidentSeverity:class "sev1, sev2, sev3", suspectedService?:string, runbookSteps:string(item "one step")[]
+
+# Product listing: image and file inputs with constrained listing outputs
+productPhoto:image, priceSheet?:file -> listingTitle:string(max 80), bulletPoints:string(item "one selling point")[], priceUsd?:number(min 0)
+
+# Study cards: nested object array with an optional difficulty tag
+chapterText:string -> flashCards:object{ questionText:string, answerText:string, difficultyTag?:string }[]
 ```
 
 ## Four Ways to Create Signatures
@@ -280,12 +387,20 @@ Bad: `text`, `data`, `input`, `output`, `a`, `x`, `val` (too generic), `1field` 
 // Data Extraction
 'invoiceText:string -> invoiceNumber:string, totalAmount:number, lineItems:json[]'
 
+// Constrained string form (no fluent builder needed)
+'reviewText:string(max 2000) -> rating:number(min 1, max 5), themes:string(item "a theme")[]'
+
+// Nested object output in the string form
+'profileText:string -> profile:object{ fullName:string, age?:number(min 0) }'
+
 // With description
 '"Answer TypeScript questions" question:string -> answer:string, confidence:number'
 ```
 
 ## Critical Rules
 
+- The string form is constraint-complete: reach for modifier bags (`string(max 500)`, `number(min 0, max 10)`, `string(format email)`) and inline `object{ ... }` before switching to fluent/zod just for constraints. Reserve fluent/Standard Schema for zod/valibot-backed fields.
+- The string API is strict — a modifier that does not apply to its type is a parse error (the fluent API silently ignores it).
 - Use `f()` fluent builder, NOT nested `f.array(f.string())` -- those are removed.
 - Field names must be descriptive (not generic like `text`, `data`, `input`).
 - Image/file media types are input-only, top-level only; audio may also be a single top-level output.

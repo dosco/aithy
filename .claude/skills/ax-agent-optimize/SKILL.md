@@ -1,7 +1,7 @@
 ---
 name: ax-agent-optimize
 description: This skill helps an LLM generate correct AxAgent tuning and evaluation code using @ax-llm/ax. Use when the user asks about agent.optimize(...), judgeOptions, eval datasets, optimization targets, saved optimizedProgram artifacts, or agent optimization guidance.
-version: "23.0.0"
+version: "24.0.15"
 ---
 
 # AxAgent Optimize Codegen Rules (@ax-llm/ax)
@@ -45,6 +45,7 @@ Pick the optimization shape from the user's need:
 - "Make the whole agent better" -> use the default actor target first; only broaden target selection when the user clearly wants that extra scope.
 - "Tune child-agent delegation" -> use tasks that exercise when to call the child agent, when to call normal tools, and when to answer directly.
 - "Compare before and after" -> include a held-out task plus artifact save/load and replay.
+- "Repair the tasks it keeps failing, without eroding what works" -> this is playbook territory, not GEPA: use the agent-bound playbook evolve method (in TypeScript, `agent.playbook().evolve(dataset)`) to mine failures into verified playbook bullets under a held-out gate. Python, Java, C++, Go, and Rust expose the same loop with native method casing; see `ax-playbook`. `optimize(...)` maximizes a metric by tuning instructions and demos; playbook evolution grows durable rules.
 
 Choose task design carefully:
 
@@ -320,6 +321,13 @@ Decision rules:
 
 ## Eval Semantics
 
+- MCP/UCP evaluation defaults to replay or sandbox mode. A live client is rejected unless `mcpEvaluation: 'live'` is explicit.
+- Use `ax-mcp` for recording/replay transport setup and MCP side-effect policy.
+- Use `AxMCPRecordingTransport` to capture a real session once and `AxMCPReplayTransport` for deterministic optimization/evaluation.
+- Replay normalized MCP notifications and task transitions through
+  `AxEventRuntime`; do not leave a live subscription active in a default
+  optimization run.
+- Action traces include qualified MCP/UCP operations, approvals, task transitions, raw protocol errors, and business outcomes for judges and deterministic metrics.
 - `agent.optimize(...)` runs each evaluation rollout from a clean continuation state.
 - Saved runtime state from `getState()` and `setState(...)` is not used during eval rollouts.
 - During optimize/eval, `askClarification(...)` is treated as a scored evaluation outcome instead of going through the responder.

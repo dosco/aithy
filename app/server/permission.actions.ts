@@ -11,7 +11,7 @@ import {
 } from "./action-schemas";
 
 export const respondSystemPermission = createServerFn({ method: "POST" })
-  .inputValidator(permissionResponseInput)
+  .validator(permissionResponseInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -24,7 +24,7 @@ export const respondSystemPermission = createServerFn({ method: "POST" })
   });
 
 export const createPermissionRule = createServerFn({ method: "POST" })
-  .inputValidator(permissionRuleCreateInput)
+  .validator(permissionRuleCreateInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -54,7 +54,7 @@ function normalizeMatchValue(kind: string, value: string | null): string | null 
 }
 
 export const deletePermissionRule = createServerFn({ method: "POST" })
-  .inputValidator(permissionRuleDeleteInput)
+  .validator(permissionRuleDeleteInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();

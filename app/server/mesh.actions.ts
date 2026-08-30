@@ -21,7 +21,7 @@ export const openMeshPairingWindow = createServerFn({ method: "POST" })
   });
 
 export const pairMeshPeer = createServerFn({ method: "POST" })
-  .inputValidator(meshPairInput)
+  .validator(meshPairInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -30,7 +30,7 @@ export const pairMeshPeer = createServerFn({ method: "POST" })
   });
 
 export const setMeshPeerTrust = createServerFn({ method: "POST" })
-  .inputValidator(meshTrustInput)
+  .validator(meshTrustInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -39,7 +39,7 @@ export const setMeshPeerTrust = createServerFn({ method: "POST" })
   });
 
 export const revokeMeshPeer = createServerFn({ method: "POST" })
-  .inputValidator(meshPeerInput)
+  .validator(meshPeerInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -48,7 +48,7 @@ export const revokeMeshPeer = createServerFn({ method: "POST" })
   });
 
 export const unpairMeshPeer = createServerFn({ method: "POST" })
-  .inputValidator(meshPeerInput)
+  .validator(meshPeerInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -57,7 +57,7 @@ export const unpairMeshPeer = createServerFn({ method: "POST" })
   });
 
 export const saveMeshSharing = createServerFn({ method: "POST" })
-  .inputValidator(meshSharingInput)
+  .validator(meshSharingInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -66,7 +66,7 @@ export const saveMeshSharing = createServerFn({ method: "POST" })
   });
 
 export const saveMeshEnabled = createServerFn({ method: "POST" })
-  .inputValidator(meshEnabledInput)
+  .validator(meshEnabledInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -75,7 +75,7 @@ export const saveMeshEnabled = createServerFn({ method: "POST" })
   });
 
 export const getMeshFamilyCatalogs = createServerFn({ method: "POST" })
-  .inputValidator(meshCatalogInput)
+  .validator(meshCatalogInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();

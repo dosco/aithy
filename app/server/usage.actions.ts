@@ -5,7 +5,7 @@ import { usageAdvisorInput, usageInput } from "./action-schemas";
 import { usageBucketDto } from "./dto";
 
 export const getUsageStats = createServerFn({ method: "GET" })
-  .inputValidator(usageInput)
+  .validator(usageInput)
   .handler(async ({ data }) => {
     const runtime = await getAithyRuntime();
     return {
@@ -15,7 +15,7 @@ export const getUsageStats = createServerFn({ method: "GET" })
   });
 
 export const getUsageAdvisor = createServerFn({ method: "GET" })
-  .inputValidator(usageAdvisorInput)
+  .validator(usageAdvisorInput)
   .handler(async ({ data }) => {
     const runtime = await getAithyRuntime();
     const records = runtime.usage.recordsSince(data.days ?? 30);

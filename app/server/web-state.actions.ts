@@ -5,7 +5,7 @@ import { sessionInput } from "./action-schemas";
 import { webStateDto } from "./dto";
 
 export const getWebState = createServerFn({ method: "GET" })
-  .inputValidator(sessionInput)
+  .validator(sessionInput)
   .handler(async ({ data }) => {
     const runtime = await getAithyRuntime();
     const activeSessionId = data.conversationId?.trim() || null;

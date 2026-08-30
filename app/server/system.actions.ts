@@ -7,7 +7,7 @@ import { confirmationInput } from "./action-schemas";
 import { webStateDto } from "./dto";
 
 export const resetSystemOptions = createServerFn({ method: "POST" })
-  .inputValidator(confirmationInput)
+  .validator(confirmationInput)
   .handler(async () => {
     assertLoopbackRequest(getRequest());
     const runtime = await resetAithyRuntimeSystem();

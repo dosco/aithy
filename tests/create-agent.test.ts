@@ -4,7 +4,7 @@ import { EventBus } from "../src/events/bus";
 import { defaultLocalInferenceSettings } from "../src/local-inference/settings";
 
 describe("createAithyAgent", () => {
-  test("constructs an Ax v23 agent with inline functions", () => {
+  test("constructs an Ax v24 agent with inline functions", () => {
     const created = createAithyAgent({
       config: {
         aiProvider: "openai",
@@ -133,13 +133,36 @@ describe("createAithyAgent", () => {
 
   test("applies a cached responder playbook after soul guidance", () => {
     const seed = createAithyAgent({ config: configFixture("disabled"), tools: [], events: new EventBus(), conversationId: "seed" });
-    const handle = seed.program.playbook!({ target: "responder", apply: true, studentAI: seed.llm, teacherAI: seed.llm } as never);
+    const updatedAt = new Date().toISOString();
+    const handle = seed.program.playbook!({
+      target: "responder",
+      apply: true,
+      studentAI: seed.llm,
+      teacherAI: seed.llm,
+      initialPlaybook: {
+        version: 1,
+        sections: {
+          response: [{
+            id: "keep-responses-concise",
+            section: "response",
+            content: "Keep responses concise.",
+            helpfulCount: 1,
+            harmfulCount: 0,
+            createdAt: updatedAt,
+            updatedAt,
+          }],
+        },
+        stats: { bulletCount: 1, helpfulCount: 1, harmfulCount: 0, tokenEstimate: 4 },
+        updatedAt,
+      },
+    } as never);
     const created = createAithyAgent({ config: configFixture("disabled"), tools: [], events: new EventBus(), conversationId: "probe",
       soul: { name: "Aithy", description: "Helper", coreNature: "", communicationStyle: "", behaviour: "", negativeBehavior: "",
         responderDescription: "Soul guidance marker.", updatedAt: new Date().toISOString() }, responderPlaybook: handle.getState() });
     const description = responderDescription(created.program);
     expect(description).toContain("Soul guidance marker.");
     expect(description).toContain("## Context Playbook");
+    expect(description).toContain("Keep responses concise.");
     expect(description.indexOf("Soul guidance marker.")).toBeLessThan(description.indexOf("## Context Playbook"));
   });
 });

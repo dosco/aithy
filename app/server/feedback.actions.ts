@@ -9,7 +9,7 @@ import { ResponderPlaybookStore } from "../../src/playbook/store";
 const feedbackInput = z.object({ sessionId: z.string().min(1).max(200), messageId: z.number().int().positive(),
   verdict: z.enum(["up", "down"]), comment: z.string().max(4_000).optional().nullable() });
 
-export const saveChatFeedback = createServerFn({ method: "POST" }).inputValidator(feedbackInput).handler(async ({ data }) => {
+export const saveChatFeedback = createServerFn({ method: "POST" }).validator(feedbackInput).handler(async ({ data }) => {
   assertLoopbackRequest(getRequest());
   const runtime = await getAithyRuntime();
   const store = new SqliteFeedbackStore(runtime.config.stateDbPath);

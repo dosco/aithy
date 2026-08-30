@@ -34,7 +34,7 @@ const profileInput = z.object({
   token: z.string().max(8_000).optional(), clearToken: z.boolean().optional(),
 });
 
-export const saveMcpServer = createServerFn({ method: "POST" }).inputValidator(profileInput).handler(async ({ data }) => {
+export const saveMcpServer = createServerFn({ method: "POST" }).validator(profileInput).handler(async ({ data }) => {
   assertLoopbackRequest(getRequest());
   const runtime = await getAithyRuntime();
   const id = assertMcpServerId(data.id);
@@ -61,7 +61,7 @@ export const saveMcpServer = createServerFn({ method: "POST" }).inputValidator(p
 });
 
 export const removeMcpServer = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/) }))
+  .validator(z.object({ id: z.string().regex(/^[a-z0-9-]{1,32}$/) }))
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -78,7 +78,7 @@ export const removeMcpServer = createServerFn({ method: "POST" })
     }
   });
 
-export const testMcpServer = createServerFn({ method: "POST" }).inputValidator(profileInput).handler(async ({ data }) => {
+export const testMcpServer = createServerFn({ method: "POST" }).validator(profileInput).handler(async ({ data }) => {
   assertLoopbackRequest(getRequest());
   const runtime = await getAithyRuntime();
   const id = assertMcpServerId(data.id);
@@ -96,7 +96,7 @@ export const testMcpServer = createServerFn({ method: "POST" }).inputValidator(p
 });
 
 export const configureAithyMcpServer = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ enabled: z.boolean(), port: z.number().int().min(1024).max(65_535) }))
+  .validator(z.object({ enabled: z.boolean(), port: z.number().int().min(1024).max(65_535) }))
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();

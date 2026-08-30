@@ -19,7 +19,7 @@ import {
 import { tryHandleSkillPromotionReply } from "./skill-promotion-replies";
 
 export const sendChatMessage = createServerFn({ method: "POST" })
-  .inputValidator(sendInput)
+  .validator(sendInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -102,7 +102,7 @@ export const sendChatMessage = createServerFn({ method: "POST" })
   });
 
 export const stopChatMessage = createServerFn({ method: "POST" })
-  .inputValidator(conversationIdInput)
+  .validator(conversationIdInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();

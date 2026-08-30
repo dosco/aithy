@@ -6,7 +6,7 @@ import { soulInput } from "./action-schemas";
 import { soulDto } from "./dto";
 
 export const saveSoul = createServerFn({ method: "POST" })
-  .inputValidator(soulInput)
+  .validator(soulInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();

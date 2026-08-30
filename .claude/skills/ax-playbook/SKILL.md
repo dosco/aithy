@@ -1,7 +1,7 @@
 ---
 name: ax-playbook
 description: This skill helps an LLM generate correct playbook code using @ax-llm/ax. Use when the user asks about playbook(), AxPlaybook, context playbooks, evolving context, ACE / Agentic Context Engineering, agent.playbook(), or growing/applying task knowledge offline and online with evolve() and update().
-version: "23.0.0"
+version: "24.0.15"
 ---
 
 # Playbook Codegen Rules (@ax-llm/ax)
@@ -29,7 +29,10 @@ Use this skill to generate context-playbook code. A playbook grows an evolving b
 - `applyTo()` injects a `## Context Playbook` block into the program description; calling it repeatedly recomposes from the original base (no stacking).
 - Keep the offline `metric` deterministic and cheap, like a GEPA metric.
 - A playbook is plain JSON. Persist `pb.toJSON()` and `load(...)` it into a fresh program for production.
-- This is a TypeScript feature; do not suggest it for the generated (Python/Go/Rust/Java/C++) packages yet.
+- The playbook engine, construction-time agent attachment, failure harvesting,
+  and verified agent evolution are available in TypeScript and the generated
+  Python, Java, C++, Go, and Rust packages. Use each package's native casing and
+  callback types.
 
 ## Offline Pattern (evolve)
 
@@ -68,13 +71,40 @@ playbook(prodProgram, { studentAI }).load(snapshot).applyTo(prodProgram);
 
 ## Agents
 
+`a.playbook({ target })` returns an agent-aware `AxAgentPlaybook` (the stage `AxPlaybook` handle plus an agent-level `evolve`). The one playbook the agent renders into its prompt grows three ways:
+
+- Continuous (trust): the construction-time `playbook` option (see `ax-agent`) harvests each run's failures automatically — no dataset.
+- On-demand (trust): `apb.update({ example, prediction, feedback })`.
+- Batch verified (proof): `apb.evolve(dataset, options)` runs the full agent over a task set, mines failure clusters, and proposes one playbook bullet per weakness; with `verify` (default on) it keeps a bullet only if held-in improves AND the `validation` held-out set does not regress, else exact rollback. `verify: false` = trust-batch. Bullets-only.
+
 ```typescript
 const a = agent('ticket:string -> reply:string', { ai });
-const apb = a.playbook({ target: 'actor' }); // 'actor' (default) or 'responder'
-await apb.update({ example, prediction, feedback }); // injected into the live stage prompt
+const apb = a.playbook({ target: 'actor' }); // agent-aware handle; 'actor' (default) or 'responder'
+await apb.update({ example, prediction, feedback }); // online: injected into the live stage prompt
+const result = await apb.evolve(
+  { train, validation }, // AxAgentEvalDataset
+  { metric, runsPerTask: 2 }, // verify:true by default
+);
 ```
 
-Offline `evolve(...)` on an agent stage scores that stage in isolation; for full-pipeline tuning of agent instructions and demos use `agent.optimize(...)` (GEPA).
+The agent-level `evolve(dataset, options)` is distinct from the program-level `pb.evolve(examples, metric)` above: it takes an `AxAgentEvalDataset` plus options, runs the whole pipeline, and returns baseline/final held-in & held-out with per-bullet outcomes (no `{ bestScore }`). For full-pipeline tuning of agent instructions and demos (not the playbook) use `agent.optimize(...)` (GEPA).
+
+Generated packages expose that same agent-bound loop with language-shaped APIs:
+
+| Language | Agent-bound evolve call |
+|---|---|
+| Python | `agent.playbook().evolve(dataset, options)` |
+| Java | `agent.playbook(null).evolve(dataset, options)` |
+| C++ | `agent.get_playbook()->evolve(dataset, options)` |
+| Go | `agent.GetPlaybook().EvolveAgent(ctx, dataset, options)` |
+| Rust | `playbook.evolve_agent(&mut agent, client, dataset, options)` |
+
+All five generated packages thread structured `failureSignals` through agent
+evaluation predictions. The default verify gate accepts a proposed bullet only
+when held-in score improves and held-out score stays within `epsilon`; rejection
+restores the exact prior snapshot. Scoring is host-shaped: TypeScript uses its
+metric, Python/Java/Go can accept a metric callback, and all generated ports can
+use task `score`/`scores` values plus the agent evaluation result.
 
 ## Playbook vs optimize()
 

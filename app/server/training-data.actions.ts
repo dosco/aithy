@@ -14,7 +14,7 @@ export const getTrainingDataStats = createServerFn({ method: "GET" })
   });
 
 export const exportTrainingData = createServerFn({ method: "POST" })
-  .inputValidator(trainingDataExportInput)
+  .validator(trainingDataExportInput)
   .handler(async ({ data }) => {
     const runtime = await getAithyRuntime();
     const content = data.format === "sft"
@@ -41,7 +41,7 @@ export const exportTrainingData = createServerFn({ method: "POST" })
   });
 
 export const clearTrainingData = createServerFn({ method: "POST" })
-  .inputValidator(trainingDataClearInput)
+  .validator(trainingDataClearInput)
   .handler(async () => {
     const runtime = await getAithyRuntime();
     const deleted = runtime.trainingData.resetAll();

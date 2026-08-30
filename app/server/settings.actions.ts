@@ -43,7 +43,7 @@ import { normalizeMcpProfile } from "../../src/mcp/profile";
 import { setupGateStateDto } from "./web-state.dto";
 
 export const saveSettings = createServerFn({ method: "POST" })
-  .inputValidator(settingsInput)
+  .validator(settingsInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -152,7 +152,7 @@ export const saveSettings = createServerFn({ method: "POST" })
   });
 
 export const testParallelSearch = createServerFn({ method: "POST" })
-  .inputValidator(parallelSearchTestInput)
+  .validator(parallelSearchTestInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -185,7 +185,7 @@ export const startGrokSubscriptionSignIn = createServerFn({ method: "POST" })
   });
 
 export const pollGrokSubscriptionSignIn = createServerFn({ method: "POST" })
-  .inputValidator(grokSubscriptionLoginPollInput)
+  .validator(grokSubscriptionLoginPollInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -212,7 +212,7 @@ export const logoutGrokSubscriptionSignIn = createServerFn({ method: "POST" })
   });
 
 export const saveLocalInferenceSettings = createServerFn({ method: "POST" })
-  .inputValidator(localInferenceSettingsInput)
+  .validator(localInferenceSettingsInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();

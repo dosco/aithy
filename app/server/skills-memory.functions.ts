@@ -31,7 +31,7 @@ const skillUpsertInput = z.object({
 });
 
 export const upsertSkill = createServerFn({ method: "POST" })
-  .inputValidator(skillUpsertInput)
+  .validator(skillUpsertInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -71,7 +71,7 @@ const skillBundleUploadInput = z.object({
 });
 
 export const previewSkillBundleUpload = createServerFn({ method: "POST" })
-  .inputValidator(skillBundleUploadInput.pick({ files: true }))
+  .validator(skillBundleUploadInput.pick({ files: true }))
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -86,7 +86,7 @@ export const previewSkillBundleUpload = createServerFn({ method: "POST" })
   });
 
 export const saveSkillBundleUpload = createServerFn({ method: "POST" })
-  .inputValidator(skillBundleUploadInput)
+  .validator(skillBundleUploadInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -121,7 +121,7 @@ const skillDeleteInput = z.object({ id: z.string().min(1) });
 const builtInSourceInput = z.object({ sourceId: z.string().min(1).max(160) });
 
 export const deleteSkill = createServerFn({ method: "POST" })
-  .inputValidator(skillDeleteInput)
+  .validator(skillDeleteInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -134,7 +134,7 @@ export const deleteSkill = createServerFn({ method: "POST" })
   });
 
 export const duplicateBuiltInSkill = createServerFn({ method: "POST" })
-  .inputValidator(builtInSourceInput)
+  .validator(builtInSourceInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -147,21 +147,21 @@ export const duplicateBuiltInSkill = createServerFn({ method: "POST" })
   });
 
 export const setBuiltInSkillDisabled = createServerFn({ method: "POST" })
-  .inputValidator(builtInSourceInput)
+  .validator(builtInSourceInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     return { skill: skillDto((await getAithyRuntime()).skills.setBuiltInSkillDisabled(data.sourceId)) };
   });
 
 export const setBuiltInSkillEnabled = createServerFn({ method: "POST" })
-  .inputValidator(builtInSourceInput)
+  .validator(builtInSourceInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     return { skill: skillDto((await getAithyRuntime()).skills.setBuiltInSkillEnabled(data.sourceId)) };
   });
 
 export const runSkillEval = createServerFn({ method: "POST" })
-  .inputValidator(z.object({ skillId: z.string().min(1).max(120) }))
+  .validator(z.object({ skillId: z.string().min(1).max(120) }))
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -181,7 +181,7 @@ export const runSkillEval = createServerFn({ method: "POST" })
   });
 
 export const listSkillEvalRuns = createServerFn({ method: "GET" })
-  .inputValidator(z.object({ skillId: z.string().min(1).max(120) }))
+  .validator(z.object({ skillId: z.string().min(1).max(120) }))
   .handler(async ({ data }) => {
     const runtime = await getAithyRuntime();
     const store = new SqliteSkillEvalStore(runtime.config.stateDbPath);
@@ -197,7 +197,7 @@ const skillsPageInput = z.object({
 });
 
 export const listSkillsPaged = createServerFn({ method: "GET" })
-  .inputValidator(skillsPageInput)
+  .validator(skillsPageInput)
   .handler(async ({ data }) => {
     const runtime = await getAithyRuntime();
     const limit = data.limit ?? SKILLS_PAGE_SIZE;
@@ -238,7 +238,7 @@ const memoryUpsertInput = z.object({
 });
 
 export const upsertMemory = createServerFn({ method: "POST" })
-  .inputValidator(memoryUpsertInput)
+  .validator(memoryUpsertInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -270,7 +270,7 @@ export const upsertMemory = createServerFn({ method: "POST" })
 const memoryDeleteInput = z.object({ id: z.string().min(1) });
 
 export const deleteMemory = createServerFn({ method: "POST" })
-  .inputValidator(memoryDeleteInput)
+  .validator(memoryDeleteInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -299,7 +299,7 @@ const memoriesPageInput = z.object({
 });
 
 export const listMemoriesPaged = createServerFn({ method: "GET" })
-  .inputValidator(memoriesPageInput)
+  .validator(memoriesPageInput)
   .handler(async ({ data }) => {
     const runtime = await getAithyRuntime();
     const limit = data.limit ?? MEMORIES_PAGE_SIZE;

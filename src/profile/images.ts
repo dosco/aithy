@@ -36,7 +36,7 @@ export async function resizeProfileImage(
   assertProfileImageInput(mimeType, bytes.byteLength);
   const ImageCtor = (Bun as unknown as { Image?: BunImageConstructor }).Image;
   if (!ImageCtor) {
-    throw new Error("Profile photo processing requires Bun 1.3.14 or newer.");
+    throw new Error("Profile photo processing requires Bun 1.4.0 or newer.");
   }
   const image = new ImageCtor(bytes);
   const resized = await image

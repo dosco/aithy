@@ -6,7 +6,7 @@ import { confirmationInput } from "./action-schemas";
 import { memoryRunDto } from "./dto";
 
 export const resetMemories = createServerFn({ method: "POST" })
-  .inputValidator(confirmationInput)
+  .validator(confirmationInput)
   .handler(async () => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();

@@ -1,7 +1,7 @@
 ---
 name: ax-ai
-description: This skill helps an LLM generate correct AI provider setup and configuration code using @ax-llm/ax. Use when the user asks about ai(), providers, models, presets, embeddings, batch audio with ai.transcribe() or ai.speak(), extended thinking, context caching, or mentions OpenAI/Anthropic/Google/Azure/DeepSeek/Mistral/Cohere/Reka/Grok with @ax-llm/ax.
-version: "23.0.0"
+description: This skill helps an LLM generate correct AI provider setup and configuration code using @ax-llm/ax. Use when the user asks about ai(), providers, models, routing, adaptive balancing, presets, embeddings, batch audio with ai.transcribe() or ai.speak(), extended thinking, context caching, or mentions OpenAI/Anthropic/Google/Azure/DeepSeek/Mistral/Cohere/Reka/Grok with @ax-llm/ax.
+version: "24.0.15"
 ---
 
 # AI Provider Codegen Rules (@ax-llm/ax)
@@ -21,15 +21,61 @@ const deepseek = ai({ name: 'deepseek', apiKey: 'sk-...' });
 const mistral = ai({ name: 'mistral', apiKey: 'your-key' });
 const cohere = ai({ name: 'cohere', apiKey: 'your-key' });
 const custom = ai({
-  name: 'openai',
+  name: 'openai-compatible',
   apiKey: process.env.PROVIDER_API_KEY,
   apiURL: 'https://example.com/v1',
   config: { model: 'provider/model-name' },
 });
 const reka = ai({ name: 'reka', apiKey: 'your-key' });
 const grok = ai({ name: 'grok', apiKey: 'your-key' });
-const compatible = ai({ name: 'openai', apiKey: 'key', apiURL: 'https://api.example.com/v1', config: { model: 'provider/model' } });
 ```
+
+`name` selects a deployment profile; `config.model` selects a model inside that
+deployment. Never infer provider behavior from a model ID. For example,
+`name: 'together'` with a `deepseek-ai/...` model uses Together's profile rules,
+not DeepSeek's native request shape.
+
+Use `axAIProfiles()` to discover the complete named catalog and
+`axGetAIProfile(name)` to inspect endpoint requirements, authentication,
+operations, capabilities, model rules, sources, and review dates. Use
+`name: 'openai-compatible'` plus `apiURL` for an unlisted custom endpoint;
+unknown names are errors.
+
+Profile-only branded classes were removed in the major-version migration. Use
+`ai({ name: ... })` for Azure OpenAI, Cohere, DeepSeek, DeepSeek Responses,
+Mistral, Reka, and Grok. Retained low-level classes represent genuine
+transports/runtimes only; legacy model enum and catalog exports remain usable.
+
+## Renewable Credentials
+
+Use `credentialProvider` for expiring bearer tokens. The callback runs for each
+request attempt and receives `{ profile, operation, method, url }`. Fresh
+headers override static authentication headers.
+
+```typescript
+const vertex = ai({
+  name: 'vertex-ai',
+  apiURL: process.env.VERTEX_AI_API_URL!,
+  config: { model: 'google/gemma-4-26b-a4b-it-maas' },
+  credentialProvider: async ({ operation, url }) => ({
+    Authorization: `Bearer ${await tokenSource.fresh({ operation, url })}`,
+  }),
+});
+```
+
+- Authentication-required profiles accept `apiKey` or `credentialProvider`.
+- The hook covers chat, stream, embeddings, Responses, transcription, speech,
+  and retry attempts. A hook error stops before transport.
+- Do not expect an automatic replay after a completed 401 or 403; generation
+  requests are not safely idempotent.
+- Keep ADC or cloud-SDK dependencies in the host. Ax core only owns the neutral
+  callback contract.
+
+Vertex capability rules are model-aware. Documented Gemini MaaS IDs prefer
+native schema. The exact `google/gemma-4-26b-a4b-it-maas` rule prefers
+`json_object`, excludes native schema, defaults thinking to `max`, writes
+`chat_template_kwargs.enable_thinking`, and extracts/replays
+`reasoning_content`. Unknown Vertex models remain conservative.
 
 <!-- axir-nonportable:start webllm -->
 WebLLM is browser-only and requires a host-created WebLLM engine. The host
@@ -63,8 +109,8 @@ const gemini = ai({
   apiKey: process.env.GOOGLE_APIKEY!,
   config: { model: 'simple' },
   models: [
-    { key: 'tiny', model: AxAIGoogleGeminiModel.Gemini31FlashLite, description: 'Fast + cheap', config: { maxTokens: 1024, temperature: 0.3 } },
-    { key: 'simple', model: AxAIGoogleGeminiModel.Gemini35Flash, description: 'Balanced', config: { temperature: 0.6 } },
+    { key: 'tiny', model: AxAIGoogleGeminiModel.Gemini35FlashLite, description: 'Fast + cheap', config: { maxTokens: 1024 } },
+    { key: 'simple', model: AxAIGoogleGeminiModel.Gemini37Flash, description: 'Balanced' },
   ],
 });
 
@@ -89,6 +135,97 @@ Use `axGetSupportedAIModels()` to build provider/model selectors before creating
 Filter with `{ type: 'all' | 'text' | 'embeddings' | 'code' | 'audio' }` or an array of those values. The `'text'` filter includes code-capable models; use `'code'` to show only code-first models.
 
 Dynamic providers such as Azure OpenAI deployments are marked with `isDynamic: true` and may have an empty or static-limited model list.
+
+## Portable Inference Service Tiers
+
+Use the shared `serviceTier` option with `auto`, `standard`, `flex`, or
+`priority`. Set it per call, as an instance option, or on a model-key preset;
+the narrower setting wins. `auto` delegates to the provider and is omitted
+when that provider has no explicit auto value. Ax rejects unsupported explicit
+tiers before transport.
+
+```typescript
+import { ai, AxAIGoogleGeminiModel } from '@ax-llm/ax';
+
+const gemini = ai({
+  name: 'google-gemini',
+  apiKey: process.env.GOOGLE_APIKEY!,
+  config: { model: AxAIGoogleGeminiModel.Gemini35Flash },
+});
+
+const response = await gemini.chat(
+  { chatPrompt: [{ role: 'user', content: 'Run this when capacity is free.' }] },
+  { serviceTier: 'flex' },
+);
+```
+
+Inspect `ai.getFeatures(model).serviceTiers` for the verified tiers on a named
+profile or exact model. Named OpenAI, Gemini, Azure, Bedrock, Mistral, Groq,
+OpenRouter, DeepInfra, Cerebras, Grok, Databricks, and Fireworks profiles map
+the portable value to their provider dialect. Exact `modelInfo.supported`
+metadata can opt a conservative custom deployment into a tier.
+
+The applied provider value is normalized into
+`response.modelUsage.tokens.serviceTier`; aliases such as `default`,
+`on_demand`, and `performance` become `standard` or `priority`. Add
+`serviceTierPricing.flex` or `.priority` to `AxModelInfo` when tier pricing
+differs, and cost estimates will use the tier that actually served the request.
+Gemini service tiers remain GenerateContent-only: Vertex AI and Gemini Live
+reject explicit tiers. Anthropic `speed: 'fast'` remains a separate API.
+
+## Routing And Balancing
+
+Choose the primitive by responsibility:
+
+- `AxMultiServiceRouter` combines model lists and dispatches the model key the caller already selected. It does not select a model.
+- `AxProviderRouter` selects a provider by request capability and may degrade unsupported media through configured processors. When the selected provider supports images natively, each image remains an image object with its payload, MIME type, detail level, cache and optimization hints, alt text, and ordering with surrounding text intact.
+- `AxBalancer` without a strategy orders equivalent services once with a comparator, retries transient provider failures, and fails over in that order.
+- `AxBalancer` with `strategy.type: 'adaptive'` selects among services exposing the same logical model aliases using learned provider reliability, successful latency, and estimated cost.
+
+Adaptive balancing is operational routing, not semantic prompt-to-model routing. Every provider model behind an alias must be an acceptable substitute for that application. Keep quality evaluation and content-aware model selection outside the balancer.
+
+```typescript
+import { AxBalancer, AxInMemoryBalancerStatsStore } from '@ax-llm/ax';
+
+const statsStore = new AxInMemoryBalancerStatsStore();
+const routeKeys = new Map<string, string>([
+  [openai.getId(), 'openai-primary'],
+  [anthropic.getId(), 'anthropic-primary'],
+]);
+
+const llm = AxBalancer.create([openai, anthropic] as const, {
+  strategy: {
+    type: 'adaptive',
+    deadlineMs: 6_000,
+    badOutcomeCost: 0.02,
+    expectedTokens: { promptTokens: 1_200, completionTokens: 300 },
+    namespace: 'support-v1',
+    routeKey: (service) => {
+      const key = routeKeys.get(service.getId());
+      if (!key) throw new Error('Missing stable route key.');
+      return key;
+    },
+    slice: ({ options }) =>
+      options?.customLabels?.workflow ?? 'default-workflow',
+    statsStore,
+    onRoutingEvent: (event) => telemetry.emit('llm.route', event),
+  },
+});
+```
+
+The score is estimated request cost plus `badOutcomeCost` times the probability of provider failure or missing `deadlineMs`. `badOutcomeCost` and estimated cost must use the same currency or unit. By default, cost uses `expectedTokens`, the route's concrete model mapping, and `getEstimatedCost()`; missing catalog pricing contributes zero, while `estimateCost` can supply application pricing. Failures use an EWMA; successful latency is modeled in log space with a Normal-Inverse-Gamma posterior, and Thompson sampling supplies the deadline risk. Capability filtering still runs before ranking.
+
+Rules:
+
+- Reuse the in-memory store across balancers in one process. For multiple processes, implement `AxBalancerStatsStore` with Redis or an application database; its `observe()` operation must be atomic.
+- A custom store requires stable, unique `routeKey` values. Stats are partitioned by `namespace`, `slice`, logical model, and route.
+- `statsStore` is decision state. `onRoutingEvent` is best-effort telemetry and must not be used as the authoritative routing state.
+- Routing events contain scores, route metadata, and sanitized failure categories, never prompts, responses, or raw provider errors.
+- Adaptive mode attempts each candidate once. Provider-client retries remain controlled by `AxAIServiceOptions.retry`.
+- Streaming can fail over before the first emitted chunk. A mid-stream transient failure is learned but cannot be replayed after partial output; caller cancellation is not recorded.
+- Adaptive selection applies to chat. Embedding, transcription, and speech keep existing balancer behavior.
+
+See the [adaptive balancer example](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/typescript/generation/adaptive-balancer.ts) for complete provider setup.
 
 ## Chat
 
@@ -140,22 +277,65 @@ Use `axGlobals` when the app wants one live default for AI requests, generator r
 
 ```typescript
 import { ai, axGlobals, axCreateDefaultColorLogger } from '@ax-llm/ax';
-import { trace } from '@opentelemetry/api';
+import { metrics, trace } from '@opentelemetry/api';
 
+axGlobals.rateLimiter = async (next, info) => next();
 axGlobals.tracer = trace.getTracer('my-app');
+axGlobals.meter = metrics.getMeter('my-app');
 axGlobals.debug = true;
 axGlobals.logger = axCreateDefaultColorLogger();
 axGlobals.customLabels = { service: 'api' };
+axGlobals.onUsage = (event) => usageQueue.enqueue(event);
 
 const llm = ai({ name: 'openai', apiKey: process.env.OPENAI_APIKEY! });
 ```
 
 Rules:
 
-- `axGlobals.tracer`, `meter`, `logger`, `debug`, `abortSignal`, and `customLabels` are live runtime defaults; future calls read the current value even if the AI instance already exists.
+- `axGlobals.rateLimiter`, `tracer`, `meter`, `logger`, `debug`, `abortSignal`, and `customLabels` are live runtime defaults; each operation snapshots them at its start, even if the AI instance already exists.
 - Precedence is: per-call options, then explicit AI/service options, then current `axGlobals`, then built-in defaults.
+- The limiter receives `next` plus operation, provider, model, streaming state, and previous service usage. It wraps chat and embedding provider execution, including streaming and retries; its errors propagate. It may delay, reject, skip, or invoke `next` multiple times.
+- Tracer, meter, and usage-observer failures are fail-open. Limiter failures are fail-closed.
+- Runtime-hook telemetry contains metadata and usage only, never prompts, outputs, tool arguments, or tool results.
+- External meter instruments are independent of balancer-local `getMetrics()` snapshots. Adapt `AxMeter` to OpenTelemetry at the application boundary; generated packages do not require an OpenTelemetry dependency.
 - `customLabels` merge from globals to service to call options; later sources override earlier keys.
 - `abortSignal` values are merged, so either a global shutdown signal or a local request signal can cancel the request.
+- `axGlobals.onUsage` receives one immutable normalized event for each completed chat or embedding call that reports token usage. A fully consumed stream emits once.
+- Usage observers are best-effort and fail-open. Ax does not await them; synchronously enqueue events and persist or aggregate them out of band.
+
+Clear process-wide hooks during shutdown or test teardown:
+
+```typescript
+axGlobals.rateLimiter = undefined;
+axGlobals.tracer = undefined;
+axGlobals.meter = undefined;
+```
+
+Use `usageContext` for multi-tenant and request attribution:
+
+```typescript
+const llm = ai({
+  name: 'openai',
+  apiKey: process.env.OPENAI_APIKEY!,
+  options: {
+    usageContext: {
+      tenantId: 'tenant-42',
+      feature: 'support-chat',
+      attributes: { environment: 'production' },
+    },
+  },
+});
+
+await llm.chat(request, {
+  usageContext: {
+    userId: user.id,
+    requestId: requestId,
+    runId: runId,
+  },
+});
+```
+
+Per-call context overrides service defaults, while `attributes` are shallow-merged. Events include normalized tokens, provider/model, available session and remote IDs, and a streaming flag. They do not estimate currency cost; calculate that downstream against a versioned pricing table.
 
 ## DeepSeek Notes
 
@@ -170,16 +350,49 @@ const deepseek = ai({
 ```
 
 DeepSeek's current API models are `deepseek-v4-flash` and `deepseek-v4-pro`.
-The deprecated `deepseek-chat` and `deepseek-reasoner` aliases are retained for
-compatibility until DeepSeek removes them on 2026-07-24.
+Legacy model enum/catalog values remain available for source compatibility, but
+profile rules are applied only to model IDs verified for the selected deployment.
 
-DeepSeek V4 supports thinking mode. Ax sends `thinking: { type: "disabled" }`
-by default to preserve non-thinking behavior, and enables it when
-`thinkingTokenBudget` is set. Ax maps lower budget levels to DeepSeek's `high`
-effort and maps `highest` to `max`. DeepSeek V4 thinking models support tools,
-but reject the `tool_choice` request parameter, so Ax omits forced/auto tool
-choice for `deepseek-v4-pro`, `deepseek-v4-flash`, and `deepseek-reasoner`
-while still sending tool definitions.
+DeepSeek V4 supports thinking mode. When `thinkingTokenBudget` is omitted, Ax
+selects its logical `max` level and sends `thinking: { type: "enabled" }` with
+`reasoning_effort: "max"`. Set `thinkingTokenBudget: "none"` explicitly to
+disable it. DeepSeek's API exposes `low`, `medium`, `high`, and `max`:
+Ax maps `minimal` and `low` to `low`, preserves `medium`, maps `high` to `high`,
+and maps `highest` to `max`. DeepSeek V4
+thinking models support tools, but reject the `tool_choice` request parameter,
+so Ax omits auto and Ax-generated `__axOutput` tool choices for `deepseek-v4-pro`,
+`deepseek-v4-flash`, and `deepseek-reasoner` while still sending tool
+definitions. An explicitly forced caller tool choice fails before the request.
+DeepSeek does not support native JSON
+schema structured outputs. Ax therefore uses validated `json_object` for a
+single required `string` or `code` output, including an AxAgent actor's
+`javascriptCode` field, without exposing a provider tool. Richer structured
+outputs use the synthetic `__axOutput` function when function calling is
+available, or validated `json_object` when it is not.
+
+DeepSeek Chat returns thinking traces as `reasoning_content`. During a tool
+loop, Ax preserves that field on the assistant tool-call message and sends it
+back on the following request together with non-null `content` and the original
+tool calls. This compatibility mode is declared by the DeepSeek deployment profile;
+the official OpenAI Chat adapter does not emit or expose `reasoning_content`.
+
+The same logical default is declared independently for verified DeepSeek V4
+rules in the Together, Fireworks, and OpenRouter profiles, then mapped to each
+deployment's own request dialect. A custom `openai-compatible` endpoint never
+inherits it from a DeepSeek-looking model ID.
+
+Other verified deployment rules follow the same policy. Grok 4.6 maps logical
+`max` to `xhigh`, while Grok 4.5 and 4.3 map it to `high`. Groq GPT-OSS and
+Cerebras GPT-OSS map it to `high`; Groq Qwen 3.6 maps it to its documented
+reasoning-enabled `default`; Cerebras Gemma 4 and DeepInfra DeepSeek R1 map it
+to `high`. An explicit `none` is sent only for model/deployment combinations
+that document disabling reasoning. Grok 4.6/4.5 and GPT-OSS on Groq or Cerebras
+reject `none` before network I/O because those APIs do not support disabling
+reasoning for those models.
+
+Hugging Face Router remains conservative: routing policies such as `:fastest`
+may choose a different inference provider without changing the base model ID,
+so Ax does not attach one provider's reasoning contract to that dynamic route.
 
 ## Extended Thinking
 
@@ -202,20 +415,38 @@ console.log(res.results[0]?.content);
 
 ### Budget Levels
 
-| Level | Anthropic (tokens) | Gemini (tokens) |
-|---|---|---|
-| `'none'` | disabled | minimal |
-| `'minimal'` | 1,024 | 200 |
-| `'low'` | 5,000 | 800 |
-| `'medium'` | 10,000 | 5,000 |
-| `'high'` | 20,000 | 10,000 |
-| `'highest'` | 32,000 | 24,500 |
+| Level | Anthropic (tokens) | Gemini 2.5 (tokens) | Gemini 3 level |
+|---|---|---|---|
+| `'none'` | disabled | 0 on Flash/Lite; minimum on Pro | lowest supported, thoughts hidden |
+| `'minimal'` | 1,024 | 200 | `minimal`, or `low` when `minimal` is unsupported |
+| `'low'` | 5,000 | 800 | `low` |
+| `'medium'` | 10,000 | 5,000 | `medium`, or the nearest image/legacy level |
+| `'high'` | 20,000 | 10,000 | `high` |
+| `'highest'` | 32,000 | 24,500 | `high` |
+
+Gemini 3 uses `thinkingLevel`; Gemini 2.5 and older models use numeric
+`thinkingBudget`. Ax selects the wire field after resolving a named model
+preset to its real model. Gemini 3.7 Flash and Gemini 3.1 Pro clamp `minimal`
+to `low`; image and legacy Gemini 3 models clamp to their documented two-level
+sets. Numeric Gemini 3 budgets fail locally. `none` always hides returned
+thoughts, even when the model must still perform its minimum amount of thinking.
+
+The native `google-gemini` deployment profile and its aliases use these Gemini
+rules, including when configured for Vertex with `projectId` and `region`. The
+separate OpenAI-compatible `vertex-ai` profile keeps its own request rules and
+does not inherit native Gemini fields from a Gemini-looking model ID.
+
+For GPT-5.6, these map to `none`, `low`, `low`, `medium`, `high`, and a top rung
+that depends on the API surface: `xhigh` on Chat Completions, which rejects
+`max`, and `max` on the Responses API, which is the only place it is served.
+Earlier OpenAI models retain their existing mapping.
 
 ### Anthropic Model-Specific Behavior
 
-- Opus 4.8 and 4.7: adaptive thinking, effort levels including `'xhigh'`,
-  no manual `budget_tokens`, and no `temperature` / `topP` / `topK`.
-- Opus 4.6: adaptive thinking, effort levels
+- Opus 4.8, 4.7, and 4.6 plus Sonnet 5: adaptive thinking, no manual
+  `budget_tokens`, and no `temperature` / `topP` / `topK`. When thoughts are
+  requested, Ax asks Anthropic for summarized display; when they are hidden,
+  Ax explicitly requests `display: 'omitted'`.
 - Opus 4.5: budget_tokens + effort levels (capped at `'high'`)
 - Other thinking models: budget tokens only
 
@@ -269,6 +500,25 @@ const { embeddings } = await llm.embed({
 });
 ```
 
+## Vertex AI Locations
+
+When `projectId` and `region` are set for Google Gemini or Anthropic on Vertex
+AI, Ax selects the service hostname from the location automatically:
+
+- `global` uses `aiplatform.googleapis.com`
+- `us` and `eu` use the multi-region `.rep.googleapis.com` endpoints
+- regional locations such as `us-central1` use
+  `{region}-aiplatform.googleapis.com`
+
+Pass the canonical lower-case Vertex location ID. Ax preserves the supplied
+value and does not normalize or validate it.
+
+The generated Python, Java, C++, Go, and Rust clients accept the same
+`projectId` / `project_id`, `region`, and optional `endpointId` / `endpoint_id`
+options. In generated clients, `apiKey` / `api_key` is a caller-supplied bearer
+access token (or `GOOGLE_VERTEX_ACCESS_TOKEN`); ADC discovery and automatic
+token refresh remain host-owned. An explicit `baseUrl` / `base_url` always wins.
+
 ## Context Caching
 
 ```typescript
@@ -286,19 +536,87 @@ Breakpoint values: `'system'` | `'after-functions'` | `'after-examples'`
 
 Provider behavior:
 
-- Google Gemini: explicit caching with cache resource ID, auto TTL refresh
+- Google Gemini: explicit caching with cache resource ID and auto TTL refresh;
+  failed refreshes recreate or fall back uncached, and rejected Ax-managed
+  caches retry once without the cache
 - Anthropic: implicit via `cache_control` markers
+- OpenAI: explicit `prompt_cache_breakpoint` markers, **GPT-5.6+ only**. Earlier
+  families cache automatically and predate the parameters, so nothing is sent to
+  them. Only the `openai` provider opts in — Azure OpenAI shares the request
+  builder and the same model enum, so a `gpt-5.6-*` deployment sends nothing,
+  and `openai-responses` does not send breakpoints either (it does report
+  `cacheCreationTokens`, which is provider-wide)
+
+### OpenAI prompt cache keys
+
+GPT-5.6+ needs a key that is stable per conversation to match reliably; it routes
+the request to the shard the cache lives on. Set `promptCacheKey`, or let it fall
+back to `sessionId`. Keep it under roughly 15 requests/minute per key.
+
+```typescript
+const result = await gen.forward(llm, values, {
+  mem,
+  promptCacheKey: `review:${pullRequestId}`,
+  contextCache: {},
+});
+```
+
+AxGen forwards these provider options after merging program defaults with the
+per-call options. Generated language packages preserve the same
+`promptCacheKey` / `sessionId` / `contextCache` forwarding contract.
+
+**Markers must not move.** A breakpoint marker is part of its content block, so
+marking only "the newest stable message" each turn un-marks what the previous
+turn marked, changing the prefix and voiding the entry that turn wrote. Ax marks
+by absolute index from the front, which is stable for an append-only
+conversation. Anything that rewrites the front of the history — dynamically added
+functions changing the system prompt, or `mem.rewindToTag` — costs a cache miss.
+
+**Keep caching on for the whole conversation.** The provider marks all or
+nothing, so a turn that omits `contextCache` sends the prompt unmarked and the
+next turn rewrites the cache from scratch.
 
 ### External Registry (serverless)
 
 ```typescript
+const accountId = getRequiredAccountId();
 const registry: AxContextCacheRegistry = {
-  get: async (key) => { /* redis.get */ },
-  set: async (key, entry) => { /* redis.set */ },
+  get: async (key) => {
+    const value = await redis.get(`context-cache:${accountId}:${key}`);
+    return value ? JSON.parse(value) : undefined;
+  },
+  set: async (key, entry) => {
+    const ttl = Math.max(1, Math.ceil((entry.expiresAt - Date.now()) / 1000));
+    await redis.set(
+      `context-cache:${accountId}:${key}`,
+      JSON.stringify(entry),
+      { ex: ttl }
+    );
+  },
 };
 ```
 
+Ax registry keys are content-based and are not account-scoped. Require a stable
+tenant/account namespace when cross-account cache sharing is unsafe; do not
+silently fall back to a global namespace.
+
 ## AWS Bedrock
+
+Use the `amazon-bedrock` profile for Bedrock's OpenAI-compatible Mantle
+endpoint. Supply the account/region-specific OpenAI base URL and a Bedrock API
+key explicitly:
+
+```typescript
+const bedrock = ai({
+  name: 'amazon-bedrock',
+  apiURL: process.env.BEDROCK_OPENAI_BASE_URL!,
+  apiKey: process.env.BEDROCK_API_KEY!,
+  config: { model: process.env.BEDROCK_MODEL_ID! },
+});
+```
+
+The separate AWS package remains available when native AWS SDK authentication,
+regional fallback, or non-Mantle Bedrock behavior is required:
 
 ```typescript
 import { AxAIBedrock, AxAIBedrockModel } from '@ax-llm/ax-ai-aws-bedrock';
@@ -342,14 +660,24 @@ const transport = axCreateMCPStdioTransport({
 const client = new AxMCPClient(transport);
 ```
 
+For server notifications, call `client.startListening({ signal, onError })` or
+attach the client through `AxMCPEventSource`. The event adapter is preferred
+for autonomous work because protocol callbacks only enqueue; explicit routes
+decide whether to observe, invalidate, resume, or wake.
+
+For signed UCP lifecycle requests, mount
+`AxUCPWebhookEventSource.ingest(request)` in application-owned HTTP hosting.
+Signature, profile, digest, freshness, and replay verification completes before
+the event runtime sees the request.
+
 ## Critical Rules
 
 - Use `ai()` factory for all providers.
-- Provider names: `'openai'`, `'openai-responses'`, `'anthropic'`, `'google-gemini'`, `'azure-openai'`, `'mistral'`, `'cohere'`, `'deepseek'`, `'reka'`, `'grok'`
-- Thinking constraints on Anthropic: Opus 4.8/4.7 omit `temperature`, `topP`,
-  and `topK`; older thinking models ignore `temperature` and `topK`, with
+- Use `axAIProfiles()` as the source of truth for names. Core names include `'openai'`, `'openai-compatible'`, `'openai-responses'`, `'anthropic'`, `'google-gemini'`, `'azure-openai'`, `'deepseek'`, `'mistral'`, `'cohere'`, `'grok'`, routers such as `'together'`, `'openrouter'`, and `'orcarouter'`, hosted inference profiles, and configurable local runtimes.
+- Thinking constraints on Anthropic: every adaptive-thinking model omits
+  `temperature`, `topP`, and `topK`; older thinking models ignore `temperature` and `topK`, with
   `topP` only sent if >= 0.95.
-- Bedrock uses `new AxAIBedrock()`, not `ai()`.
+- `ai({ name: 'amazon-bedrock', apiURL: ... })` targets Bedrock's OpenAI-compatible endpoint. `new AxAIBedrock()` remains the separate AWS-native runtime client.
 - Vercel AI SDK uses `AxAIProvider` wrapper.
 
 ## Examples
@@ -378,5 +706,5 @@ Fetch these for full working code:
 - Do not use `new AxAIOpenAI(...)` or similar class constructors for standard providers; use `ai()`.
 - Do not hardcode provider class names when `ai({ name: ... })` covers the provider.
 - Do not mix `thinkingTokenBudget` with explicit `temperature` on Anthropic thinking models.
-- Do not use `ai()` for AWS Bedrock; use `new AxAIBedrock()`.
+- Do not confuse the `amazon-bedrock` OpenAI-compatible profile with the separate AWS-native `AxAIBedrock` client.
 - Do not omit `resourceName` and `deploymentName` for Azure OpenAI.

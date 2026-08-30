@@ -90,6 +90,24 @@ describe("MicrosandboxProvider", () => {
     await provider.destroy(session.id);
   });
 
+  test("maps public and unrestricted network modes to distinct policies", async () => {
+    for (const [network, expected] of [["public", "public"], ["allow-all", "allow-all"]] as const) {
+      const root = await mkdtemp(path.join(tmpdir(), `aithy-msb-${network}-`));
+      const fakeFactory = createFakeSandboxFactory();
+      const provider = new MicrosandboxProvider({
+        image: "python:3.11-slim",
+        cpus: 1,
+        memoryMb: 512,
+        network,
+        sandboxFactory: fakeFactory as any,
+      });
+
+      const session = await provider.createSession(`${network}-bot`, path.join(root, "workspace"), []);
+      expect(fakeFactory.created[0]?.network).toBe(expected);
+      await provider.destroy(session.id);
+    }
+  });
+
   test("destroy on a parked session removes the persisted DB record", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "aithy-msb-destroyparked-"));
     const workspacePath = path.join(root, "workspace");
@@ -216,7 +234,14 @@ function createFakeSandboxFactory(options: { failImages?: Set<string> | Map<stri
         network(configure: (b: any) => any) {
           configure({
             policy(policy: unknown) {
-              config.network = (policy as { defaultEgress?: string }).defaultEgress === "deny" ? "none" : "custom";
+              const value = policy as {
+                defaultEgress?: string;
+                rules?: Array<{ action?: string; destination?: { kind?: string; group?: string } }>;
+              };
+              const allowsPublic = value.rules?.some((rule) =>
+                rule.action === "allow" && rule.destination?.kind === "group" && rule.destination.group === "public"
+              );
+              config.network = value.defaultEgress === "allow" ? "allow-all" : allowsPublic ? "public" : "none";
               return this;
             }
           });

@@ -1,7 +1,7 @@
 ---
 name: ax-agent-observability
-description: This skill helps an LLM generate correct AxAgent observability code using @ax-llm/ax. Use when the user asks about actorTurnCallback, onContextEvent, agentStatusCallback, onFunctionCall, reportSuccess, reportFailure, getChatLog(), getUsage(), resetUsage(), debug traces, progress updates, or telemetry for AxAgent runs.
-version: "23.0.0"
+description: This skill helps an LLM generate correct AxAgent observability code using @ax-llm/ax. Use when the user asks about axGlobals.onUsage, usageContext, centralized or multi-tenant usage accounting, actorTurnCallback, onContextEvent, agentStatusCallback, onFunctionCall, reportSuccess, reportFailure, getChatLog(), getUsage(), resetUsage(), debug traces, progress updates, or telemetry for AxAgent runs.
+version: "24.0.15"
 ---
 
 # AxAgent Observability Rules (@ax-llm/ax)
@@ -16,6 +16,7 @@ Use this skill when an agent needs runtime visibility, progress reporting, traci
 - Need real-time task progress emitted by actor code -> use `agentStatusCallback`.
 - Need every runtime function call before execution -> use `onFunctionCall`.
 - Need model prompts/responses after a run -> use `getChatLog()`.
+- Need centralized chat/embed usage across APIs, users, agents, and services -> use `axGlobals.onUsage` plus `usageContext`.
 - Need token usage by actor/responder -> use `getUsage()` and `resetUsage()`.
 - Need usage split by context and task stages -> use `getStagedUsage()`.
 - Need Ax program traces -> use `getTraces()`.
@@ -27,14 +28,60 @@ OpenTelemetry and debug defaults come from the shared Ax runtime surface:
 
 ```typescript
 import { axGlobals, axCreateDefaultColorLogger } from '@ax-llm/ax';
-import { trace } from '@opentelemetry/api';
+import { metrics, trace } from '@opentelemetry/api';
 
+axGlobals.rateLimiter = async (next, info) => next();
 axGlobals.tracer = trace.getTracer('agent-app');
+axGlobals.meter = metrics.getMeter('agent-app');
 axGlobals.debug = true;
 axGlobals.logger = axCreateDefaultColorLogger();
+axGlobals.onUsage = (event) => usageQueue.enqueue(event);
 ```
 
-These globals are live defaults for future AI, AxGen, AxFlow, and agent-internal model calls. Per-call or explicitly configured options still override `axGlobals`. Use AxAgent callbacks below when the caller needs structured agent-turn events rather than OpenTelemetry spans or debug logs.
+Each agent run snapshots these globals. A forward-scoped `rateLimiter`, `tracer`, or `meter` overrides agent defaults, child-generator defaults, service hooks, and globals for that invocation. Ax carries it through the distiller, executor, responder, repeated actor turns, citation repair, built-in `llmQuery`, context-map work, checkpoint/tombstone summaries, and other direct internal model calls without mutating child programs or leaking across concurrent runs.
+
+The limiter wraps model execution and its failures propagate. Tracer, meter, and usage-observer failures are fail-open. Runtime-hook spans contain metadata only—never prompts, outputs, tool arguments, or tool results—and preserve agent → internal AxGen → provider/tool parentage. External meter instruments do not replace or derive from balancer-local `getMetrics()` snapshots. Use AxAgent callbacks below when the caller needs structured agent-turn events rather than spans or metrics.
+
+## Centralized Usage Observer
+
+Use the process-wide usage observer for application accounting across many agents, API routes, tenants, and users. Keep `getUsage()` for inspecting one agent instance after a run.
+
+```typescript
+import { axGlobals } from '@ax-llm/ax';
+
+axGlobals.onUsage = (event) => {
+  usageQueue.enqueue(event); // Must return immediately.
+};
+
+await supportAgent.forward(
+  llm,
+  { query: request.body.query },
+  {
+    usageContext: {
+      tenantId: auth.tenantId,
+      userId: auth.userId,
+      requestId: request.id,
+      runId: crypto.randomUUID(),
+      feature: 'support-chat',
+      attributes: { environment: 'production' },
+    },
+  }
+);
+```
+
+Rules:
+
+- The observer receives one immutable normalized event for each completed chat or embedding call that reports provider usage. A fully consumed stream emits once; an unconsumed or cancelled stream may not emit.
+- Events include `operation`, `ai`, `model`, normalized `tokens`, `streaming`, optional `context`, and available session or remote request IDs.
+- Put stable attribution such as application or environment in AI service-level `usageContext`. Put tenant, user, request, run, and feature attribution in per-call or per-forward `usageContext`.
+- Per-call context overrides service defaults. `attributes` are shallow-merged.
+- The observer is best-effort and fail-open. Ax does not await it and ignores observer failures, so synchronously enqueue and persist or aggregate out of band.
+- The registration is process-wide. A new assignment replaces the previous observer; set `axGlobals.onUsage = undefined` during test teardown or shutdown when appropriate.
+- In multi-process or serverless deployments, send events to a shared durable pipeline. Do not treat an in-memory total as application-wide accounting.
+- Keep identifiers opaque and attributes low-cardinality. Avoid prompts, responses, secrets, and other sensitive payloads.
+- Token events do not estimate currency cost. Apply a versioned provider/model pricing table downstream.
+
+For direct AI calls and the complete event shape, also read `ax-ai`.
 
 ## Actor Turn Callback
 
@@ -257,6 +304,12 @@ onFunctionCall?: (call: {
 
 `AxAgent` exposes actor and responder sub-programs. `getChatLog()` returns the same flat `AxChatLogEntry[]` shape as `AxGen` and `AxFlow`; use each entry's optional `name` field to distinguish `distiller`, `executor`, and `responder`. `getUsage()` returns token usage split by actor/responder.
 
+`getChatLog()`, `getUsage()`, and trace export refresh the agent-level snapshot
+from the distiller, executor, and responder before returning. This remains true
+after `forward()` throws, so successful model calls made before an actor limit,
+provider error, cancellation, or responder error are still observable and are
+not silently dropped from usage accounting.
+
 ### getChatLog()
 
 Returns the full normalized chat history after any `.forward()` call. Each entry is one `ai.chat()` round-trip. Actor stages accumulate one entry per turn; the responder typically has one entry.
@@ -351,3 +404,5 @@ gen.getUsage(): AxProgramUsage[]
 - Do not let observability callback failures break the agent run; Ax swallows callback errors for telemetry hooks.
 - Do not use DSP-layer `onFunctionCall` when the user wants AxAgent runtime function calls.
 - Do not enable `showThoughts` unless the user needs provider thought diagnostics and the provider supports it.
+- Do not use `getUsage()` as the centralized source of truth across shared agents or processes.
+- Do not perform database or network work inline in `axGlobals.onUsage`; enqueue and return.

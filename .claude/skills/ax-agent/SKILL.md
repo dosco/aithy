@@ -1,7 +1,7 @@
 ---
 name: ax-agent
-description: This skill helps an LLM generate correct core AxAgent code using @ax-llm/ax. Use when the user asks about agent(), child agents, namespaced functions, discovery mode, clarification, bubbleErrors, host-side final/clarification protocol, or ordinary agent runtime behavior. For RLM/code-runtime work use ax-agent-rlm; for callbacks and telemetry use ax-agent-observability; for recall/memory/skill loading use ax-agent-memory-skills; for agent.optimize(...) use ax-agent-optimize.
-version: "23.0.0"
+description: This skill helps an LLM generate correct core AxAgent code using @ax-llm/ax. Use when the user asks about agent(), child agents, namespaced functions, discovery mode, clarification, bubbleErrors, host-side final/clarification protocol, or ordinary agent runtime behavior. For MCP clients, native runtime modules, subscriptions, tasks, or authentication use ax-mcp alongside this skill. For RLM/code-runtime work use ax-agent-rlm; for callbacks and telemetry use ax-agent-observability; for recall/memory/skill loading use ax-agent-memory-skills; for agent.optimize(...) use ax-agent-optimize.
+version: "24.0.15"
 ---
 
 # AxAgent Codegen Rules (@ax-llm/ax)
@@ -15,6 +15,8 @@ Your job is to choose the smallest correct `AxAgent` shape for the user's needs:
 - If the user wants callbacks, logs, tracing, or usage data, use the `ax-agent-observability` skill.
 - If the user wants dynamic memory retrieval or skill-guide loading, use the `ax-agent-memory-skills` skill.
 - If the user wants tuning or eval with `agent.optimize(...)`, use the `ax-agent-optimize` skill.
+- If the user wants MCP transports, authentication, catalogs, subscriptions,
+  tasks, Apps, or event-driven wake/resume, use the `ax-mcp` skill.
 
 ## Use These Defaults
 
@@ -43,16 +45,19 @@ Map user intent to agent shape before writing code:
 ## Critical Rules
 
 - Use `agent(...)` factory syntax for new code.
+- If an actor response contains multiple fenced code blocks, the runtime rejects the whole turn without executing any block and asks for one executable program.
 - Add child agents to the parent's `functions: [...]` list. Each child's `agentIdentity.namespace` (or `utils`, the default) determines the runtime call site, e.g. `await team.writer({...})`.
 - If discovery is enabled, call `discover(...)` before using callables whose docs are not already in the prompt.
 - `autoUpgrade` is ON by default: large tool catalogs auto-enable discovery, and oversized undeclared input values are auto-kept runtime-only with a truncated prompt preview. Explicit `functionDiscovery` and declared `contextFields` always win; set `autoUpgrade: false` to opt out.
-- `directResponse` is ON by default (`'auto'`): when a task needs no user-provided functions, the distiller ends the run with `respond(task, evidence)` and the executor stage is skipped (zero executor model calls). Function-less agents run respond-only every time; agents with functions offer `respond` under a conservative covenant (no live/fresh-state asks, no side effects, nothing a listed function/module domain covers). Set `directResponse: 'off'` to always run the executor.
+- `directResponse` is ON by default (`'auto'`): when a task needs no executor authority, the distiller ends the run with `respond(task, evidence)` and the executor stage is skipped (zero executor model calls). Static agents with no functions, child agents, or native MCP/UCP operations run respond-only every time. Agents with any of those authorities retain the executor and offer `respond` under a conservative covenant (no live/fresh-state asks, no side effects, nothing a listed function/module domain covers). Set `directResponse: 'off'` to always run the executor.
 - If a host-side `AxAgentFunction` needs to end the current actor turn, use `extra.protocol.final(...)` or `extra.protocol.askClarification(...)`.
 - In public `forward()` and `streamingForward()` flows, `askClarification(...)` throws `AxAgentClarificationError`; it does not go through the responder.
 - When resuming after clarification, prefer `error.getState()` from the thrown `AxAgentClarificationError`, then call `agent.setState(savedState)` before the next `forward(...)`.
 - Errors listed in `bubbleErrors` bypass actor-loop catch blocks and propagate directly to the caller of `.forward()`.
 - Child agents receive only the arguments the actor passes. Pass parent fields explicitly via `inputs.<field>` or use `inputUpdateCallback` when many calls need the same value.
 - Audio input fields are transcribed before agent planner/executor/responder stages by default; internal agent stages receive text transcripts, not base64 audio.
+- Actor code stages force structured generation around the exact `javascriptCode` wire key. Native-capable providers keep strict `json_schema`; providers such as DeepSeek use validated `json_object` and do not need provider-visible tools for runtime execution.
+- In generated Go, Python, Java, C++, and Rust packages, distiller/executor validation uses `validation_retries` with one correction attempt by default. Set it to `0` to fail on the first invalid response.
 
 ## Canonical Pattern
 
@@ -237,24 +242,22 @@ const parent = agent('query:string -> answer:string', {
 });
 ```
 
-MCP clients and other `toFunction()` providers can be placed directly inside a group after initialization:
+Attach MCP/UCP clients through the native execution context. Ax initializes them once, exposes `mcp.<namespace>` / `ucp.<namespace>` runtime modules, and propagates them through actor stages, `llmQuery`, RLM, and child agents:
+
+Use `ax-mcp` for constructing those clients, transport/authentication policy,
+server-initiated handlers, resource subscriptions, task continuations, and
+recording/replay. Keep this section focused on Agent attachment and discovery.
 
 ```typescript
-await mcpClient.init();
-
 const parent = agent('query:string -> answer:string', {
-  functions: [
-    {
-      namespace: 'memory',
-      title: 'Memory MCP',
-      description: 'Memory server tools',
-      selectionCriteria: 'Use for persistent memory lookup and updates.',
-      functions: [mcpClient],
-    },
-  ],
+  mcp: [memoryClient, searchClient],
+  mcpInheritance: 'all',
   functionDiscovery: true,
   contextFields: [],
 });
+
+// A child can restrict inheritance to selected namespaces or `none`.
+await parent.forward(llm, { query }, { mcpInheritance: ['memory'] });
 ```
 
 Rules:
@@ -265,8 +268,23 @@ Rules:
 - `relevanceRanking` (default ON — set `false` to opt out): a deterministic local ranker that injects an advisory `### Likely Relevant` shortlist into the executor turn (dynamic, non-cached field — the cached prompt stays byte-stable). Enabled by default after its A/B gate passed on both small and frontier models and implemented in the generated language ports through AxIR Core. Details in `ax-agent-memory-skills`; outcomes observable via the `relevance_ranking` context event (`ax-agent-observability`).
 - Add `alwaysInclude: true` to a group when discovery mode is on but the actor should always see that group's full callable definitions inline in the prompt.
 - Keep `functions: [...]` either flat or grouped. Runtime validation rejects mixed plain function entries and group objects.
-- In flat mode, pass `fn(...)` tools, child agents, and `toFunction()` providers directly.
-- In grouped mode, put callable entries and `toFunction()` providers inside groups. To expose a child agent inside a group, use `childAgent.getFunction()`.
+- In flat mode, pass `fn(...)` tools and child agents directly.
+- In grouped mode, put callable entries inside groups. To expose a child agent inside a group, use `childAgent.getFunction()`.
+- Do not place MCP clients in `functions`; use `mcp` so tasks, resources, subscriptions, elicitation, sampling, authorization, cancellation, and protocol metadata remain available.
+- To wake an Agent from a resource subscription, use `AxMCPEventSource` and an
+  explicit authenticated `wake` route. MCP sessions are not tenant identity;
+  supply identity from the application's authenticated token mapping.
+- An endpoint does not imply a resource URI. Inspect `client.inspectCatalog()`
+  and choose an explicit `resourceSubscriptions` policy. Omission means none;
+  `'all'` selects all discovered concrete resources; selectors can use names,
+  descriptions, MIME types, URIs, and annotations. Templates are not expanded.
+- Map the event with a signature-aware `.wakeInput(...)` plan, or reuse an
+  `eventInput()` plan. Callback `mapInput` is still signature-validated and
+  cannot inject undeclared Agent fields. Use multiple matching routes to wake
+  multiple Agents with independent state, authorization, retries, and runs.
+- To wake from a UCP lifecycle webhook, use `AxUCPWebhookEventSource` and map
+  verified profile/account state to Ax tenant identity after request
+  verification. Never derive tenant identity from the order payload.
 
 ## Host-Side Completion From Functions
 
@@ -529,6 +547,8 @@ agent(signature, {
   functions,
   functionDiscovery,
   autoUpgrade,
+  playbook,
+  citations,
   ...agentOptions,
 });
 ```
@@ -576,6 +596,34 @@ Rules:
 - Values in required non-string fields (arrays, objects, numbers, media) are never auto-promoted — declare those in `contextFields` explicitly when they can be large.
 - Each promotion emits a `field_auto_promoted` context event (`onContextEvent`) with the field name, original size, and preview size; use it to observe what was kept out of the prompt.
 
+### Learning And Citations
+
+These construction-time options are portable across TypeScript and the generated
+Python, Java, C++, Go, and Rust packages (both default off):
+
+- `playbook`: attach an ACE playbook at construction. `learn` is on by default — after each run that produced failure signals (error turns, dead-ends, failing tool calls) one bounded update curates durable avoidance rules that ride the next run's actor prompt; zero LLM cost on clean runs. TypeScript seeds a prior session with `playbook: { playbook: snapshot }`; generated packages accept their full `{ playbook, artifact }` snapshot under `seed`. Persist via `onUpdate`, read the live handle with `getPlaybook()` (or the language-shaped equivalent), gate with `learn: { minSignals, dedupe }`, or disable with `learn: false`. To grow the same playbook from a task set with a held-out verify gate, use the agent-bound playbook evolve method — see `ax-playbook`.
+- `citations`: add an optional `evidenceCitations: string[]` responder output listing which evidence entries (top-level keys of the curated evidence, plus memory ids) the answer relied on. Validated in-pipeline — the model cannot cite evidence it never collected (existence, not entailment). Pass `true`, or `{ field?, surface?: 'output' | 'hidden', includeMemoryIds?, onCitations? }`.
+
+Stage guidance is portable too. `setInstruction` replaces the stage-owned actor
+instruction and `addActorInstruction` appends an additive rule. Both are real
+optimization components; rebuilding the split programs no longer discards them.
+Generated packages use their normal casing conventions (`set_instruction` in
+Python/C++/Rust and `SetInstruction` in Go).
+
+The generated-language observer and evolve spellings are:
+
+| Language | Citations observer | Verified agent playbook evolve |
+|---|---|---|
+| Python | `citations.onCitations` | `agent.playbook().evolve(dataset, options)` |
+| Java | `citations.onCitations` (`Consumer`) | `agent.playbook(null).evolve(dataset, options)` |
+| C++ | `set_citations_observer(...)` | `agent.get_playbook()->evolve(dataset, options)` |
+| Go | `citations.onCitations` (`func([]Value)`) | `agent.GetPlaybook().EvolveAgent(ctx, dataset, options)` |
+| Rust | `set_citations_observer(...)` | `playbook.evolve_agent(&mut agent, client, dataset, options)` |
+
+C++ and Rust use `set_playbook_observer(...)` for construction-time learning
+updates; Python, Java, and Go accept the `playbook.onUpdate` callback in their
+native configuration map.
+
 ## Public Surface
 
 Use these method groups as the compact AxAgent surface map:
@@ -585,6 +633,7 @@ Use these method groups as the compact AxAgent surface map:
 - State and control: `getState()`, `setState(state?)`, `getContextMap()`, `setContextMap(map?)`, `stop()`, `getSignature()`, `setSignature(signature)`, `getFunction()`, `getId()`, and `setId(id)`. Context-map evolve policy lives on `AxAgentContextMap` (`infiniteEvolve`, `evolveSteps`, `maxChars`), not on the agent config. See [`src/examples/rlm-context-map-live.ts`](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/rlm-context-map-live.ts) for provider-backed persistence and finite-evolve usage.
 - Observability: `getChatLog()`, `getUsage()`, `getStagedUsage()`, `resetUsage()`, and `getTraces()`; use `ax-agent-observability` for details.
 - Demos and tuning: `setDemos(...)`, `namedPrograms()`, `namedProgramInstances()`, `optimize(...)`, `applyOptimization(...)`, `getOptimizableComponents()`, and `applyOptimizedComponents(...)`; use `ax-agent-optimize` for tuning details.
+- Learning: `playbook()` returns an agent-aware playbook handle (`update(...)`, `render()`, state/load methods, and verified dataset evolution); `getPlaybook()` reads the current handle. Generated packages expose the same behavior with language-shaped method names. Use `ax-playbook` for details.
 
 Rules:
 
@@ -615,8 +664,23 @@ Fetch these for full working code:
 - [Customer Support](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/customer-support.ts) - classification agent
 - [Abort Patterns](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/abort-patterns.ts) - abort handling
 - [Smart Defaults Agent](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/typescript/long-agents/smart-defaults-agent.ts) - auto-upgrade context promotion, relevance hints, and runtime tools
+- [Portable Playbook Evolve](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/python/optimization/agent-playbook-evolve.py) - Python construction-time learning, validated citations, stage guidance, and verified task-set evolution (parallel Java/C++/Go/Rust examples live beside it)
 
 RLM examples are listed in `ax-agent-rlm`. Memory/skills examples are listed in `ax-agent-memory-skills`.
+
+## Event-Driven Agents
+
+`AxEventRuntime` can wake or resume an Agent while preserving its logical
+state. Use `createProgram(instance)` for multi-tenant Agents; one mutable Agent
+object must not serve multiple instance keys concurrently. Clarification and
+remote task completion are represented as owned continuations, not synthetic
+user turns.
+
+Declare the Agent signature on
+`eventTarget('id').createProgram(signature, factory)` and map event values with
+`eventPath`. The runtime verifies every created Agent against that signature
+before invoking it. Fan-out uses multiple matching routes so each Agent keeps
+its own authorization, instance serialization, retry policy, and run record.
 
 ## Do Not Generate
 

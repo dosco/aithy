@@ -1,14 +1,14 @@
 ---
 name: ax-llm
 description: This skill helps with using the @ax-llm/ax TypeScript library for building LLM applications. Use when the user asks about ax(), ai(), f(), s(), agent(), flow(), AxGen, AxAgent, AxFlow, signatures, streaming, or mentions @ax-llm/ax.
-version: "23.0.0"
+version: "24.0.15"
 ---
 
 # Ax Library (@ax-llm/ax) Quick Reference
 
 Ax is a TypeScript library for building LLM-powered applications with type-safe signatures, streaming support, and multi-provider compatibility.
 
-> **Detailed skills available:** ax-ai (providers), ax-signature (signatures/types), ax-gen (generators), ax-agent (core agents/tools), ax-agent-rlm (agent runtime/RLM/delegation), ax-agent-observability (callbacks/logs/usage), ax-agent-memory-skills (recall and dynamic skill loading), ax-agent-optimize (agent tuning/eval), ax-flow (workflows), ax-gepa (top-level `optimize(...)`, BootstrapFewShot -> GEPA, Pareto optimization).
+> **Detailed skills available:** ax-ai (providers, routing, adaptive balancing), ax-signature (signatures/types), ax-gen (generators), ax-agent (core agents/tools), ax-agent-rlm (agent runtime/RLM/delegation), ax-agent-observability (callbacks/logs/usage), ax-agent-memory-skills (recall and dynamic skill loading), ax-agent-optimize (agent tuning/eval), ax-flow (workflows), ax-gepa (top-level `optimize(...)`, BootstrapFewShot -> GEPA, Pareto optimization).
 
 ## Imports & Factories
 
@@ -110,14 +110,16 @@ Global runtime defaults can be set with `axGlobals` and are read live by future 
 
 ```typescript
 import { axGlobals, axCreateDefaultColorLogger } from '@ax-llm/ax';
-import { trace } from '@opentelemetry/api';
+import { metrics, trace } from '@opentelemetry/api';
 
+axGlobals.rateLimiter = async (next, info) => next();
 axGlobals.tracer = trace.getTracer('my-app');
+axGlobals.meter = metrics.getMeter('my-app');
 axGlobals.debug = true;
 axGlobals.logger = axCreateDefaultColorLogger();
 ```
 
-Precedence is: per-call options, then explicit instance/program options, then current `axGlobals`, then built-in defaults. `customLabels` merge in that order, and `abortSignal` values are combined so either global or local cancellation works.
+Runtime hooks resolve as: forward/direct-call hooks, enclosing program defaults, child-program defaults, AI-service hooks, then globals snapshotted at operation start. They are native run-scoped values and never enter AxIR JSON state, cache keys, exported state, traces, or optimizer artifacts. Agent and flow forwards carry them through every internal generator and model call without mutating children or leaking across concurrent runs. Limiter failures propagate; tracer, meter, and usage-observer failures are fail-open. `customLabels` merge by precedence, and `abortSignal` values are combined so either global or local cancellation works.
 
 ## Memory and Context
 
@@ -238,6 +240,9 @@ axGlobals.meter = openTelemetryMeter;
 
 ## MCP Integration
 
+Use the `ax-mcp` skill for the complete native client, transport,
+authentication, catalog, task, subscription, event, and replay workflow.
+
 ```typescript
 import { AxMCPClient, agent } from '@ax-llm/ax';
 import { AxMCPStdioTransport } from '@ax-llm/ax-tools';
@@ -248,47 +253,49 @@ const transport = new AxMCPStdioTransport({
   args: ['-y', '@modelcontextprotocol/server-memory'],
 });
 
-const mcpClient = new AxMCPClient(transport, { debug: false });
-await mcpClient.init();
+const mcpClient = new AxMCPClient(transport, { namespace: 'memory' });
 
-// Use with agent under a namespace
+// Native MCP context is initialized once and inherited by all agent stages.
 const myAgent = agent('userMessage:string -> response:string', {
-  functions: [
-    {
-      namespace: 'memory',
-      title: 'Memory MCP',
-      description: 'Memory server tools',
-      selectionCriteria: 'Use for persistent memory lookup and updates.',
-      functions: [mcpClient],
-    },
-  ],
+  mcp: mcpClient,
   functionDiscovery: true,
   contextFields: [],
 });
+
+const result = await myAgent.forward(llm, { userMessage: 'Remember this.' });
+await mcpClient.close(); // caller-owned clients remain caller-owned
 ```
 
 ### HTTP Transport (Remote MCP)
 
 ```typescript
-import { AxMCPStreambleHTTPTransport } from '@ax-llm/ax/mcp/transports/httpStreamTransport.js';
+import { AxMCPStreamableHTTPTransport } from '@ax-llm/ax';
 
-const transport = new AxMCPStreambleHTTPTransport('https://remote.mcp.pipedream.net', {
+const transport = new AxMCPStreamableHTTPTransport('https://remote.example/mcp', {
   headers: { 'x-pd-project-id': projectId },
   authorization: `Bearer ${accessToken}`,
 });
 ```
 
-### MCP Capabilities
+### Native MCP and UCP behavior
 
-| Capability | Prefix | Description |
-|---|---|---|
-| Tools | *(none)* | Function calls |
-| Prompts | `prompt_` | Prompt templates |
-| Resources | `resource_` | File/data access |
+- Pass `mcp` and `ucp` to AxGen, streaming AxGen, chat, AxAgent, AxFlow, optimization, or evaluation options.
+- Use `mcpContext` to inject attributed prompts/resources before the first model call.
+- Use `mcpInheritance: 'all' | 'none' | string[]` to restrict child programs.
+- Tool calls retain raw MCP content, metadata, errors, tasks, and protocol provenance in memory.
+- AxAgent exposes native modules as `mcp.<namespace>` and `ucp.<namespace>`.
+- `inspectCatalog()` discovers tool/prompt names, concrete resources, and URI
+  templates from only an endpoint. Resource event sources default to no
+  subscriptions and require an explicit all/URI/selector policy.
+- `toFunction()` remains a compatibility adapter only; native Ax execution never uses it.
+- Live optimization is rejected by default. Use recording/replay or explicitly opt into live MCP evaluation.
 
 ```typescript
-const caps = mcpClient.getCapabilities();
-const functions = mcpClient.toFunction();
+const catalog = await mcpClient.inspectCatalog();
+const tools = catalog.tools;
+const prompts = await mcpClient.listPrompts();
+const resource = await mcpClient.readResource('docs://guide');
+const tasks = await mcpClient.listTasks();
 ```
 
 ### Function Overrides
@@ -328,6 +335,13 @@ class AxFlow<IN, OUT> {
   forward(ai: AxAIService, values: IN): Promise<OUT>;
 }
 ```
+
+## Event-Driven Programs
+
+Use `eventRuntime()` when notifications, webhooks, timers, or remote tasks
+should wake or resume an Ax program. Sources publish into an inbox; explicit
+routes choose `observe`, `invalidate`, `wake`, or `resume`. Event payloads are
+never inserted as user messages automatically. See `ax-event-runtime.md`.
 
 ## Examples
 

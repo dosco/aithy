@@ -9,107 +9,32 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as UsageRouteImport } from './routes/usage'
-import { Route as ThemesRouteImport } from './routes/themes'
-import { Route as TasksRouteImport } from './routes/tasks'
-import { Route as SkillsRouteImport } from './routes/skills'
-import { Route as SetupRouteImport } from './routes/setup'
-import { Route as SettingsRouteImport } from './routes/settings'
-import { Route as SessionsRouteImport } from './routes/sessions'
-import { Route as NotificationsRouteImport } from './routes/notifications'
-import { Route as MeshRouteImport } from './routes/mesh'
-import { Route as MemoryRouteImport } from './routes/memory'
-import { Route as LocalInferenceRouteImport } from './routes/local-inference'
-import { Route as KnowledgeRouteImport } from './routes/knowledge'
-import { Route as InferenceRouteImport } from './routes/inference'
-import { Route as ConsoleRouteImport } from './routes/console'
-import { Route as ChatRouteImport } from './routes/chat'
-import { Route as AutomationsRouteImport } from './routes/automations'
-import { Route as AttentionsRouteImport } from './routes/attentions'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as ChatSessionIdRouteImport } from './routes/chat.$sessionId'
+import { Route as AttentionsRouteImport } from './routes/attentions'
+import { Route as AutomationsRouteImport } from './routes/automations'
+import { Route as ChatRouteImport } from './routes/chat'
+import { Route as ConsoleRouteImport } from './routes/console'
+import { Route as InferenceRouteImport } from './routes/inference'
+import { Route as KnowledgeRouteImport } from './routes/knowledge'
+import { Route as LocalInferenceRouteImport } from './routes/local-inference'
+import { Route as MemoryRouteImport } from './routes/memory'
+import { Route as MeshRouteImport } from './routes/mesh'
+import { Route as NotificationsRouteImport } from './routes/notifications'
+import { Route as SessionsRouteImport } from './routes/sessions'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as SetupRouteImport } from './routes/setup'
+import { Route as SkillsRouteImport } from './routes/skills'
+import { Route as TasksRouteImport } from './routes/tasks'
+import { Route as ThemesRouteImport } from './routes/themes'
+import { Route as UsageRouteImport } from './routes/usage'
 import { Route as ApiEventsRouteImport } from './routes/api.events'
-import { Route as ApiKnowledgeBundleIdRouteImport } from './routes/api.knowledge.$bundleId'
+import { Route as ChatSessionIdRouteImport } from './routes/chat.$sessionId'
 import { Route as ApiArtifactsArtifactIdRouteImport } from './routes/api.artifacts.$artifactId'
+import { Route as ApiKnowledgeBundleIdRouteImport } from './routes/api.knowledge.$bundleId'
 
-const UsageRoute = UsageRouteImport.update({
-  id: '/usage',
-  path: '/usage',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ThemesRoute = ThemesRouteImport.update({
-  id: '/themes',
-  path: '/themes',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const TasksRoute = TasksRouteImport.update({
-  id: '/tasks',
-  path: '/tasks',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SkillsRoute = SkillsRouteImport.update({
-  id: '/skills',
-  path: '/skills',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SetupRoute = SetupRouteImport.update({
-  id: '/setup',
-  path: '/setup',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsRoute = SettingsRouteImport.update({
-  id: '/settings',
-  path: '/settings',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SessionsRoute = SessionsRouteImport.update({
-  id: '/sessions',
-  path: '/sessions',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const NotificationsRoute = NotificationsRouteImport.update({
-  id: '/notifications',
-  path: '/notifications',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MeshRoute = MeshRouteImport.update({
-  id: '/mesh',
-  path: '/mesh',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MemoryRoute = MemoryRouteImport.update({
-  id: '/memory',
-  path: '/memory',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LocalInferenceRoute = LocalInferenceRouteImport.update({
-  id: '/local-inference',
-  path: '/local-inference',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const KnowledgeRoute = KnowledgeRouteImport.update({
-  id: '/knowledge',
-  path: '/knowledge',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const InferenceRoute = InferenceRouteImport.update({
-  id: '/inference',
-  path: '/inference',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ConsoleRoute = ConsoleRouteImport.update({
-  id: '/console',
-  path: '/console',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ChatRoute = ChatRouteImport.update({
-  id: '/chat',
-  path: '/chat',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const AutomationsRoute = AutomationsRouteImport.update({
-  id: '/automations',
-  path: '/automations',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AttentionsRoute = AttentionsRouteImport.update({
@@ -117,9 +42,89 @@ const AttentionsRoute = AttentionsRouteImport.update({
   path: '/attentions',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const AutomationsRoute = AutomationsRouteImport.update({
+  id: '/automations',
+  path: '/automations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ChatRoute = ChatRouteImport.update({
+  id: '/chat',
+  path: '/chat',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ConsoleRoute = ConsoleRouteImport.update({
+  id: '/console',
+  path: '/console',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InferenceRoute = InferenceRouteImport.update({
+  id: '/inference',
+  path: '/inference',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KnowledgeRoute = KnowledgeRouteImport.update({
+  id: '/knowledge',
+  path: '/knowledge',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LocalInferenceRoute = LocalInferenceRouteImport.update({
+  id: '/local-inference',
+  path: '/local-inference',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MemoryRoute = MemoryRouteImport.update({
+  id: '/memory',
+  path: '/memory',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MeshRoute = MeshRouteImport.update({
+  id: '/mesh',
+  path: '/mesh',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const NotificationsRoute = NotificationsRouteImport.update({
+  id: '/notifications',
+  path: '/notifications',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SessionsRoute = SessionsRouteImport.update({
+  id: '/sessions',
+  path: '/sessions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SetupRoute = SetupRouteImport.update({
+  id: '/setup',
+  path: '/setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SkillsRoute = SkillsRouteImport.update({
+  id: '/skills',
+  path: '/skills',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TasksRoute = TasksRouteImport.update({
+  id: '/tasks',
+  path: '/tasks',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ThemesRoute = ThemesRouteImport.update({
+  id: '/themes',
+  path: '/themes',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const UsageRoute = UsageRouteImport.update({
+  id: '/usage',
+  path: '/usage',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiEventsRoute = ApiEventsRouteImport.update({
+  id: '/api/events',
+  path: '/api/events',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ChatSessionIdRoute = ChatSessionIdRouteImport.update({
@@ -127,19 +132,14 @@ const ChatSessionIdRoute = ChatSessionIdRouteImport.update({
   path: '/$sessionId',
   getParentRoute: () => ChatRoute,
 } as any)
-const ApiEventsRoute = ApiEventsRouteImport.update({
-  id: '/api/events',
-  path: '/api/events',
+const ApiArtifactsArtifactIdRoute = ApiArtifactsArtifactIdRouteImport.update({
+  id: '/api/artifacts/$artifactId',
+  path: '/api/artifacts/$artifactId',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApiKnowledgeBundleIdRoute = ApiKnowledgeBundleIdRouteImport.update({
   id: '/api/knowledge/$bundleId',
   path: '/api/knowledge/$bundleId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ApiArtifactsArtifactIdRoute = ApiArtifactsArtifactIdRouteImport.update({
-  id: '/api/artifacts/$artifactId',
-  path: '/api/artifacts/$artifactId',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -317,116 +317,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/usage': {
-      id: '/usage'
-      path: '/usage'
-      fullPath: '/usage'
-      preLoaderRoute: typeof UsageRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/themes': {
-      id: '/themes'
-      path: '/themes'
-      fullPath: '/themes'
-      preLoaderRoute: typeof ThemesRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/tasks': {
-      id: '/tasks'
-      path: '/tasks'
-      fullPath: '/tasks'
-      preLoaderRoute: typeof TasksRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/skills': {
-      id: '/skills'
-      path: '/skills'
-      fullPath: '/skills'
-      preLoaderRoute: typeof SkillsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/setup': {
-      id: '/setup'
-      path: '/setup'
-      fullPath: '/setup'
-      preLoaderRoute: typeof SetupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings': {
-      id: '/settings'
-      path: '/settings'
-      fullPath: '/settings'
-      preLoaderRoute: typeof SettingsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/sessions': {
-      id: '/sessions'
-      path: '/sessions'
-      fullPath: '/sessions'
-      preLoaderRoute: typeof SessionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/notifications': {
-      id: '/notifications'
-      path: '/notifications'
-      fullPath: '/notifications'
-      preLoaderRoute: typeof NotificationsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/mesh': {
-      id: '/mesh'
-      path: '/mesh'
-      fullPath: '/mesh'
-      preLoaderRoute: typeof MeshRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/memory': {
-      id: '/memory'
-      path: '/memory'
-      fullPath: '/memory'
-      preLoaderRoute: typeof MemoryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/local-inference': {
-      id: '/local-inference'
-      path: '/local-inference'
-      fullPath: '/local-inference'
-      preLoaderRoute: typeof LocalInferenceRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/knowledge': {
-      id: '/knowledge'
-      path: '/knowledge'
-      fullPath: '/knowledge'
-      preLoaderRoute: typeof KnowledgeRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/inference': {
-      id: '/inference'
-      path: '/inference'
-      fullPath: '/inference'
-      preLoaderRoute: typeof InferenceRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/console': {
-      id: '/console'
-      path: '/console'
-      fullPath: '/console'
-      preLoaderRoute: typeof ConsoleRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/chat': {
-      id: '/chat'
-      path: '/chat'
-      fullPath: '/chat'
-      preLoaderRoute: typeof ChatRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/automations': {
-      id: '/automations'
-      path: '/automations'
-      fullPath: '/automations'
-      preLoaderRoute: typeof AutomationsRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/attentions': {
@@ -436,11 +331,123 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AttentionsRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/automations': {
+      id: '/automations'
+      path: '/automations'
+      fullPath: '/automations'
+      preLoaderRoute: typeof AutomationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/chat': {
+      id: '/chat'
+      path: '/chat'
+      fullPath: '/chat'
+      preLoaderRoute: typeof ChatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/console': {
+      id: '/console'
+      path: '/console'
+      fullPath: '/console'
+      preLoaderRoute: typeof ConsoleRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/inference': {
+      id: '/inference'
+      path: '/inference'
+      fullPath: '/inference'
+      preLoaderRoute: typeof InferenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/knowledge': {
+      id: '/knowledge'
+      path: '/knowledge'
+      fullPath: '/knowledge'
+      preLoaderRoute: typeof KnowledgeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/local-inference': {
+      id: '/local-inference'
+      path: '/local-inference'
+      fullPath: '/local-inference'
+      preLoaderRoute: typeof LocalInferenceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/memory': {
+      id: '/memory'
+      path: '/memory'
+      fullPath: '/memory'
+      preLoaderRoute: typeof MemoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/mesh': {
+      id: '/mesh'
+      path: '/mesh'
+      fullPath: '/mesh'
+      preLoaderRoute: typeof MeshRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/notifications': {
+      id: '/notifications'
+      path: '/notifications'
+      fullPath: '/notifications'
+      preLoaderRoute: typeof NotificationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/sessions': {
+      id: '/sessions'
+      path: '/sessions'
+      fullPath: '/sessions'
+      preLoaderRoute: typeof SessionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/setup': {
+      id: '/setup'
+      path: '/setup'
+      fullPath: '/setup'
+      preLoaderRoute: typeof SetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/skills': {
+      id: '/skills'
+      path: '/skills'
+      fullPath: '/skills'
+      preLoaderRoute: typeof SkillsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/tasks': {
+      id: '/tasks'
+      path: '/tasks'
+      fullPath: '/tasks'
+      preLoaderRoute: typeof TasksRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/themes': {
+      id: '/themes'
+      path: '/themes'
+      fullPath: '/themes'
+      preLoaderRoute: typeof ThemesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/usage': {
+      id: '/usage'
+      path: '/usage'
+      fullPath: '/usage'
+      preLoaderRoute: typeof UsageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/events': {
+      id: '/api/events'
+      path: '/api/events'
+      fullPath: '/api/events'
+      preLoaderRoute: typeof ApiEventsRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/chat/$sessionId': {
@@ -450,11 +457,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ChatSessionIdRouteImport
       parentRoute: typeof ChatRoute
     }
-    '/api/events': {
-      id: '/api/events'
-      path: '/api/events'
-      fullPath: '/api/events'
-      preLoaderRoute: typeof ApiEventsRouteImport
+    '/api/artifacts/$artifactId': {
+      id: '/api/artifacts/$artifactId'
+      path: '/api/artifacts/$artifactId'
+      fullPath: '/api/artifacts/$artifactId'
+      preLoaderRoute: typeof ApiArtifactsArtifactIdRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/api/knowledge/$bundleId': {
@@ -462,13 +469,6 @@ declare module '@tanstack/react-router' {
       path: '/api/knowledge/$bundleId'
       fullPath: '/api/knowledge/$bundleId'
       preLoaderRoute: typeof ApiKnowledgeBundleIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/api/artifacts/$artifactId': {
-      id: '/api/artifacts/$artifactId'
-      path: '/api/artifacts/$artifactId'
-      fullPath: '/api/artifacts/$artifactId'
-      preLoaderRoute: typeof ApiArtifactsArtifactIdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }

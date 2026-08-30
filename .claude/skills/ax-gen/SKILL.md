@@ -1,12 +1,15 @@
 ---
 name: ax-gen
-description: This skill helps an LLM generate correct AxGen code using @ax-llm/ax. Use when the user asks about ax(), AxGen, generators, forward(), streamingForward(), validation, assertions, streaming assertions, field processors, step hooks, self-tuning, or structured outputs.
-version: "23.0.0"
+description: This skill helps an LLM generate correct AxGen code using @ax-llm/ax. Use when the user asks about ax(), AxGen, generators, forward(), streamingForward(), validation, assertions, streaming assertions, field processors, step hooks, self-tuning, or structured outputs. For MCP clients, transports, prompts, resources, tasks, subscriptions, or authentication use ax-mcp alongside this skill.
+version: "24.0.15"
 ---
 
 # AxGen Codegen Rules (@ax-llm/ax)
 
 Use this skill to generate `AxGen` code. Prefer short, modern, copyable patterns. Do not write tutorial prose unless the user explicitly asks for explanation.
+
+Use the `ax-mcp` skill when AxGen attaches native MCP clients or consumes MCP
+prompts, resources, tools, tasks, subscriptions, authentication, or events.
 
 ## Use These Defaults
 
@@ -127,6 +130,7 @@ import { trace } from '@opentelemetry/api';
 
 const responseCache = new Map<string, any>();
 
+axGlobals.rateLimiter = async (next, info) => next();
 axGlobals.tracer = trace.getTracer('my-app');
 axGlobals.debug = true;
 axGlobals.cachingFunction = async (key, value?) => {
@@ -140,7 +144,9 @@ axGlobals.cachingFunction = async (key, value?) => {
 
 Rules:
 
-- Tracing/logging precedence is: forward options, then generator options, then AI service options, then current `axGlobals`, then built-in defaults.
+- Runtime-hook precedence is: forward options, then generator options, then AI service options, then the globals snapshotted at run start.
+- A forward-scoped `rateLimiter`, `tracer`, or `meter` is carried to every retry and provider call without being serialized or mutating the generator. Concurrent forwards remain isolated.
+- Limiter failures propagate. Tracer and meter failures are ignored, and telemetry contains metadata rather than prompts, outputs, or tool payloads.
 - `abortSignal` from `axGlobals` is merged with local forward signals.
 - `customLabels` merge from globals to AI service to forward options.
 - `cachingFunction` and `functionResultFormatter` also fall back to current `axGlobals` when local options do not provide them.
@@ -281,6 +287,10 @@ Rules:
 
 - `cachingFunction` acts as a get/set: called with `(key)` to read, `(key, value)` to write.
 - `contextCache` enables AI provider-level prompt caching for long context.
+- Provider-facing forward options are merged with constructor defaults before
+  the chat call. This includes `promptCacheKey`, `sessionId`, and
+  `contextCache` in TypeScript and every generated language package; per-call
+  values take precedence.
 
 ## Sampling And Result Picker
 
@@ -311,7 +321,10 @@ console.log(result.thought);
 
 Rules:
 
-- `thinkingTokenBudget` can be `'low'`, `'medium'`, `'high'`, or a number.
+- `thinkingTokenBudget` accepts `'none'`, `'minimal'`, `'low'`, `'medium'`,
+  `'high'`, or `'highest'`. Provider-specific numeric configuration is only for
+  models such as Gemini 2.5 that expose a numeric thinking budget; Gemini 3 uses
+  model-aware thinking levels instead.
 - Set `showThoughts: true` to include the model's reasoning in `result.thought`.
 
 ## Structured Outputs
@@ -328,6 +341,16 @@ const sig = f()
 Rules:
 
 - `.useStructured()` asks providers with native support, including OpenAI, Anthropic, and Gemini, for schema-constrained JSON.
+- Output names and shapes are part of the prompt contract as well as the provider schema. Ax renders every exact wire key, required/optional status, type, constraints, and nested shape so capability fallback does not erase the contract.
+- `structuredOutputMode: 'auto'` follows the selected profile/model's ordered `structuredOutputModes` capability list. Exact caller `modelInfo` overrides win over profile model rules and defaults.
+- Without native schema support, one required non-array `string` or `code` output can use `json_object` plus an exact-shape prompt, client-side validation, and bounded correction retries. This optimized path is provider-neutral and does not require provider-visible tools.
+- Richer shapes use the first advertised rung. A `json_object` selection sends no synthetic `__axOutput`; Ax keeps the exact-shape prompt, strict parsing, and correction retry.
+- Ax advertises only `__axOutput`. It accepts legacy inbound `__finalResult` calls so stored trajectories remain replayable, and rejects user functions that collide with either reserved name.
+- Use `structuredOutputMode: 'native'` to require native schema enforcement; Ax reports an error instead of silently weakening that requirement.
+- Use `structuredOutputMode: 'function'` to require the function-argument path; Ax reports an error before sending a request when function calling is unavailable.
+- Use `structuredOutputMode: 'json_object'` to require JSON object mode for rich or singleton output; Ax reports an error before transport when the selected profile/model has not verified it.
+- Direct `json_schema` and `json_object` chat requests validate their corresponding capabilities independently. `structuredOutputs` remains the compatibility alias for native JSON Schema only.
+- Chat-log provenance records the selected path at `providerMetadata.ax.structured_output_rung` (`native`, `function`, or `json_object`).
 - Native structured-output schemas list every object property in `required`, set `additionalProperties: false` on objects, and express optional fields as nullable types.
 - Flexible `json` fields and unshaped `object` fields are sent as JSON-encoded strings for native structured outputs, then parsed back into normal JavaScript values.
 
@@ -484,6 +507,51 @@ Fetch these for full working code:
 - [Fibonacci](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/fibonacci.ts) — streaming with thinking
 - [Extraction](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/extract.ts) — information extraction
 - [Multi-Sampling](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/sample-count.ts) — sample count usage
+
+## Native MCP/UCP
+
+Use `ax-mcp` for client construction, transports, authentication, catalog and
+task APIs, subscriptions, event routing, and recording/replay. This section
+only covers the AxGen attachment boundary.
+
+Pass live clients directly to constructor or forward options:
+
+```typescript
+const gen = ax('question:string -> answer:string', { mcp: [docs, search] });
+const result = await gen.forward(llm, { question }, {
+  mcpContext: [
+    { client: 'docs', resource: { uri: 'docs://guide' } },
+  ],
+});
+```
+
+The model receives native tool definitions. Structured, image, audio, resource-link, embedded-resource, metadata, task, and error results are preserved until the provider adapter maps supported content. Streaming keeps MCP progress/task events separate from Ax output. Never call `toFunction()` for native integration.
+
+Use `client.inspectCatalog()` when an endpoint is the only configuration. It
+discovers server-owned tool/prompt names, concrete resource URIs, and URI
+templates. Event sources require an explicit none/all/URI/selector resource
+subscription policy and never create a wake route implicitly.
+
+Under an event target, a required task-backed MCP tool registers the owning
+`namespace:taskId` continuation automatically. Use `AxMCPEventSource` plus
+`axMCPEventRoutes` to observe progress and resume the target on
+`input_required` or a terminal state.
+
+## Event Targets
+
+Wrap an AxGen with
+`eventTarget('id').program(gen).ai(ai).input(...).build()` to invoke it from an
+explicit `wake` or `resume` route. Use segment-safe `eventPath` selectors;
+projection and explicit fields are validated against the AxGen signature before
+invocation. Use `.wakeInput()` and `.resumeInput()` for different action
+contracts. Streaming targets persist each chunk before optional chunk sinks and
+persist the final result before final sinks.
+
+Use a reusable `eventInput().project(...).field(...)` plan when mapping should
+be callback-free. Callback `mapInput` remains available, but its result is
+cloned, stripped to declared AxGen inputs, and signature-validated before the
+first model call; mapper exceptions become non-retryable
+`event_input_invalid` deliveries.
 
 ## Do Not Generate
 

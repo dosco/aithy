@@ -350,7 +350,7 @@ async function ensureHostPath(hostPath: string): Promise<void> {
 function applyNetwork(builder: MicrosandboxBuilder, network: MicrosandboxOptions["network"]) {
   if (network === "none") return builder.network((n) => n.policy(NetworkPolicy.none()));
   if (network === "allow-all") return builder.network((n) => n.policy(NetworkPolicy.allowAll()));
-  return builder.network((n) => n.policy(NetworkPolicy.publicOnly()));
+  return builder.network((n) => n.policy(NetworkPolicy.fromProfiles(["public"])));
 }
 
 function outboxAndMounts(

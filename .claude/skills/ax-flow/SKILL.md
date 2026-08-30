@@ -1,7 +1,7 @@
 ---
 name: ax-flow
 description: This skill helps an LLM generate correct AxFlow workflow code using @ax-llm/ax. Use when the user asks about flow(), AxFlow, workflow orchestration, parallel execution, DAG workflows, conditional routing, map/reduce patterns, or multi-node AI pipelines.
-version: "23.0.0"
+version: "24.0.15"
 ---
 
 # AxFlow Codegen Rules (@ax-llm/ax)
@@ -92,6 +92,21 @@ flow.node('extractor', 'documentText:string -> entities:string[]');
 // Short alias
 flow.n('processor', 'input:string -> output:string');
 ```
+
+### Rich Node Contracts (String Grammar)
+
+Node signatures accept the full extended string grammar — constraint bags, class decisions, optional fields, and nested objects (full modifier table in the ax-signature skill):
+
+```typescript
+flow
+  .node('triage', 'ticketText:string -> ticketClass:class "bug, billing, question", severityScore:number(min 1, max 5)')
+  .node('draft', 'ticketText:string, ticketClass:string, severityScore:number -> replyText:string(max 400)')
+  .node('audit', 'replyText:string -> approved:boolean, flaggedSpans:object{ spanText:string, reasonNote:string }[]');
+```
+
+- `class` is output-only: a downstream node consuming the decision declares it `:string`.
+- Optional marks go on the name (`note?:string`), never after the type.
+- `toString()` serializes these contracts losslessly into `%%ax` directives, so rich contracts survive the diagram round-trip.
 
 ## Extended Nodes (nx)
 
@@ -329,7 +344,7 @@ const fn = wf.toFunction();
 // fn.name, fn.parameters (JSON Schema), fn.func
 ```
 
-## Instrumentation (Tracing)
+## Runtime Hooks And Instrumentation
 
 ```typescript
 import { ai, flow } from '@ax-llm/ax';
@@ -357,15 +372,19 @@ import { metrics } from '@opentelemetry/api';
 
 axGlobals.tracer = tracer;
 axGlobals.meter = metrics.getMeter('axflow');
+axGlobals.rateLimiter = async (next, info) => next();
 
 const result = await wf.forward(llm, { userQuestion: 'hi' });
 ```
 
 Rules:
 
-- `wf.forward(..., { tracer, meter })` overrides flow defaults and `axGlobals`.
+- `wf.forward(..., { rateLimiter, tracer, meter })` overrides flow defaults and `axGlobals`.
 - Constructor/factory flow defaults override `axGlobals`.
-- If no local tracer or meter is provided, `AxFlow` reads current `axGlobals.tracer` and `axGlobals.meter`, creates a parent flow span, and propagates tracer/meter plus trace context to node forwards.
+- Resolution is: forward hooks, enclosing flow defaults, child-program defaults, AI-service hooks, then globals snapshotted at flow start.
+- `AxFlow` carries the resolved hooks to every explicit, generated, extended, and Mermaid node, including branches, loops, feedback bodies, parallel groups, and nested flows or agents. It does not modify child programs, and it restores the run scope on success, failure, cancellation, and stream termination.
+- Flow spans preserve Flow → nested program → AxGen → provider/tool parentage. Hook telemetry is metadata-only.
+- Limiter failures propagate; tracing and metric failures are fail-open. External meter output is separate from balancer `getMetrics()` state.
 - `axGlobals.abortSignal` is merged with flow-level abort signals.
 
 ## Program IDs and Demos
@@ -417,17 +436,242 @@ Common errors:
 - `"merge() without matching branch()"` -- every `.branch()` needs `.merge()`.
 - `"Label 'x' not found"` -- define `.label()` before `.feedback()` references it.
 
+## Native MCP/UCP
+
+Use `ax-mcp` for MCP client construction, transport/authentication policy,
+subscriptions, tasks, event routing, and replay. This section covers how Flow
+inherits and coordinates the resulting live execution context.
+
+Set `mcp`/`ucp` on the flow or a node. Sequential nodes reuse sessions; parallel nodes multiplex through each client's concurrency policy. Branch cancellation and flow aborts propagate to outstanding requests and newly created remote tasks. Structured protocol values stay structured in flow state.
+
+```typescript
+const wf = flow({ mcp: [inventory], ucp: [merchant] })
+  .node('lookup', lookupProgram)
+  .node('checkout', checkoutProgram, { mcpInheritance: ['merchant'] });
+```
+
+## Mermaid Source (Author or Serialize Flows)
+
+A whole flow can be written as (or exported to) a mermaid flowchart. Pass the
+diagram string straight to `flow()` — a string argument compiles the AxFlow
+mermaid dialect into a runnable flow (an options object still constructs an
+empty builder). `String(wf)` / `wf.toString()` renders any flow back, so
+`flow(String(wf))` round-trips.
+
+```typescript
+import { flow } from '@ax-llm/ax';
+
+const wf = flow<{ documentText: string }, { finalReport: string }>(`
+flowchart TD
+  %%ax summarize: documentText:string -> summaryText:string(max 500)
+  %%ax check: summaryText:string -> verdict:class "pass, fail", note?:string
+  %%ax format: summaryText:string, note?:string -> finalReport:string
+
+  summarize[Summarize document] --> check{verdict}
+  check -->|pass| format
+  check -->|fail, max 3| summarize
+`);
+
+const { finalReport } = await wf.forward(llm, { documentText });
+console.log(String(wf)); // render back to the same dialect
+```
+
+Dialect:
+- `%%ax nodeId: <signature>` comment directives carry node contracts (mermaid renderers ignore them); the full string-signature grammar applies (`?` optional on the name, constraint bags, `object{ ... }`).
+- Data auto-wires by field name: each node input binds to the nearest upstream node that outputs that field; a field no node produces becomes a flow input.
+- A diamond `nodeId{field}` names a `class` decision; its labeled out-edges (`-->|pass|`) become branches. A back-edge is a loop: `-->|label, max N|` is feedback, `-->|while cond, max N|` is a while loop.
+
+Render options and bindings:
+- `wf.toString({ direction: 'LR' })` when you need render options; bare `String(wf)` uses defaults (`flowchart TD`).
+- `bindings` supplies closures the dialect can't inline: `{ nodes: { normalize: (s) => ({...}) }, conditions: { keepGoing: (s) => ... } }` for map steps and `while` conditions.
+
+### Flow Gallery
+
+Every diagram below compiles with `flow(text)` as written (the while loop additionally needs its `conditions` binding).
+
+Linear pipeline — three nodes auto-wired by field name:
+
+```text
+flowchart TD
+  %%ax extract: contractText:string -> parties:string[], effectiveDate?:string(format date)
+  %%ax summarize: contractText:string, parties:string[] -> summaryText:string(max 300)
+  %%ax redline: summaryText:string -> riskNotes:string(item "one risk")[]
+
+  extract --> summarize --> redline
+```
+
+Decision branch — a class diamond routes to per-branch responders, then re-joins:
+
+```text
+flowchart TD
+  %%ax classify: requestText:string -> routeClass:class "support, sales"
+  %%ax supportReply: requestText:string -> replyText:string(max 300)
+  %%ax salesReply: requestText:string -> replyText:string(max 300)
+  %%ax send: replyText:string -> deliveredReply:string
+
+  classify{routeClass}
+  classify -->|support| supportReply
+  classify -->|sales| salesReply
+  supportReply --> send
+  salesReply --> send
+```
+
+Retry loop — a reviewer sends drafts back with a capped revise edge:
+
+```text
+flowchart TD
+  %%ax draft: briefText:string -> articleText:string(max 800)
+  %%ax review: articleText:string -> verdict:class "publish, revise", editorNote?:string
+  %%ax publish: articleText:string, editorNote?:string -> finalPost:string
+
+  draft --> review{verdict}
+  review -->|publish| publish
+  review -->|revise, max 2| draft
+```
+
+Fan-out / fan-in — two perspectives run in parallel, then a judge joins them:
+
+```text
+flowchart TD
+  %%ax outline: topicText:string -> questionText:string
+  %%ax proponent: questionText:string -> proArgument:string
+  %%ax skeptic: questionText:string -> conArgument:string
+  %%ax judge: proArgument:string, conArgument:string -> verdictSummary:string
+
+  outline --> proponent & skeptic
+  proponent & skeptic --> judge
+```
+
+While loop — repeat until a host-owned condition says stop (`flow(text, { conditions: { keepPolishing } })`):
+
+```text
+flowchart TD
+  %%ax polish: draftText:string -> polishedText:string
+  %%ax grade: polishedText:string -> qualityScore:number(min 0, max 1)
+
+  polish --> grade
+  grade -->|while keepPolishing, max 5| polish
+```
+
+Three-way branch and re-join — triage routes to one of three handlers before delivery:
+
+```text
+flowchart TD
+  %%ax triage: ticketText:string -> ticketClass:class "bug, billing, question"
+  %%ax bugHandler: ticketText:string -> replyText:string(max 300)
+  %%ax billingHandler: ticketText:string -> replyText:string(max 300)
+  %%ax questionHandler: ticketText:string -> replyText:string(max 300)
+  %%ax send: replyText:string -> deliveredReply:string
+
+  triage{ticketClass}
+  triage -->|bug| bugHandler
+  triage -->|billing| billingHandler
+  triage -->|question| questionHandler
+  bugHandler --> send
+  billingHandler --> send
+  questionHandler --> send
+```
+
+Judge panel — three independent drafts fan out, then converge on one verdict:
+
+```text
+flowchart TD
+  %%ax outline: topicText:string -> outlineText:string
+  %%ax draftA: outlineText:string -> draftAText:string
+  %%ax draftB: outlineText:string -> draftBText:string
+  %%ax draftC: outlineText:string -> draftCText:string
+  %%ax judge: draftAText:string, draftBText:string, draftCText:string -> verdictText:string
+
+  outline --> draftA & draftB & draftC
+  draftA & draftB & draftC --> judge
+```
+
+Escalation ladder — a quality gate either sends the first answer or falls back to level two:
+
+```text
+flowchart TD
+  %%ax l1Answer: ticketText:string -> answerText:string
+  %%ax qualityGate: answerText:string -> verdict:class "pass, escalate"
+  %%ax l2Answer: ticketText:string -> answerText:string
+  %%ax send: answerText:string -> deliveredAnswer:string
+
+  l1Answer --> qualityGate{verdict}
+  qualityGate -->|pass| send
+  qualityGate -->|escalate| l2Answer --> send
+```
+
+Itinerary planner — rich contracts stay attached to a simple linear graph:
+
+```text
+flowchart TD
+  %%ax parse: requestText:string -> destinationName:string, stayWindow:dateRange, travelerCount:number(min 1, max 12), budgetUsd?:number(min 0)
+  %%ax plan: destinationName:string, stayWindow:dateRange, travelerCount:number, budgetUsd?:number -> itineraryItems:object{ dayNumber:number(min 1), activityText:string }[]
+  %%ax price: itineraryItems:object{ dayNumber:number, activityText:string }[], travelerCount:number -> estimatedTotalUsd:number(min 0), bookingNotes?:string(max 300)
+
+  parse --> plan --> price
+```
+
+Fan-out with capped revision — two sections join, then review can send the assembly back twice:
+
+```text
+flowchart TD
+  %%ax outline: briefText:string -> outlineText:string
+  %%ax sectionA: outlineText:string -> sectionAText:string
+  %%ax sectionB: outlineText:string -> sectionBText:string
+  %%ax assemble: sectionAText:string, sectionBText:string -> articleText:string
+  %%ax review: articleText:string -> verdict:class "approve, revise", reviewNote?:string
+  %%ax publish: articleText:string, reviewNote?:string -> publishedArticle:string
+
+  outline --> sectionA & sectionB
+  sectionA & sectionB --> assemble --> review{verdict}
+  review -->|approve| publish
+  review -->|revise, max 2| assemble
+```
+
 ## Examples
 
 Fetch these for full working code:
 
 - [Flow](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/ax-flow.ts) — complete flow usage
+- [Mermaid Flow](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/ax-flow-mermaid.ts) — author/serialize a flow as a mermaid diagram
 - [Auto-Parallel](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/ax-flow-auto-parallel.ts) — auto-parallelization
 - [Async Map](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/ax-flow-async-map.ts) — async map transforms
 - [Enhanced Demo](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/ax-flow-enhanced-demo.ts) — instance-based nodes
 - [Flow as Function](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/ax-flow-to-function.ts) — flow as callable function
 - [Fluent Builder](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/fluent-flow-example.ts) — fluent builder pattern
-- [Load Balancing](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/balancer.ts) — load balancing
+- [Adaptive Provider Balancing](https://raw.githubusercontent.com/ax-llm/ax/refs/heads/main/src/examples/typescript/generation/adaptive-balancer.ts) — cost, deadline, reliability, and failover routing
+
+## Event-Triggered Flows
+
+An AxFlow is an `AxProgrammable` event target. The runtime maps an event into
+the Flow's typed initial state and propagates `eventContext`, cancellation, and
+idempotency metadata to every node. Abandoned branches still use normal Flow
+cancellation semantics.
+
+Task-backed MCP tools called by a Flow node register a continuation on the
+shared event context. `axMCPEventRoutes` observes progress and resumes the Flow
+on input-required or terminal task notifications.
+
+For resource-driven wake, discover the endpoint with `inspectCatalog()` and
+give `AxMCPEventSource` an explicit `resourceSubscriptions` policy. Managed
+subscriptions reconcile list changes and reconnect separately from the Flow;
+subscription alone never starts or resumes a Flow.
+
+UCP lifecycle webhooks use the same continuation boundary through
+`AxUCPWebhookEventSource`. Correlate on `ucp.checkout` or `ucp.order` only after
+the signed request has been verified and mapped to application identity.
+
+Use `eventTarget('id').program(flow).wakeInput(...).resumeInput(...)` when wake
+and resume events have different shapes. Segment-safe `eventPath` mappings are
+validated against the Flow signature before any node executes; a declarative
+`.waitFor(kind, path)` creates the owned continuation consumed by the resume
+route.
+
+Reusable `eventInput()` plans are the preferred callback-free boundary.
+Callback `mapInput` is normalized against the Flow signature before any node
+runs. In generated hosts, immediate publications dispatch inline; the host uses
+`nextDueAt()` and `runDue()` for delayed retries, debounce, and continuation
+expiry.
 
 ## Do Not Generate
 

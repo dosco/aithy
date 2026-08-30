@@ -20,7 +20,7 @@ const consoleInput = z.object({
 }).optional();
 
 export const getRuntimeConsole = createServerFn({ method: "GET" })
-  .inputValidator(consoleInput)
+  .validator(consoleInput)
   .handler(async ({ data }) => {
     try {
       const runtime = await getAithyRuntime();
@@ -52,7 +52,7 @@ const sandboxPathInput = z.object({
 });
 
 export const listSandboxFiles = createServerFn({ method: "GET" })
-  .inputValidator(sandboxPathInput)
+  .validator(sandboxPathInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -73,7 +73,7 @@ export const listSandboxFiles = createServerFn({ method: "GET" })
   });
 
 export const deleteSandboxFile = createServerFn({ method: "POST" })
-  .inputValidator(sandboxPathInput.extend({
+  .validator(sandboxPathInput.extend({
     recursive: z.boolean().optional(),
   }))
   .handler(async ({ data }) => {
@@ -94,7 +94,7 @@ export const deleteSandboxFile = createServerFn({ method: "POST" })
   });
 
 export const downloadSandboxOutboxFile = createServerFn({ method: "POST" })
-  .inputValidator(sandboxPathInput)
+  .validator(sandboxPathInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -120,7 +120,7 @@ const sandboxTestInput = z.object({
 });
 
 export const testSandboxImage = createServerFn({ method: "POST" })
-  .inputValidator(sandboxTestInput)
+  .validator(sandboxTestInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();

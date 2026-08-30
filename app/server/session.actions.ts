@@ -8,7 +8,7 @@ import { conversationIdInput, confirmationInput, renameInput } from "./action-sc
 import { webStateDto, sessionDto } from "./dto";
 
 export const renameSession = createServerFn({ method: "POST" })
-  .inputValidator(renameInput)
+  .validator(renameInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -18,7 +18,7 @@ export const renameSession = createServerFn({ method: "POST" })
   });
 
 export const clearSession = createServerFn({ method: "POST" })
-  .inputValidator(conversationIdInput)
+  .validator(conversationIdInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -29,7 +29,7 @@ export const clearSession = createServerFn({ method: "POST" })
   });
 
 export const deleteSession = createServerFn({ method: "POST" })
-  .inputValidator(conversationIdInput)
+  .validator(conversationIdInput)
   .handler(async ({ data }) => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -49,7 +49,7 @@ export const deleteSession = createServerFn({ method: "POST" })
   });
 
 export const deleteAllSessions = createServerFn({ method: "POST" })
-  .inputValidator(confirmationInput)
+  .validator(confirmationInput)
   .handler(async () => {
     assertLoopbackRequest(getRequest());
     const runtime = await getAithyRuntime();
@@ -63,7 +63,7 @@ export const deleteAllSessions = createServerFn({ method: "POST" })
   });
 
 export const getChildSessions = createServerFn({ method: "GET" })
-  .inputValidator(z.object({ parentSessionId: z.string().min(1) }))
+  .validator(z.object({ parentSessionId: z.string().min(1) }))
   .handler(async ({ data }) => {
     const runtime = await getAithyRuntime();
     await runtime.sessionState.preloadAll();
