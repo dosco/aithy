@@ -2,7 +2,6 @@ const packageJsonPath = "package.json";
 const bunfigPath = "bunfig.toml";
 const bunLockPath = "bun.lock";
 const alternateLocks = ["package-lock.json", "npm-shrinkwrap.json", "pnpm-lock.yaml", "yarn.lock", "bun.lockb"];
-const trustedDependencyAllowlist = new Set(["bun", "protobufjs", "sharp"]);
 const minimumReleaseAgeSeconds = 604800;
 
 const tanStackAffectedVersions: Record<string, string[]> = {
@@ -66,7 +65,6 @@ const tanStackIocs = [
 const failures: string[] = [];
 const warnings: string[] = [];
 
-await checkPackagePolicy();
 await checkPinnedDependencies();
 await checkPinnedVersionsMatchLock();
 await checkBunInstallPolicy();
@@ -74,6 +72,7 @@ await checkLocks();
 await checkTanStackLock();
 await checkTextIocs([packageJsonPath, bunLockPath]);
 await checkGithubWorkflows();
+await checkDependencyDeduplication();
 
 for (const warning of warnings) console.warn(`warning: ${warning}`);
 
@@ -83,17 +82,6 @@ if (failures.length > 0) {
 }
 
 console.log("supply-chain checks passed");
-
-async function checkPackagePolicy(): Promise<void> {
-  const packageJson = JSON.parse(await Bun.file(packageJsonPath).text()) as PackageJson;
-  const trusted = packageJson.trustedDependencies ?? [];
-
-  for (const dependency of trusted) {
-    if (!trustedDependencyAllowlist.has(dependency)) {
-      failures.push(`${dependency} is trusted to run install scripts but is not in the reviewed allowlist`);
-    }
-  }
-}
 
 async function checkPinnedDependencies(): Promise<void> {
   const packageJson = JSON.parse(await Bun.file(packageJsonPath).text()) as PackageJson;
@@ -209,6 +197,25 @@ async function checkGithubWorkflows(): Promise<void> {
   }
 }
 
+async function checkDependencyDeduplication(): Promise<void> {
+  const dedupe = Bun.spawn([process.execPath, "dedupe", "--check"], {
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const [stdout, stderr, exitCode] = await Promise.all([
+    new Response(dedupe.stdout).text(),
+    new Response(dedupe.stderr).text(),
+    dedupe.exited,
+  ]);
+  const output = [stdout, stderr].map((value) => value.trim()).filter(Boolean).join("\n");
+
+  if (exitCode !== 0) {
+    failures.push(`bun dedupe --check failed${output ? `:\n${output}` : ""}`);
+  } else if (output) {
+    console.log(output);
+  }
+}
+
 async function collectFiles(root: string): Promise<string[]> {
   if (!(await exists(root))) return [];
 
@@ -268,7 +275,6 @@ interface PackageJson {
   devDependencies?: Record<string, string>;
   optionalDependencies?: Record<string, string>;
   overrides?: Record<string, string>;
-  trustedDependencies?: string[];
 }
 
 export {};

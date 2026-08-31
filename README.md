@@ -241,12 +241,16 @@ Shared slash commands are handled before a message reaches the agent:
 
 ```bash
 bun run check               # line budget + typecheck + tests
-bun test                    # full test suite
+bun run test                # full test suite, four files at a time
 bun run check:lines         # 500-line file limit
+bun run check:supply-chain  # dependency policy + lockfile deduplication
+bun run audit:deps          # network-backed vulnerability audit
 bun run debug               # list SQLite tables
 bun run debug <table> <id>  # inspect a table
 bun run memory <session-id> # reprocess a session
 ```
+
+When updating dependencies, inspect each package with `bun pm diff <package>` before accepting the new version. After updating, review packages allowed to run lifecycle scripts with `bun pm ls --trusted --all`, inspect production licenses with `bun pm licenses --prod`, and run `bun run audit:deps`. If the audit finds a vulnerability, use `bun audit fix --dry-run` to preview a remediation; dependency and lockfile changes remain manually reviewed.
 
 ### Sandbox Images
 

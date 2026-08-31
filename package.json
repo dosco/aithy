@@ -19,13 +19,13 @@
     "memory": "bun run scripts/memory.ts",
     "debug": "bun run scripts/debug.ts",
     "fresh-start": "bun run scripts/fresh-start.ts",
-    "test": "bun test",
+    "test": "bun test --parallel=4",
     "typecheck": "tsc --noEmit",
     "audit:deps": "bun run scripts/audit-dependencies.ts",
     "check:lines": "bun run scripts/check-lines.ts",
     "check:supply-chain": "bun run scripts/check-supply-chain.ts",
     "package:release": "bun run scripts/package-release.ts",
-    "check": "bun run check:supply-chain && bun run check:lines && bun run typecheck && bun test",
+    "check": "bun run check:supply-chain && bun run check:lines && bun run typecheck && bun run test",
     "ci": "bun ci && bun run check"
   },
   "dependencies": {
@@ -65,13 +65,5 @@
     "@types/bun": "1.4.0",
     "@types/react": "19.2.18",
     "typescript": "7.0.2"
-  },
-  "overrides": {
-    "protobufjs": "7.5.5"
-  },
-  "trustedDependencies": [
-    "bun",
-    "protobufjs",
-    "sharp"
-  ]
+  }
 }
