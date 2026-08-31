@@ -41,6 +41,11 @@ export async function assertPrimaryAiSettings(
   const profile = input.runtime ? aiProfileFor(input.runtime, provider) : {};
   const apiUrl = profile.apiUrl?.trim() || input.runtime?.aiApiUrl?.trim() || config.aiApiUrl;
   const model = profile.model?.trim() || input.runtime?.aiModel?.trim() || config.aiModel;
+  const profileArgs = input.runtime?.aiProfileArgs ?? profile.profileArgs ?? config.aiProfileArgs;
+  const thinkingLevel = input.runtime?.aiThinkingLevel === null
+    ? undefined
+    : input.runtime?.aiThinkingLevel ?? profile.thinkingLevel ?? config.aiThinkingLevel;
+  const serviceTier = input.runtime?.aiServiceTier ?? profile.serviceTier ?? config.aiServiceTier;
   const apiKey = normalizePostedSecret(input.apiKey);
   const storedApiKey =
     provider === config.aiProvider ? config.aiApiKey : await readProviderApiKey(provider, config.botId);
@@ -50,6 +55,9 @@ export async function assertPrimaryAiSettings(
     aiApiUrl: apiUrl,
     aiModel: model,
     aiApiKey: apiKey || storedApiKey,
+    aiProfileArgs: profileArgs,
+    aiThinkingLevel: thinkingLevel ?? undefined,
+    aiServiceTier: serviceTier,
   };
   const missing = aiConfigurationIssues(nextConfig);
   if (missing.length > 0) {
@@ -61,6 +69,9 @@ export async function assertPrimaryAiSettings(
     && provider === config.aiProvider
     && apiUrl === config.aiApiUrl
     && model === config.aiModel
+    && sameRecord(profileArgs, config.aiProfileArgs)
+    && thinkingLevel === config.aiThinkingLevel
+    && serviceTier === config.aiServiceTier
   ) return;
 
   await (deps.testAiChat ?? testAiChat)(nextConfig);
@@ -99,6 +110,16 @@ export async function assertFastAiSettings(
     fastAiProvider: fastProvider,
     fastAiApiUrl: fastProfile.fastApiUrl?.trim() || fastProfile.apiUrl?.trim() || input.runtime?.fastAiApiUrl?.trim() || config.fastAiApiUrl,
     fastAiModel: fastProfile.fastModel?.trim() || input.runtime?.fastAiModel?.trim() || config.fastAiModel,
+    fastAiProfileArgs: input.runtime?.fastAiProfileArgs
+      ?? fastProfile.fastProfileArgs
+      ?? fastProfile.profileArgs
+      ?? config.fastAiProfileArgs,
+    fastAiThinkingLevel: input.runtime?.fastAiThinkingLevel === null
+      ? undefined
+      : input.runtime?.fastAiThinkingLevel ?? fastProfile.fastThinkingLevel ?? config.fastAiThinkingLevel,
+    fastAiServiceTier: input.runtime?.fastAiServiceTier
+      ?? fastProfile.fastServiceTier
+      ?? config.fastAiServiceTier,
     fastAiApiKey: input.clearFastApiKey ? undefined : postedFastKey || storedFastKey,
   };
   const missing = fastAiConfigurationIssues(nextConfig);
@@ -109,7 +130,10 @@ export async function assertFastAiSettings(
   const shouldSmokeTest = Boolean(postedFastKey || (fastProvider === primaryProvider && postedPrimaryKey))
     || fastProvider !== config.fastAiProvider
     || nextConfig.fastAiApiUrl !== config.fastAiApiUrl
-    || nextConfig.fastAiModel !== config.fastAiModel;
+    || nextConfig.fastAiModel !== config.fastAiModel
+    || !sameRecord(nextConfig.fastAiProfileArgs, config.fastAiProfileArgs)
+    || nextConfig.fastAiThinkingLevel !== config.fastAiThinkingLevel
+    || nextConfig.fastAiServiceTier !== config.fastAiServiceTier;
   if (!shouldSmokeTest) return;
   await (deps.testAiChat ?? testAiChat)({
     ...nextConfig,
@@ -117,5 +141,15 @@ export async function assertFastAiSettings(
     aiApiUrl: nextConfig.fastAiApiUrl,
     aiApiKey: nextConfig.fastAiApiKey,
     aiModel: nextConfig.fastAiModel,
+    aiProfileArgs: nextConfig.fastAiProfileArgs,
+    aiThinkingLevel: nextConfig.fastAiThinkingLevel,
+    aiServiceTier: nextConfig.fastAiServiceTier,
   });
+}
+
+function sameRecord(
+  a: Readonly<Record<string, string>> | undefined,
+  b: Readonly<Record<string, string>> | undefined,
+): boolean {
+  return JSON.stringify(Object.entries(a ?? {}).sort()) === JSON.stringify(Object.entries(b ?? {}).sort());
 }

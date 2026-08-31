@@ -1,6 +1,11 @@
 import type { AppConfig } from "../config/env";
 import { MAX_PARALLEL_AGENTS } from "../config/limits";
-import { isLocalAiProvider } from "../agent/ai-providers";
+import {
+  isLocalAiProvider,
+  normalizeServiceTierForSelection,
+  normalizeThinkingLevelForSelection,
+  providerUsesApiUrl,
+} from "../agent/ai-providers";
 import { selectedLocalAgentModelId } from "../local-inference/manifest";
 import { normalizeLocalInferenceSettings } from "../local-inference/settings";
 import {
@@ -9,7 +14,7 @@ import {
   type SandboxImageResolutionContext,
 } from "../sandbox/image-catalog";
 import type { RuntimeSettings } from "./types";
-import { activeSearchProvider, aiProfileFor, providerUsesApiUrl, searchProfileFor } from "./provider-profiles";
+import { activeSearchProvider, aiProfileFor, searchProfileFor } from "./provider-profiles";
 
 export function applyRuntimeSettings(
   config: AppConfig,
@@ -33,6 +38,11 @@ export function applyRuntimeSettings(
   const aiModel = settings.aiModel === null
     ? undefined
     : cleanString(aiProfile.model ?? undefined) ?? cleanString(settings.aiModel) ?? config.aiModel;
+  const fastAiModel = fastProvider
+    ? isLocalAiProvider(fastProvider)
+      ? localAgentModel
+      : cleanString(fastProfile.fastModel ?? undefined) ?? cleanString(settings.fastAiModel)
+    : undefined;
   const sandboxImage = resolveSandboxImageConfig(settings, sandboxImageContext);
   const trainingDataCaptureEnabled =
     settings.trainingDataCaptureEnabled
@@ -49,6 +59,17 @@ export function applyRuntimeSettings(
       : undefined,
     aiApiKey: apiKey === null ? undefined : config.aiApiKey ?? apiKey,
     aiModel: isLocalAiProvider(aiProvider) ? localAgentModel : aiModel,
+    aiProfileArgs: aiProfile.profileArgs ?? settings.aiProfileArgs,
+    aiThinkingLevel: normalizeThinkingLevelForSelection(
+      aiProvider,
+      aiModel,
+      aiProfile.thinkingLevel ?? settings.aiThinkingLevel,
+    ),
+    aiServiceTier: normalizeServiceTierForSelection(
+      aiProvider,
+      aiModel,
+      aiProfile.serviceTier ?? settings.aiServiceTier,
+    ),
     localAgentModel,
     localInference: normalizeLocalInferenceSettings({
       ...config.localInference,
@@ -63,10 +84,23 @@ export function applyRuntimeSettings(
           ?? cleanString(settings.fastAiApiUrl ?? undefined)
           ?? config.fastAiApiUrl
       : undefined,
-    fastAiModel: fastProvider
-      ? isLocalAiProvider(fastProvider)
-        ? localAgentModel
-        : cleanString(fastProfile.fastModel ?? undefined) ?? cleanString(settings.fastAiModel)
+    fastAiModel,
+    fastAiProfileArgs: fastProvider
+      ? fastProfile.fastProfileArgs ?? fastProfile.profileArgs ?? settings.fastAiProfileArgs
+      : undefined,
+    fastAiThinkingLevel: fastProvider
+      ? normalizeThinkingLevelForSelection(
+        fastProvider,
+        fastAiModel,
+        fastProfile.fastThinkingLevel ?? settings.fastAiThinkingLevel,
+      )
+      : undefined,
+    fastAiServiceTier: fastProvider
+      ? normalizeServiceTierForSelection(
+        fastProvider,
+        fastAiModel,
+        fastProfile.fastServiceTier ?? settings.fastAiServiceTier,
+      )
       : undefined,
     fastAiApiKey: fastProvider ? (fastApiKey === null ? undefined : fastApiKey) : undefined,
     sandboxProvider: normalizeSandboxProvider(settings.sandboxProvider) ?? config.sandboxProvider,

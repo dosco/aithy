@@ -21,7 +21,7 @@ Aithy is useful as a personal agent today, but it is also built for the messy pl
 ## Why Aithy
 
 - **Run it locally.** Start Aithy, open the browser control surface, and use an inspectable agent workspace without wiring an agent framework by hand.
-- **Use the models you already have.** Choose managed local `llama.cpp` models, normal cloud/API providers, custom OpenAI-compatible endpoints, or an eligible Grok subscription.
+- **Use the models you already have.** Choose managed local `llama.cpp` models, normal cloud/API providers, Ax named profiles including OpenAI Responses and OpenAI-compatible servers, custom deployment endpoints, or an eligible Grok subscription.
 - **Make your Grok subscription useful.** Grok subscription sign-in can power chat and `web.search` without pasting an API key into Aithy. For people who already pay for Grok, that can avoid setting up separate per-token API-key billing for supported usage, subject to xAI eligibility and limits.
 - **Share a stronger machine.** Pair Aithy on your laptop with Aithy on a GPU box over LAN Mesh, then use validated family inference/search services without copying secrets around.
 - **Keep the agent visible.** Sessions, memory, skills, attentions, artifacts, usage, permissions, training-data capture, sandbox state, and runtime services are part of the product, not hidden logs. Chat streams assistant responses, shows model-reported progress, and keeps inline artifacts and explicit approval bubbles visible while work is happening.
@@ -58,7 +58,7 @@ bun install
 bun run start
 ```
 
-The welcome screen walks through your profile, provider, model, key or sign-in flow, sandbox settings, and local inference options.
+The welcome screen walks through your profile, provider, model, key or sign-in flow, verified thinking level and service tier choices, sandbox settings, and local inference options.
 
 Local state lives at `~/.config/aithy/default/` by default. Use the web UI and persisted settings for provider-scoped model profiles, search profiles, secrets, sandbox settings, Mesh, and local inference.
 
@@ -104,6 +104,10 @@ These light-mode screenshots are captured from the real app with a disposable lo
 ## Use the Models You Already Have
 
 Aithy lets the model source be a runtime choice instead of a project rewrite.
+
+Cloud setup uses Ax's reviewed named profiles for OpenAI Chat, OpenAI Responses, OpenRouter, Together, Groq, Azure OpenAI, and compatible local or hosted endpoints. Profiles supply their authentication and endpoint requirements, so optional API keys remain optional and deployments such as Azure expose their required resource and deployment fields. Non-secret endpoint values are persisted with the provider profile; credentials remain in Bun secrets.
+
+When Ax publishes verified capability metadata for the selected model, Inference shows portable thinking levels and explicit service tiers. Thinking levels can map to the same provider-native setting. Service tier `Auto` delegates policy to the provider, while `Standard`, `Flex`, and `Priority` appear only when verified for that provider and model. Dynamic profiles with no bundled model list use their provider-level capabilities; unknown models on static providers do not receive unverified advanced options.
 
 ```mermaid
 flowchart LR
@@ -216,7 +220,7 @@ Aithy is local-first by default. State, sessions, knowledge, memories, skills, s
 - Slash commands such as `/help`, `/skills`, and `/session` are routed before they reach the agent.
 - Non-secret provider settings live in SQLite; credentials live in Bun secrets under Aithy-prefixed names.
 - MCP client tokens use `aithy.mcp.<server-id>.token`; Aithy's own server token uses `aithy.mcp-server.token`. DTOs expose only configured status.
-- Provider profiles are validated against URL, model or mode, and credential version before being marked valid.
+- Provider profiles are validated against endpoint fields, URL, model, thinking level, service tier, and credential version before being marked valid.
 - Mesh TLS private keys stay in local secrets, paired certificate pins live in SQLite, and provider API keys are never sent to peers.
 - Mesh RPC uses pinned TLS with HTTP/3 preferred and pinned HTTPS fallback.
 - Mesh service access requires mutual `family` trust, live catalog authorization, and a current model/service allowlist match.

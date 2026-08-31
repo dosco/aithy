@@ -3,6 +3,7 @@ import { useRouter } from "@tanstack/react-router";
 import { ArrowRight, LogIn, RefreshCw } from "lucide-react";
 import { AsciiSplash } from "@/components/ascii-splash";
 import { LocalInferenceSplash } from "@/components/local-inference-splash";
+import { InferenceProfileInputs } from "@/components/inference-profile-fields";
 import { useLiveEvent } from "@/components/live-events";
 import {
   ApiKeyInput,
@@ -22,11 +23,17 @@ import { saveProfile } from "@/server/profile.functions";
 import { getSetupGateState } from "@/server/state.functions";
 import type { GrokSubscriptionStatusDto, SetupPageStateDto } from "@/server/dto";
 import {
+  capabilitiesForProviderModel,
   defaultModelForProvider,
-  isCustomOpenAIProvider,
   isXaiGrokSubscriptionProvider,
+  missingProfileConfiguration,
+  normalizeServiceTierForSelection,
+  normalizeThinkingLevelForSelection,
+  providerAuthentication,
+  providerUsesApiUrl,
+  type AiServiceTier,
+  type AiThinkingLevel,
 } from "../../src/agent/ai-providers";
-import { providerRequiresApiKey } from "../../src/config/validate";
 
 const SETUP_SAVE_TIMEOUT_MS = 45_000;
 
@@ -51,6 +58,11 @@ export function SetupPage({
     initialState.config.aiModel || defaultModelForProvider(initialProvider),
   );
   const [apiUrl, setApiUrl] = useState(initialState.config.aiApiUrl);
+  const [profileArgs, setProfileArgs] = useState(initialState.config.aiProfileArgs);
+  const [thinkingLevel, setThinkingLevel] = useState<AiThinkingLevel | "">(
+    initialState.config.aiThinkingLevel,
+  );
+  const [serviceTier, setServiceTier] = useState<AiServiceTier>(initialState.config.aiServiceTier);
   const [apiKey, setApiKey] = useState("");
   const [userName, setUserName] = useState(initialState.profile.userName);
   const [userLocation, setUserLocation] = useState(initialState.profile.userLocation);
@@ -66,15 +78,17 @@ export function SetupPage({
 
   const needsModel = !initialState.aiConfigured;
   const needsGrokSignIn = isXaiGrokSubscriptionProvider(provider);
-  const needsKey = providerRequiresApiKey(provider);
-  const needsApiUrl = isCustomOpenAIProvider(provider);
+  const authentication = providerAuthentication(provider);
+  const needsKey = authentication === "required";
+  const needsApiUrl = providerUsesApiUrl(provider);
   const localOnly = setupGate.localInferenceRequired && !setupGate.localInferenceReady;
+  const profileConfigurationComplete = missingProfileConfiguration(provider, apiUrl, profileArgs).length === 0;
   const canSubmit =
     !busy
     && userName.trim().length > 0
     && (!needsModel || (
       model.trim().length > 0
-      && (!needsApiUrl || apiUrl.trim().length > 0)
+      && profileConfigurationComplete
       && (!needsKey || apiKey.trim().length > 0)
       && (!needsGrokSignIn || grokSubscription.connected)
     ));
@@ -105,9 +119,12 @@ export function SetupPage({
                 aiProvider: provider,
                 aiApiUrl: needsApiUrl ? apiUrl.trim() : null,
                 aiModel: model.trim(),
+                aiProfileArgs: profileArgs,
+                aiThinkingLevel: thinkingLevel || null,
+                aiServiceTier: capabilitiesForSave(provider, model, serviceTier),
                 localAgentModel: model.trim(),
               },
-              apiKey: needsKey ? apiKey.trim() : undefined,
+              apiKey: authentication !== "none" && apiKey.trim() ? apiKey.trim() : undefined,
             },
           }),
           "Saving AI settings",
@@ -136,11 +153,20 @@ export function SetupPage({
   }
 
   function changeProvider(nextProvider: string) {
+    const savedProfile = initialState.settings.runtime.aiProviderProfiles?.[nextProvider];
+    const nextModel = savedProfile?.model ?? defaultModelForProvider(nextProvider);
     setProvider(nextProvider);
-    if (!isCustomOpenAIProvider(nextProvider)) setApiUrl("");
-    if (!initialState.config.aiModel) {
-      setModel(defaultModelForProvider(nextProvider));
-    }
+    setModel(nextModel ?? "");
+    setApiUrl(savedProfile?.apiUrl ?? "");
+    setProfileArgs(savedProfile?.profileArgs ?? {});
+    setThinkingLevel(normalizeThinkingLevelForSelection(nextProvider, nextModel, savedProfile?.thinkingLevel) ?? "");
+    setServiceTier(normalizeServiceTierForSelection(nextProvider, nextModel, savedProfile?.serviceTier) ?? "auto");
+  }
+
+  function changeModel(nextModel: string) {
+    setModel(nextModel);
+    setThinkingLevel((current) => normalizeThinkingLevelForSelection(provider, nextModel, current) ?? "");
+    setServiceTier((current) => normalizeServiceTierForSelection(provider, nextModel, current) ?? "auto");
   }
 
   async function signInWithGrok() {
@@ -272,22 +298,22 @@ export function SetupPage({
                 <ModelCombobox
                   provider={provider}
                   value={model}
-                  onChange={setModel}
+                  onChange={changeModel}
                   placeholder="e.g. gpt-4.1"
                 />
               </Field>
-              {needsApiUrl ? (
-                <div className="sm:col-span-2">
-                  <Field label="Base URL">
-                    <input
-                      className={fieldClass}
-                      value={apiUrl}
-                      onChange={(event) => setApiUrl(event.target.value)}
-                      placeholder="https://api.example.com/v1"
-                    />
-                  </Field>
-                </div>
-              ) : null}
+              <InferenceProfileInputs
+                provider={provider}
+                model={model}
+                apiUrl={apiUrl}
+                profileArgs={profileArgs}
+                thinkingLevel={thinkingLevel}
+                serviceTier={serviceTier}
+                onApiUrlChange={setApiUrl}
+                onProfileArgChange={(name, value) => setProfileArgs((current) => ({ ...current, [name]: value }))}
+                onThinkingLevelChange={(value) => setThinkingLevel(value as AiThinkingLevel | "")}
+                onServiceTierChange={(value) => setServiceTier(value as AiServiceTier)}
+              />
             </div>
             {needsGrokSignIn ? (
               <div className="grid gap-3 rounded-xl border border-[rgb(var(--border))] bg-[rgb(var(--panel))] p-3.5">
@@ -314,13 +340,17 @@ export function SetupPage({
                 ) : null}
               </div>
             ) : (
-              <Field label={needsKey ? "API key" : "API key (not required)"}>
+              <Field label={needsKey
+                ? "API key"
+                : authentication === "optional" ? "API key (optional)" : "API key (not required)"}>
                 <ApiKeyInput
                   value={apiKey}
                   onChange={setApiKey}
                   secret={null}
-                  disabled={!needsKey}
-                  fallback={needsKey ? "Stored in the encrypted secrets store" : "Local provider - no key needed"}
+                  disabled={authentication === "none"}
+                  fallback={needsKey
+                    ? "Stored in the encrypted secrets store"
+                    : authentication === "optional" ? "Optional bearer token" : "No API key needed"}
                 />
               </Field>
             )}
@@ -382,4 +412,12 @@ async function withSetupTimeout<T>(
   } finally {
     if (timer) clearTimeout(timer);
   }
+}
+
+function capabilitiesForSave(
+  provider: string,
+  model: string,
+  tier: AiServiceTier,
+): AiServiceTier | undefined {
+  return capabilitiesForProviderModel(provider, model).serviceTiers.length > 0 ? tier : undefined;
 }

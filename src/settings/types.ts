@@ -1,4 +1,5 @@
 import type { AppConfig, GlobalMount, SandboxProviderKind } from "../config/env";
+import type { AiServiceTier, AiThinkingLevel } from "../agent/ai-providers";
 import type { LocalInferenceSettings } from "../local-inference/settings";
 import type { CustomSandboxImage, SandboxImageSelection } from "../sandbox/image-catalog";
 
@@ -38,8 +39,14 @@ export interface ProviderValidationState {
 export interface AiProviderProfile {
   apiUrl?: string | null;
   model?: string | null;
+  profileArgs?: Record<string, string>;
+  thinkingLevel?: AiThinkingLevel | null;
+  serviceTier?: AiServiceTier;
   fastApiUrl?: string | null;
   fastModel?: string | null;
+  fastProfileArgs?: Record<string, string>;
+  fastThinkingLevel?: AiThinkingLevel | null;
+  fastServiceTier?: AiServiceTier;
   secretVersion?: number;
   validation?: ProviderValidationState;
   fastValidation?: ProviderValidationState;
@@ -77,11 +84,17 @@ export interface RuntimeSettings {
   aiApiUrl?: string | null;
   aiApiKey?: string | null;
   aiModel?: string | null;
+  aiProfileArgs?: Record<string, string>;
+  aiThinkingLevel?: AiThinkingLevel | null;
+  aiServiceTier?: AiServiceTier;
   localAgentModel?: string | null;
   localInference?: Partial<LocalInferenceSettings>;
   fastAiProvider?: string;
   fastAiApiUrl?: string | null;
   fastAiModel?: string;
+  fastAiProfileArgs?: Record<string, string>;
+  fastAiThinkingLevel?: AiThinkingLevel | null;
+  fastAiServiceTier?: AiServiceTier;
   aiProviderProfiles?: Record<string, AiProviderProfile>;
   searchProvider?: SearchProviderId;
   searchProviderProfiles?: Record<string, SearchProviderProfile>;

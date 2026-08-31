@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { DEFAULT_SANDBOX_IMAGE, loadConfig } from "../src/config/env";
-import { assertStartupConfig, fastAiConfigurationIssues, providerRequiresApiKey } from "../src/config/validate";
+import { aiConfigurationIssues, assertStartupConfig, fastAiConfigurationIssues, providerRequiresApiKey } from "../src/config/validate";
 import {
   CUSTOM_OPENAI_PROVIDER,
   DEFAULT_OPENAI_MODEL,
@@ -153,5 +153,28 @@ describe("loadConfig", () => {
       ...missingUrl,
       aiApiUrl: "https://api.example.test/v1",
     })).not.toThrow();
+  });
+
+  test("validates named profile URL, key, and endpoint requirements", () => {
+    expect(aiConfigurationIssues({
+      ...loadConfig(),
+      aiProvider: "openai-compatible",
+      aiModel: "local-model",
+    })).toContain("OpenAI Compatible base URL");
+
+    expect(aiConfigurationIssues({
+      ...loadConfig(),
+      aiProvider: "openai-compatible",
+      aiApiUrl: "http://127.0.0.1:8080/v1",
+      aiModel: "local-model",
+    })).toEqual([]);
+
+    expect(aiConfigurationIssues({
+      ...loadConfig(),
+      aiProvider: "azure-openai",
+      aiApiKey: "azure-key",
+      aiModel: "deployment-model",
+      aiProfileArgs: { resourceName: "aithy-test" },
+    })).toContain("Azure OpenAI deployment name");
   });
 });

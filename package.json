@@ -29,7 +29,7 @@
     "ci": "bun ci && bun run check"
   },
   "dependencies": {
-    "@ax-llm/ax": "24.0.15",
+    "@ax-llm/ax": "24.0.16",
     "@huggingface/hub": "2.16.1",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@radix-ui/react-popover": "1.1.23",

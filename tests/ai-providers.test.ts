@@ -2,12 +2,19 @@ import { describe, expect, test } from "bun:test";
 import { axGetSupportedAIModels } from "@ax-llm/ax";
 import {
   AX_AI_PROVIDERS,
+  AX_AI_SELECTABLE_PROVIDERS,
   CUSTOM_OPENAI_PROVIDER,
   DEFAULT_OPENAI_MODEL,
   LOCAL_AI_PROVIDER,
   XAI_GROK_SUBSCRIPTION_DEFAULT_MODEL,
   XAI_GROK_SUBSCRIPTION_PROVIDER,
   defaultModelForProvider,
+  capabilitiesForProviderModel,
+  endpointFieldsForProvider,
+  normalizeServiceTierForSelection,
+  normalizeThinkingLevelForSelection,
+  providerAuthentication,
+  providerUsesApiUrl,
   providerDisplayName,
   isAxAiProvider,
   isCustomOpenAIProvider,
@@ -56,6 +63,47 @@ describe("AI provider metadata", () => {
     expect(providerDisplayName(CUSTOM_OPENAI_PROVIDER)).toBe("Custom OpenAI");
     expect(modelsForProvider(CUSTOM_OPENAI_PROVIDER)).toEqual([]);
     expect(defaultModelForProvider(CUSTOM_OPENAI_PROVIDER)).toBe("");
+  });
+
+  test("offers Ax named profiles while keeping the legacy custom id current-only", () => {
+    expect(AX_AI_SELECTABLE_PROVIDERS).toContain("openai-compatible");
+    expect(AX_AI_SELECTABLE_PROVIDERS).toContain("openai-responses");
+    expect(AX_AI_SELECTABLE_PROVIDERS).toContain("openrouter");
+    expect(AX_AI_SELECTABLE_PROVIDERS).not.toContain(CUSTOM_OPENAI_PROVIDER);
+    expect(AX_AI_PROVIDERS).not.toContain("webllm");
+  });
+
+  test("uses named-profile authentication and endpoint metadata", () => {
+    expect(providerAuthentication("openai")).toBe("required");
+    expect(providerAuthentication("openai-compatible")).toBe("optional");
+    expect(providerAuthentication("ollama")).toBe("optional");
+    expect(providerUsesApiUrl("openai-compatible")).toBe(true);
+    expect(endpointFieldsForProvider("azure-openai")).toEqual([
+      { name: "resourceName", label: "Resource Name", required: true },
+      { name: "deploymentName", label: "Deployment Name", required: true },
+      { name: "version", label: "Version", required: false, defaultValue: "2024-02-15-preview" },
+    ]);
+  });
+
+  test("resolves model capabilities before provider fallbacks", () => {
+    expect(capabilitiesForProviderModel("openai", "gpt-5-mini").thinkingLevels).toEqual([]);
+    expect(capabilitiesForProviderModel("openai", "gpt-realtime-2").serviceTiers).toEqual([]);
+    expect(capabilitiesForProviderModel("google-gemini", "gemini-embedding-2")).toEqual({
+      thinkingLevels: [],
+      serviceTiers: [],
+    });
+    expect(capabilitiesForProviderModel("grok", "grok-4.6").thinkingLevels).not.toContain("none");
+  });
+
+  test("uses provider capabilities for dynamic named profiles", () => {
+    expect(capabilitiesForProviderModel("azure-openai", "deployment-model").thinkingLevels).toContain("high");
+    expect(capabilitiesForProviderModel("openrouter", "vendor/model").serviceTiers).toEqual([
+      "standard",
+      "flex",
+      "priority",
+    ]);
+    expect(normalizeThinkingLevelForSelection("openai", "gpt-5-mini", "high")).toBeUndefined();
+    expect(normalizeServiceTierForSelection("openrouter", "vendor/model", "flex")).toBe("flex");
   });
 
   test("adds a local provider with a managed default model", () => {
@@ -140,6 +188,35 @@ describe("AI provider metadata", () => {
     });
 
     expect(service.getName()).toBe("OpenAI");
+  });
+
+  test("constructs named profiles with endpoint arguments and request defaults", () => {
+    const service = createAiService({
+      ...loadConfig({}),
+      aiProvider: "azure-openai",
+      aiApiKey: "azure-key",
+      aiModel: "gpt-deployment",
+      aiProfileArgs: { resourceName: "aithy-test", deploymentName: "chat" },
+      aiThinkingLevel: "high",
+      aiServiceTier: "priority",
+    });
+
+    expect(service.getName()).toBe("Azure OpenAI");
+    expect(service.getOptions()).toMatchObject({ serviceTier: "priority" });
+    expect((service as unknown as {
+      ai: { aiImpl: { options: { thinkingTokenBudget?: string } } };
+    }).ai.aiImpl.options.thinkingTokenBudget).toBe("high");
+  });
+
+  test("constructs the optional-key OpenAI-compatible named profile", () => {
+    const service = createAiService({
+      ...loadConfig({}),
+      aiProvider: "openai-compatible",
+      aiApiUrl: "http://127.0.0.1:8080/v1",
+      aiModel: "local-model",
+    });
+
+    expect(service.getName()).toBe("OpenAI Compatible");
   });
 
   test("ignores incomplete fast provider settings", () => {

@@ -40,8 +40,10 @@ export function createAiService(input: AiServiceConfigInput): AiService {
   const remote = isMeshInferenceProvider(config.aiProvider);
   return ai({
     name: aiServiceProviderName(config.aiProvider),
+    ...config.aiProfileArgs,
     apiURL: config.aiApiUrl,
     apiKey: local ? "local" : remote ? MESH_PROXY_AUTH_TOKEN : config.aiApiKey,
+    options: requestOptions(config.aiThinkingLevel, config.aiServiceTier),
     config: config.aiModel
       ? local || remote ? { model: config.aiModel, stream: false } : { model: config.aiModel }
       : undefined,
@@ -65,8 +67,10 @@ export function createFastAiService(input: AiServiceConfigInput): AiService | un
   const remote = isMeshInferenceProvider(fastProvider);
   return ai({
     name: aiServiceProviderName(fastProvider),
+    ...config.fastAiProfileArgs,
     apiURL: config.fastAiApiUrl,
     apiKey: local ? "local" : remote ? MESH_PROXY_AUTH_TOKEN : apiKey,
+    options: requestOptions(config.fastAiThinkingLevel, config.fastAiServiceTier),
     config: config.fastAiModel
       ? local || remote ? { model: config.fastAiModel, stream: false } : { model: config.fastAiModel }
       : undefined,
@@ -95,6 +99,17 @@ function aiServiceProviderName(provider: string): string {
   return isCustomOpenAIProvider(provider) || isLocalAiProvider(provider) || isMeshInferenceProvider(provider)
     ? "openai"
     : provider;
+}
+
+function requestOptions(
+  thinkingTokenBudget: AppConfig["aiThinkingLevel"],
+  serviceTier: AppConfig["aiServiceTier"],
+): { thinkingTokenBudget?: AppConfig["aiThinkingLevel"]; serviceTier?: AppConfig["aiServiceTier"] } | undefined {
+  if (!thinkingTokenBudget && !serviceTier) return undefined;
+  return {
+    ...(thinkingTokenBudget ? { thinkingTokenBudget } : {}),
+    ...(serviceTier ? { serviceTier } : {}),
+  };
 }
 
 function createGrokSubscriptionAiService(

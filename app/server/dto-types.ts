@@ -24,23 +24,26 @@ import type {
 } from "../../src/web/live-events";
 import type { NotificationAttentionDto, NotificationDto } from "./notification.dto-types";
 import type { SkillEvalRunSummary } from "../../src/skills/evals";
-
+import type { AiServiceTier, AiThinkingLevel } from "../../src/agent/ai-providers";
 export type SessionSummaryDto = SerializableSessionSummary;
 
-export interface GlobalMountDto {
-  hostPath: string;
-  mode?: "read-only" | "read-write";
-}
+export interface GlobalMountDto { hostPath: string; mode?: "read-only" | "read-write" }
 
 export interface ConfigDto {
   aiProvider: string;
   aiApiUrl: string;
   aiModel: string;
+  aiProfileArgs: Record<string, string>;
+  aiThinkingLevel: AiThinkingLevel | "";
+  aiServiceTier: AiServiceTier;
   localAgentModel: string;
   localInference: LocalInferenceSettings;
   fastAiProvider: string;
   fastAiApiUrl: string;
   fastAiModel: string;
+  fastAiProfileArgs: Record<string, string>;
+  fastAiThinkingLevel: AiThinkingLevel | "";
+  fastAiServiceTier: AiServiceTier;
   sandboxProvider: string;
   sandboxImage: string;
   sandboxImageLabel: string;

@@ -1,6 +1,9 @@
 import { createServerFn } from "@tanstack/react-start";
 import { getRequest } from "@tanstack/react-start/server";
-import { isCustomOpenAIProvider } from "../../src/agent/ai-providers";
+import {
+  normalizeProfileArgs,
+  providerUsesApiUrl,
+} from "../../src/agent/ai-providers";
 import type { AppConfig } from "../../src/config/env";
 import { isAiConfigured } from "../../src/config/validate";
 import { isMeshInferenceProvider, isMeshSearchProvider } from "../../src/mesh/types";
@@ -28,6 +31,7 @@ import {
   writeProviderApiKey,
 } from "../../src/settings/secrets";
 import type { RuntimeSettings } from "../../src/settings/types";
+import { normalizeProviderApiUrl } from "../../src/settings/provider-url";
 import { grokSubscriptionLoginPollInput, localInferenceSettingsInput, parallelSearchTestInput, settingsInput } from "./action-schemas";
 import { assertAiSettings } from "./ai-settings-test";
 import {
@@ -61,17 +65,28 @@ export const saveSettings = createServerFn({ method: "POST" })
     if (runtimePatch?.aiApiUrl !== undefined) {
       runtimePatch = {
         ...runtimePatch,
-        aiApiUrl: isCustomOpenAIProvider(provider)
-          ? normalizeOpenAiApiUrl(runtimePatch.aiApiUrl)
+        aiApiUrl: providerUsesApiUrl(provider)
+          ? normalizeProviderApiUrl(provider, runtimePatch.aiApiUrl)
           : null,
       };
+    }
+    if (runtimePatch?.aiProfileArgs !== undefined) {
+      runtimePatch = { ...runtimePatch, aiProfileArgs: normalizeProfileArgs(provider, runtimePatch.aiProfileArgs) ?? {} };
     }
     if (runtimePatch?.fastAiApiUrl !== undefined) {
       runtimePatch = {
         ...runtimePatch,
-        fastAiApiUrl: fastProvider && isCustomOpenAIProvider(fastProvider)
-          ? normalizeOpenAiApiUrl(runtimePatch.fastAiApiUrl)
+        fastAiApiUrl: fastProvider && providerUsesApiUrl(fastProvider)
+          ? normalizeProviderApiUrl(fastProvider, runtimePatch.fastAiApiUrl)
           : null,
+      };
+    }
+    if (runtimePatch?.fastAiProfileArgs !== undefined) {
+      runtimePatch = {
+        ...runtimePatch,
+        fastAiProfileArgs: fastProvider
+          ? normalizeProfileArgs(fastProvider, runtimePatch.fastAiProfileArgs) ?? {}
+          : {},
       };
     }
     if (parallelApiKey && !data.clearParallelApiKey) {
@@ -247,24 +262,6 @@ function normalizeParallelSearchMcpUrl(value: string): string {
   return url.href;
 }
 
-function normalizeOpenAiApiUrl(value: string | null | undefined): string {
-  const trimmed = value?.trim();
-  if (!trimmed) throw new Error("Custom OpenAI base URL is required.");
-  let url: URL;
-  try {
-    url = new URL(trimmed);
-  } catch {
-    throw new Error("Custom OpenAI base URL must be a valid URL.");
-  }
-  if (url.protocol !== "https:" && url.protocol !== "http:") {
-    throw new Error("Custom OpenAI base URL must start with http:// or https://.");
-  }
-  if (url.username || url.password) {
-    throw new Error("Custom OpenAI base URL must not include embedded credentials.");
-  }
-  return url.href;
-}
-
 async function assertMeshAiSelection(
   runtime: Awaited<ReturnType<typeof getAithyRuntime>>,
   current: RuntimeSettings,
@@ -299,16 +296,27 @@ function markValidatedAiProfiles(
   const secretVersion = nextSecretVersion(currentProfile.secretVersion, input.apiKeyChanged);
   const apiUrl = patch.aiApiUrl === null ? null : patch.aiApiUrl ?? currentProfile.apiUrl;
   const model = patch.aiModel === null ? null : patch.aiModel ?? currentProfile.model;
+  const profileArgs = patch.aiProfileArgs ?? currentProfile.profileArgs;
+  const thinkingLevel = patch.aiThinkingLevel === null
+    ? undefined
+    : patch.aiThinkingLevel ?? currentProfile.thinkingLevel ?? undefined;
+  const serviceTier = patch.aiServiceTier ?? currentProfile.serviceTier;
   const fingerprint = aiProfileFingerprint({
     provider: input.provider,
     apiUrl: apiUrl ?? undefined,
     model: model ?? undefined,
+    profileArgs,
+    thinkingLevel,
+    serviceTier,
     secretVersion,
     purpose: "primary",
   });
   profiles = upsertAiProfile({ ...current, aiProviderProfiles: profiles }, input.provider, {
     ...(patch.aiApiUrl !== undefined ? { apiUrl } : {}),
     ...(patch.aiModel !== undefined ? { model } : {}),
+    ...(patch.aiProfileArgs !== undefined ? { profileArgs } : {}),
+    ...(patch.aiThinkingLevel !== undefined ? { thinkingLevel } : {}),
+    ...(patch.aiServiceTier !== undefined ? { serviceTier } : {}),
     secretVersion,
     validation: providerNeedsLiveValidation(input.provider)
       ? validValidation(fingerprint)
@@ -319,17 +327,30 @@ function markValidatedAiProfiles(
     const fastSecretVersion = nextSecretVersion(currentFastProfile.secretVersion, input.fastApiKeyChanged);
     const fastApiUrl = patch.fastAiApiUrl === null ? null : patch.fastAiApiUrl ?? currentFastProfile.fastApiUrl;
     const fastModel = patch.fastAiModel ?? currentFastProfile.fastModel;
+    const fastProfileArgs = patch.fastAiProfileArgs
+      ?? currentFastProfile.fastProfileArgs
+      ?? currentFastProfile.profileArgs;
+    const fastThinkingLevel = patch.fastAiThinkingLevel === null
+      ? undefined
+      : patch.fastAiThinkingLevel ?? currentFastProfile.fastThinkingLevel ?? undefined;
+    const fastServiceTier = patch.fastAiServiceTier ?? currentFastProfile.fastServiceTier;
     const effectiveFastApiUrl = fastApiUrl ?? currentFastProfile.apiUrl;
     const fastFingerprint = aiProfileFingerprint({
       provider: input.fastProvider,
       apiUrl: effectiveFastApiUrl ?? undefined,
       model: fastModel ?? undefined,
+      profileArgs: fastProfileArgs,
+      thinkingLevel: fastThinkingLevel,
+      serviceTier: fastServiceTier,
       secretVersion: input.fastProvider === input.provider ? secretVersion : fastSecretVersion,
       purpose: "fast",
     });
     profiles = upsertAiProfile({ ...current, aiProviderProfiles: profiles }, input.fastProvider, {
       ...(patch.fastAiApiUrl !== undefined ? { fastApiUrl } : {}),
       ...(patch.fastAiModel !== undefined ? { fastModel } : {}),
+      ...(patch.fastAiProfileArgs !== undefined ? { fastProfileArgs } : {}),
+      ...(patch.fastAiThinkingLevel !== undefined ? { fastThinkingLevel } : {}),
+      ...(patch.fastAiServiceTier !== undefined ? { fastServiceTier } : {}),
       secretVersion: input.fastProvider === input.provider ? secretVersion : fastSecretVersion,
       fastValidation: providerNeedsLiveValidation(input.fastProvider)
         ? validValidation(fastFingerprint)

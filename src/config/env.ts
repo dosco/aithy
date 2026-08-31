@@ -19,6 +19,7 @@ import {
   type SandboxImageSelection,
 } from "../sandbox/image-catalog";
 import type { SearchProviderId } from "../settings/types";
+import type { AiServiceTier, AiThinkingLevel } from "../agent/ai-providers";
 
 export type SandboxProviderKind = "microsandbox" | "disabled";
 export const DEFAULT_SANDBOX_IMAGE = resolveSandboxImageConfig(
@@ -37,12 +38,18 @@ export interface AppConfig {
   aiApiUrl?: string;
   aiApiKey?: string;
   aiModel?: string;
+  aiProfileArgs?: Record<string, string>;
+  aiThinkingLevel?: AiThinkingLevel;
+  aiServiceTier?: AiServiceTier;
   localAgentModel?: string;
   localInference: LocalInferenceSettings;
   fastAiProvider?: string;
   fastAiApiUrl?: string;
   fastAiApiKey?: string;
   fastAiModel?: string;
+  fastAiProfileArgs?: Record<string, string>;
+  fastAiThinkingLevel?: AiThinkingLevel;
+  fastAiServiceTier?: AiServiceTier;
   sandboxProvider: SandboxProviderKind;
   sandboxImage: string;
   sandboxImageLabel?: string;

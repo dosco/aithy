@@ -1,5 +1,11 @@
 import { createHash } from "node:crypto";
-import { isCustomOpenAIProvider, isLocalAiProvider, isXaiGrokSubscriptionProvider } from "../agent/ai-providers";
+import {
+  isLocalAiProvider,
+  isXaiGrokSubscriptionProvider,
+  normalizeProfileArgs,
+  type AiServiceTier,
+  type AiThinkingLevel,
+} from "../agent/ai-providers";
 import { isMeshInferenceProvider, isMeshSearchProvider } from "../mesh/types";
 import type {
   AiProviderProfile,
@@ -36,10 +42,6 @@ export function providerNeedsLiveValidation(provider: string): boolean {
   return !isLocalAiProvider(provider) && !isMeshInferenceProvider(provider) && !isXaiGrokSubscriptionProvider(provider);
 }
 
-export function providerUsesApiUrl(provider: string): boolean {
-  return isCustomOpenAIProvider(provider);
-}
-
 export function validationNotRequired(message = "Validation is not required for this provider."): ProviderValidationState {
   return {
     status: "not-required",
@@ -71,6 +73,9 @@ export function aiProfileFingerprint(input: {
   provider: string;
   apiUrl?: string;
   model?: string;
+  profileArgs?: Readonly<Record<string, string>>;
+  thinkingLevel?: AiThinkingLevel;
+  serviceTier?: AiServiceTier;
   secretVersion?: number;
   purpose?: "primary" | "fast";
 }): string {
@@ -79,6 +84,9 @@ export function aiProfileFingerprint(input: {
     provider: input.provider,
     apiUrl: input.apiUrl ?? "",
     model: input.model ?? "",
+    profileArgs: sortedRecord(input.profileArgs),
+    thinkingLevel: input.thinkingLevel ?? "",
+    serviceTier: input.serviceTier ?? "",
     secretVersion: input.secretVersion ?? 0,
     purpose: input.purpose ?? "primary",
   });
@@ -106,7 +114,7 @@ export function upsertAiProfile(
 ): Record<string, AiProviderProfile> {
   return {
     ...(settings.aiProviderProfiles ?? {}),
-    [provider]: compactProfile({ ...aiProfileFor(settings, provider), ...patch }),
+    [provider]: compactProfile({ ...aiProfileFor(settings, provider), ...patch }, provider),
   };
 }
 
@@ -125,21 +133,27 @@ export function normalizeAiProfiles(runtime: RuntimeSettings): Record<string, Ai
   const profiles: Record<string, AiProviderProfile> = {};
   for (const [provider, profile] of Object.entries(runtime.aiProviderProfiles ?? {})) {
     if (!provider.trim() || !profile || typeof profile !== "object") continue;
-    profiles[provider] = compactProfile(profile);
+    profiles[provider] = compactProfile(profile, provider);
   }
   if (runtime.aiProvider) {
     profiles[runtime.aiProvider] = compactProfile({
       ...(profiles[runtime.aiProvider] ?? {}),
       ...(runtime.aiApiUrl !== undefined ? { apiUrl: runtime.aiApiUrl } : {}),
       ...(runtime.aiModel !== undefined ? { model: runtime.aiModel } : {}),
-    });
+      ...(runtime.aiProfileArgs !== undefined ? { profileArgs: runtime.aiProfileArgs } : {}),
+      ...(runtime.aiThinkingLevel !== undefined ? { thinkingLevel: runtime.aiThinkingLevel } : {}),
+      ...(runtime.aiServiceTier !== undefined ? { serviceTier: runtime.aiServiceTier } : {}),
+    }, runtime.aiProvider);
   }
   if (runtime.fastAiProvider) {
     profiles[runtime.fastAiProvider] = compactProfile({
       ...(profiles[runtime.fastAiProvider] ?? {}),
       ...(runtime.fastAiApiUrl !== undefined ? { fastApiUrl: runtime.fastAiApiUrl } : {}),
       ...(runtime.fastAiModel !== undefined ? { fastModel: runtime.fastAiModel } : {}),
-    });
+      ...(runtime.fastAiProfileArgs !== undefined ? { fastProfileArgs: runtime.fastAiProfileArgs } : {}),
+      ...(runtime.fastAiThinkingLevel !== undefined ? { fastThinkingLevel: runtime.fastAiThinkingLevel } : {}),
+      ...(runtime.fastAiServiceTier !== undefined ? { fastServiceTier: runtime.fastAiServiceTier } : {}),
+    }, runtime.fastAiProvider);
   }
   const normalized = Object.fromEntries(
     Object.entries(profiles).map(([provider, profile]) => [provider, normalizeAiProfileValidation(provider, profile)]),
@@ -177,6 +191,9 @@ function normalizeAiProfileValidation(provider: string, profile: AiProviderProfi
         provider,
         apiUrl: profile.apiUrl ?? undefined,
         model: profile.model ?? undefined,
+        profileArgs: profile.profileArgs,
+        thinkingLevel: profile.thinkingLevel ?? undefined,
+        serviceTier: profile.serviceTier,
         secretVersion: profile.secretVersion,
         purpose: "primary",
       }))
@@ -186,11 +203,14 @@ function normalizeAiProfileValidation(provider: string, profile: AiProviderProfi
         provider,
         apiUrl: profile.fastApiUrl ?? profile.apiUrl ?? undefined,
         model: profile.fastModel ?? undefined,
+        profileArgs: profile.fastProfileArgs ?? profile.profileArgs,
+        thinkingLevel: profile.fastThinkingLevel ?? undefined,
+        serviceTier: profile.fastServiceTier,
         secretVersion: profile.secretVersion,
         purpose: "fast",
       }))
       : undefined,
-  });
+  }, provider);
 }
 
 function normalizeSearchProfileValidation(provider: SearchProviderId, profile: SearchProviderProfile): SearchProviderProfile {
@@ -207,12 +227,18 @@ function normalizeSearchProfileValidation(provider: SearchProviderId, profile: S
   });
 }
 
-function compactProfile(profile: AiProviderProfile): AiProviderProfile {
+function compactProfile(profile: AiProviderProfile, provider: string): AiProviderProfile {
   return {
     ...stringField("apiUrl", profile.apiUrl),
     ...stringField("model", profile.model),
+    ...(normalizeProfileArgs(provider, profile.profileArgs) ? { profileArgs: normalizeProfileArgs(provider, profile.profileArgs) } : {}),
+    ...(thinkingLevel(profile.thinkingLevel) ? { thinkingLevel: thinkingLevel(profile.thinkingLevel) } : {}),
+    ...(serviceTier(profile.serviceTier) ? { serviceTier: serviceTier(profile.serviceTier) } : {}),
     ...stringField("fastApiUrl", profile.fastApiUrl),
     ...stringField("fastModel", profile.fastModel),
+    ...(normalizeProfileArgs(provider, profile.fastProfileArgs) ? { fastProfileArgs: normalizeProfileArgs(provider, profile.fastProfileArgs) } : {}),
+    ...(thinkingLevel(profile.fastThinkingLevel) ? { fastThinkingLevel: thinkingLevel(profile.fastThinkingLevel) } : {}),
+    ...(serviceTier(profile.fastServiceTier) ? { fastServiceTier: serviceTier(profile.fastServiceTier) } : {}),
     ...(numberField(profile.secretVersion) !== undefined ? { secretVersion: numberField(profile.secretVersion) } : {}),
     ...(profile.validation ? { validation: normalizeValidation(profile.validation) } : {}),
     ...(profile.fastValidation ? { fastValidation: normalizeValidation(profile.fastValidation) } : {}),
@@ -240,6 +266,21 @@ function stringField<K extends string>(key: K, value: string | null | undefined)
 function numberField(value: number | undefined): number | undefined {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) return undefined;
   return Math.floor(value);
+}
+
+function thinkingLevel(value: unknown): AiThinkingLevel | undefined {
+  return value === "none" || value === "minimal" || value === "low" || value === "medium"
+    || value === "high" || value === "highest" ? value : undefined;
+}
+
+function serviceTier(value: unknown): AiServiceTier | undefined {
+  return value === "auto" || value === "standard" || value === "flex" || value === "priority"
+    ? value
+    : undefined;
+}
+
+function sortedRecord(value: Readonly<Record<string, string>> | undefined): Record<string, string> {
+  return Object.fromEntries(Object.entries(value ?? {}).sort(([a], [b]) => a.localeCompare(b)));
 }
 
 function normalizeValidation(value: ProviderValidationState): ProviderValidationState {

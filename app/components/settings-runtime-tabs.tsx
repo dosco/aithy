@@ -3,6 +3,7 @@ import { LogIn, LogOut, RefreshCw, UserCircle } from "lucide-react";
 import { FamilyInferenceSelector } from "@/components/family-mesh-selectors";
 import type { PrimaryClearAction } from "@/components/settings-page-helpers";
 import { SettingsSaveBar } from "@/components/settings-save-bar";
+import { InferenceProfileFields } from "@/components/inference-profile-fields";
 import {
   ApiKeyInput,
   Field,
@@ -10,7 +11,6 @@ import {
   type ModelOption,
   ProviderSelect,
   Section,
-  fieldClass,
   selectClass,
 } from "@/components/settings-form-bits";
 import { Button } from "@/components/ui/button";
@@ -23,11 +23,12 @@ import type {
 } from "@/server/dto";
 import {
   defaultModelForProvider,
-  isCustomOpenAIProvider,
   isLocalAiProvider,
   isXaiGrokSubscriptionProvider,
+  normalizeServiceTierForSelection,
+  normalizeThinkingLevelForSelection,
+  providerAuthentication,
 } from "../../src/agent/ai-providers";
-import { providerRequiresApiKey } from "../../src/config/validate";
 import { isMeshInferenceProvider } from "../../src/mesh/types";
 
 interface RuntimeTabProps {
@@ -67,7 +68,8 @@ export function ModelSettingsTab(props: ModelTabProps) {
   const fastFamily = isMeshInferenceProvider(config.fastAiProvider);
   const primaryIsGrok = isXaiGrokSubscriptionProvider(config.aiProvider);
   const fastIsGrok = isXaiGrokSubscriptionProvider(config.fastAiProvider);
-  const primaryNeedsKey = providerRequiresApiKey(config.aiProvider);
+  const primaryAuth = providerAuthentication(config.aiProvider);
+  const fastAuth = providerAuthentication(config.fastAiProvider);
   const changePrimaryProvider = (value: string) => {
     setConfig((current) => {
       const profile = current.aiProviderProfiles?.[value];
@@ -75,8 +77,11 @@ export function ModelSettingsTab(props: ModelTabProps) {
       return {
         ...current,
         aiProvider: value,
-        aiApiUrl: profile?.apiUrl ?? (isCustomOpenAIProvider(value) ? "" : current.aiApiUrl),
+        aiApiUrl: profile?.apiUrl ?? "",
         aiModel,
+        aiProfileArgs: profile?.profileArgs ?? {},
+        aiThinkingLevel: normalizeThinkingLevelForSelection(value, aiModel, profile?.thinkingLevel) ?? "",
+        aiServiceTier: normalizeServiceTierForSelection(value, aiModel, profile?.serviceTier) ?? "auto",
         localAgentModel: isLocalAiProvider(value) ? aiModel : current.localAgentModel,
       };
     });
@@ -90,8 +95,11 @@ export function ModelSettingsTab(props: ModelTabProps) {
       return {
         ...current,
         fastAiProvider: value,
-        fastAiApiUrl: profile?.fastApiUrl ?? profile?.apiUrl ?? (isCustomOpenAIProvider(value) ? "" : current.fastAiApiUrl),
+        fastAiApiUrl: profile?.fastApiUrl ?? profile?.apiUrl ?? "",
         fastAiModel,
+        fastAiProfileArgs: profile?.fastProfileArgs ?? profile?.profileArgs ?? {},
+        fastAiThinkingLevel: normalizeThinkingLevelForSelection(value, fastAiModel, profile?.fastThinkingLevel) ?? "",
+        fastAiServiceTier: normalizeServiceTierForSelection(value, fastAiModel, profile?.fastServiceTier) ?? "auto",
         localAgentModel: isLocalAiProvider(value) ? fastAiModel : current.localAgentModel,
       };
     });
@@ -100,6 +108,8 @@ export function ModelSettingsTab(props: ModelTabProps) {
     setConfig((current) => ({
       ...current,
       aiModel: value,
+      aiThinkingLevel: normalizeThinkingLevelForSelection(current.aiProvider, value, current.aiThinkingLevel) ?? "",
+      aiServiceTier: normalizeServiceTierForSelection(current.aiProvider, value, current.aiServiceTier) ?? "auto",
       localAgentModel: isLocalAiProvider(current.aiProvider) ? value : current.localAgentModel,
     }));
   };
@@ -107,6 +117,8 @@ export function ModelSettingsTab(props: ModelTabProps) {
     setConfig((current) => ({
       ...current,
       fastAiModel: value,
+      fastAiThinkingLevel: normalizeThinkingLevelForSelection(current.fastAiProvider, value, current.fastAiThinkingLevel) ?? "",
+      fastAiServiceTier: normalizeServiceTierForSelection(current.fastAiProvider, value, current.fastAiServiceTier) ?? "auto",
       localAgentModel: isLocalAiProvider(current.fastAiProvider) ? value : current.localAgentModel,
     }));
   };
@@ -159,18 +171,7 @@ export function ModelSettingsTab(props: ModelTabProps) {
               onClear={() => props.setPrimaryClearAction("model")}
             />
           </Field>
-          {isCustomOpenAIProvider(config.aiProvider) ? (
-            <div className="sm:col-span-2">
-              <Field label="Base URL">
-                <input
-                  className={fieldClass}
-                  value={config.aiApiUrl}
-                  onChange={(event) => setConfigValue(setConfig, "aiApiUrl", event.target.value)}
-                  placeholder="https://api.example.com/v1"
-                />
-              </Field>
-            </div>
-          ) : null}
+          <InferenceProfileFields config={config} setConfig={setConfig} purpose="primary" />
         </div>
         )}
         {primaryIsGrok ? (
@@ -182,13 +183,17 @@ export function ModelSettingsTab(props: ModelTabProps) {
             onLogout={props.onGrokLogout}
           />
         ) : (
-          <Field label={primaryNeedsKey ? "API key" : "API key (not required)"}>
+          <Field label={primaryAuth === "required"
+            ? "API key"
+            : primaryAuth === "optional" ? "API key (optional)" : "API key (not required)"}>
             <ApiKeyInput
               value={apiKey}
               onChange={props.setApiKey}
               secret={secret}
-              disabled={!primaryNeedsKey}
-              fallback={primaryNeedsKey ? "Stored in the encrypted secrets store" : "No API key needed"}
+              disabled={primaryAuth === "none"}
+              fallback={primaryAuth === "required"
+                ? "Stored in the encrypted secrets store"
+                : primaryAuth === "optional" ? "Optional bearer token" : "No API key needed"}
               onClear={() => props.setPrimaryClearAction("key")}
             />
           </Field>
@@ -240,18 +245,7 @@ export function ModelSettingsTab(props: ModelTabProps) {
               onChange={changeFastModel}
             />
           </Field>
-          {isCustomOpenAIProvider(config.fastAiProvider) ? (
-            <div className="sm:col-span-2">
-              <Field label="Base URL">
-                <input
-                  className={fieldClass}
-                  value={config.fastAiApiUrl}
-                  onChange={(event) => setConfigValue(setConfig, "fastAiApiUrl", event.target.value)}
-                  placeholder="https://api.example.com/v1"
-                />
-              </Field>
-            </div>
-          ) : null}
+          <InferenceProfileFields config={config} setConfig={setConfig} purpose="fast" />
         </div>
         )}
         {fastIsGrok ? (
@@ -269,7 +263,7 @@ export function ModelSettingsTab(props: ModelTabProps) {
               value={fastApiKey}
               onChange={props.setFastApiKey}
               secret={fastSecret}
-              disabled={!config.fastAiProvider || !providerRequiresApiKey(config.fastAiProvider)}
+              disabled={!config.fastAiProvider || fastAuth === "none"}
               fallback={fastApiKeyFallback(config, secret)}
             />
           </Field>
@@ -366,9 +360,12 @@ function ValidationBadge({
 
 function fastApiKeyFallback(config: ConfigDto, secret: SecretStatusDto): string {
   if (!config.fastAiProvider) return "Set provider first";
-  if (!providerRequiresApiKey(config.fastAiProvider)) return "No API key needed";
+  const authentication = providerAuthentication(config.fastAiProvider);
+  if (authentication === "none") return "No API key needed";
+  if (authentication === "optional" && config.fastAiProvider !== config.aiProvider) return "Optional bearer token";
   if (config.fastAiProvider !== config.aiProvider) return "Stored in the encrypted secrets store";
-  return secret.configured ? "Reuses primary key" : "Set primary key first";
+  if (secret.configured) return "Reuses primary key";
+  return authentication === "optional" ? "Optional bearer token" : "Set primary key first";
 }
 
 function localModelOption(model: LocalModelDto): ModelOption {
@@ -418,12 +415,4 @@ function nextModelValue(
     return defaultModelForProvider(nextProvider);
   }
   return currentModel;
-}
-
-function setConfigValue<K extends keyof ConfigDto>(
-  setter: Dispatch<SetStateAction<ConfigDto>>,
-  key: K,
-  value: ConfigDto[K],
-) {
-  setter((current) => ({ ...current, [key]: value }));
 }

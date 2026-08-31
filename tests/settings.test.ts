@@ -145,6 +145,36 @@ describe("web settings", () => {
     expect(next.parallelSearchMcpUrl).toBe("https://search.example.test/mcp");
   });
 
+  test("restores named-profile endpoint and inference options", () => {
+    const next = applyRuntimeSettings(loadConfig({}), {
+      aiProvider: "azure-openai",
+      fastAiProvider: "openrouter",
+      aiProviderProfiles: {
+        "azure-openai": {
+          model: "deployment-model",
+          profileArgs: { resourceName: "aithy-test", deploymentName: "chat" },
+          thinkingLevel: "high",
+          serviceTier: "priority",
+        },
+        openrouter: {
+          fastModel: "vendor/fast-model",
+          fastServiceTier: "flex",
+        },
+      },
+    });
+
+    expect(next).toMatchObject({
+      aiProvider: "azure-openai",
+      aiModel: "deployment-model",
+      aiProfileArgs: { resourceName: "aithy-test", deploymentName: "chat" },
+      aiThinkingLevel: "high",
+      aiServiceTier: "priority",
+      fastAiProvider: "openrouter",
+      fastAiModel: "vendor/fast-model",
+      fastAiServiceTier: "flex",
+    });
+  });
+
   test("migrates legacy runtime fields into provider-scoped profiles on load", async () => {
     const root = await mkdtemp(path.join(tmpdir(), "aithy-settings-"));
     const dbPath = path.join(root, "state.db");
@@ -188,6 +218,13 @@ describe("web settings", () => {
       provider: "openai",
       model: "gpt-a",
       secretVersion: 2,
+    })).not.toBe(llm);
+    expect(aiProfileFingerprint({
+      provider: "openai",
+      model: "gpt-a",
+      thinkingLevel: "high",
+      serviceTier: "priority",
+      secretVersion: 1,
     })).not.toBe(llm);
 
     const search = searchProfileFingerprint({

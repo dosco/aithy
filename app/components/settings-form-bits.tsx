@@ -6,12 +6,14 @@ import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import type { MeshInferenceProviderDto, SecretStatusDto } from "@/server/dto";
 import {
-  AX_AI_PROVIDERS,
-  CUSTOM_OPENAI_PROVIDER,
+  AX_AI_SELECTABLE_PROVIDERS,
   LOCAL_AI_PROVIDER,
   XAI_GROK_SUBSCRIPTION_PROVIDER,
+  endpointFieldsForProvider,
+  isDynamicAiProvider,
   modelsForProvider,
   providerDisplayName,
+  providerUsesApiUrl,
 } from "../../src/agent/ai-providers";
 
 export const fieldClass =
@@ -326,24 +328,31 @@ function providerGroups(meshInferenceProviders: readonly MeshInferenceProviderDt
     label: provider.online ? provider.name : `${provider.name} (offline)`,
     disabled: !provider.online,
   }));
-  const hostedOptions = AX_AI_PROVIDERS
+  const catalogOptions = AX_AI_SELECTABLE_PROVIDERS
     .filter((provider) =>
       provider !== LOCAL_AI_PROVIDER
       && provider !== XAI_GROK_SUBSCRIPTION_PROVIDER
-      && provider !== CUSTOM_OPENAI_PROVIDER
     )
     .map((provider) => ({ value: provider, label: providerDisplayName(provider) }));
+  const coreOptions = catalogOptions.filter((option) => !isDynamicAiProvider(option.value));
+  const namedOptions = catalogOptions.filter((option) =>
+    isDynamicAiProvider(option.value)
+    && !providerUsesApiUrl(option.value)
+    && endpointFieldsForProvider(option.value).length === 0
+  );
+  const endpointOptions = catalogOptions.filter((option) =>
+    isDynamicAiProvider(option.value)
+    && (providerUsesApiUrl(option.value) || endpointFieldsForProvider(option.value).length > 0)
+  );
   return [
     { label: "Local", options: localOptions },
     { label: "Family Aithys", options: familyOptions },
-    { label: "Hosted providers", options: hostedOptions },
+    { label: "Core providers", options: coreOptions },
+    { label: "Named profiles", options: namedOptions },
+    { label: "Deployment endpoints", options: endpointOptions },
     {
       label: "Sign-in providers",
       options: [{ value: XAI_GROK_SUBSCRIPTION_PROVIDER, label: providerDisplayName(XAI_GROK_SUBSCRIPTION_PROVIDER) }],
-    },
-    {
-      label: "Custom endpoints",
-      options: [{ value: CUSTOM_OPENAI_PROVIDER, label: providerDisplayName(CUSTOM_OPENAI_PROVIDER) }],
     },
   ].filter((group) => group.options.length > 0);
 }

@@ -1,7 +1,11 @@
 import type { AppConfig } from "./env";
-import { isCustomOpenAIProvider, isXaiGrokSubscriptionProvider } from "../agent/ai-providers";
-
-const providersWithoutApiKey = new Set(["ollama", "local", "xai-grok-subscription"]);
+import {
+  isXaiGrokSubscriptionProvider,
+  missingProfileConfiguration,
+  normalizeServiceTierForSelection,
+  normalizeThinkingLevelForSelection,
+  providerAuthentication,
+} from "../agent/ai-providers";
 
 /**
  * Non-throwing predicate: does this config have everything the agent needs to
@@ -14,9 +18,15 @@ export function isAiConfigured(config: AppConfig): boolean {
 export function aiConfigurationIssues(config: AppConfig): string[] {
   const missing: string[] = [];
   if (!config.aiModel) missing.push("model");
-  if (isCustomOpenAIProvider(config.aiProvider) && !config.aiApiUrl) {
-    missing.push("OpenAI-compatible base URL");
-  }
+  missing.push(...missingProfileConfiguration(config.aiProvider, config.aiApiUrl, config.aiProfileArgs));
+  if (
+    config.aiThinkingLevel
+    && normalizeThinkingLevelForSelection(config.aiProvider, config.aiModel, config.aiThinkingLevel) !== config.aiThinkingLevel
+  ) missing.push("supported thinking level");
+  if (
+    config.aiServiceTier
+    && normalizeServiceTierForSelection(config.aiProvider, config.aiModel, config.aiServiceTier) !== config.aiServiceTier
+  ) missing.push("supported service tier");
   if (requiresApiKey(config.aiProvider) && !config.aiApiKey) {
     missing.push("provider API key");
   }
@@ -29,11 +39,27 @@ export function aiConfigurationIssues(config: AppConfig): string[] {
 export function fastAiConfigurationIssues(config: AppConfig): string[] {
   if (!config.fastAiProvider) return [];
   const missing: string[] = [];
+  missing.push(...missingProfileConfiguration(
+    config.fastAiProvider,
+    config.fastAiApiUrl,
+    config.fastAiProfileArgs,
+  ).map((issue) => `fast ${issue}`));
   if (
-    isCustomOpenAIProvider(config.fastAiProvider) && !config.fastAiApiUrl
-  ) {
-    missing.push("fast OpenAI-compatible base URL");
-  }
+    config.fastAiThinkingLevel
+    && normalizeThinkingLevelForSelection(
+      config.fastAiProvider,
+      config.fastAiModel,
+      config.fastAiThinkingLevel,
+    ) !== config.fastAiThinkingLevel
+  ) missing.push("supported fast thinking level");
+  if (
+    config.fastAiServiceTier
+    && normalizeServiceTierForSelection(
+      config.fastAiProvider,
+      config.fastAiModel,
+      config.fastAiServiceTier,
+    ) !== config.fastAiServiceTier
+  ) missing.push("supported fast service tier");
   const fastApiKey = config.fastAiProvider === config.aiProvider
     ? config.fastAiApiKey ?? config.aiApiKey
     : config.fastAiApiKey;
@@ -58,5 +84,5 @@ export function providerRequiresApiKey(provider: string): boolean {
 
 function requiresApiKey(provider: string): boolean {
   if (provider.startsWith("mesh:")) return false;
-  return !providersWithoutApiKey.has(provider);
+  return providerAuthentication(provider) === "required";
 }

@@ -126,4 +126,45 @@ describe("AI settings validation", () => {
     })).resolves.toBeUndefined();
     expect(testedModels).toEqual(["gpt-fast"]);
   });
+
+  test("smoke-tests changed named-profile request options", async () => {
+    const tested: AppConfig[] = [];
+    await assertPrimaryAiSettings({
+      ...loadConfig({}),
+      aiProvider: "openrouter",
+      aiModel: "vendor/model",
+      aiApiKey: "sk-test",
+      aiServiceTier: "auto",
+    }, {
+      runtime: {
+        aiProvider: "openrouter",
+        aiModel: "vendor/model",
+        aiServiceTier: "priority",
+      },
+    }, {
+      testAiChat: async (config) => { tested.push(config); },
+    });
+
+    expect(tested).toHaveLength(1);
+    expect(tested[0]?.aiServiceTier).toBe("priority");
+  });
+
+  test("allows optional-key named profiles when their URL is complete", async () => {
+    const tested: AppConfig[] = [];
+    await assertPrimaryAiSettings(loadConfig({}), {
+      runtime: {
+        aiProvider: "openai-compatible",
+        aiApiUrl: "http://127.0.0.1:8080/v1",
+        aiModel: "local-model",
+      },
+    }, {
+      testAiChat: async (config) => { tested.push(config); },
+    });
+
+    expect(tested[0]).toMatchObject({
+      aiProvider: "openai-compatible",
+      aiApiUrl: "http://127.0.0.1:8080/v1",
+      aiModel: "local-model",
+    });
+  });
 });

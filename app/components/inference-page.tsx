@@ -18,13 +18,18 @@ import {
   startGrokSubscriptionSignIn,
 } from "@/server/actions.functions";
 import type {
+  ConfigDto,
   GrokSubscriptionStatusDto,
   LocalInferencePageStateDto,
   MeshLiveCatalogPeerDto,
   SecretStatusDto,
   SettingsPageStateDto,
 } from "@/server/dto";
-import { CUSTOM_OPENAI_PROVIDER, isLocalAiProvider } from "../../src/agent/ai-providers";
+import {
+  capabilitiesForProviderModel,
+  isLocalAiProvider,
+  providerUsesApiUrl,
+} from "../../src/agent/ai-providers";
 
 export function InferencePage({
   initialState,
@@ -71,17 +76,27 @@ export function InferencePage({
           runtime: {
             aiProvider: config.aiProvider,
             aiApiUrl:
-              config.aiProvider === CUSTOM_OPENAI_PROVIDER
+              providerUsesApiUrl(config.aiProvider)
                 ? config.aiApiUrl.trim()
                 : null,
             aiModel: clearAiModel ? null : config.aiModel,
+            aiProfileArgs: config.aiProfileArgs,
+            aiThinkingLevel: config.aiThinkingLevel || null,
+            aiServiceTier: serviceTierForSave(config.aiProvider, config.aiModel, config.aiServiceTier),
             localAgentModel: selectedLocalAgentModel(config),
             fastAiProvider: config.fastAiProvider,
             fastAiApiUrl:
-              config.fastAiProvider === CUSTOM_OPENAI_PROVIDER
+              providerUsesApiUrl(config.fastAiProvider)
                 ? config.fastAiApiUrl.trim()
                 : null,
             fastAiModel: config.fastAiModel,
+            fastAiProfileArgs: config.fastAiProfileArgs,
+            fastAiThinkingLevel: config.fastAiThinkingLevel || null,
+            fastAiServiceTier: serviceTierForSave(
+              config.fastAiProvider,
+              config.fastAiModel,
+              config.fastAiServiceTier,
+            ),
           },
           apiKey: options?.clearApiKey ? undefined : apiKey || undefined,
           clearApiKey: options?.clearApiKey,
@@ -256,6 +271,14 @@ function selectedLocalAgentModel(config: SettingsPageStateDto["config"]): string
   if (isLocalAiProvider(config.aiProvider)) return config.aiModel;
   if (isLocalAiProvider(config.fastAiProvider)) return config.fastAiModel;
   return config.localAgentModel;
+}
+
+function serviceTierForSave(
+  provider: string,
+  model: string,
+  tier: ConfigDto["aiServiceTier"],
+): ConfigDto["aiServiceTier"] | undefined {
+  return capabilitiesForProviderModel(provider, model).serviceTiers.length > 0 ? tier : undefined;
 }
 
 function secretForProvider(secret: SecretStatusDto | null, provider: string): SecretStatusDto | null {
