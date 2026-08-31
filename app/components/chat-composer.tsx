@@ -227,10 +227,11 @@ export function ChatComposer({
               value={input}
               onChange={(event) => onInputChange(event.target.value)}
               onKeyDown={(event) => {
-                if (event.key === "Enter" && !event.shiftKey) {
-                  event.preventDefault();
-                  submit();
-                }
+                if (event.key !== "Enter" || event.shiftKey) return;
+                // Japanese/other IME: Enter confirms composition; don't send yet.
+                if (event.nativeEvent.isComposing || event.keyCode === 229) return;
+                event.preventDefault();
+                submit();
               }}
               placeholder="Hey Aithy"
               className="max-h-60 min-h-11 overflow-y-auto rounded-none border-0 bg-transparent px-0 py-2.5 text-base leading-6 shadow-none placeholder:text-[rgb(var(--muted-foreground))]/75 focus:border-0"

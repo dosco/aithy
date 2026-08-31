@@ -148,6 +148,7 @@ export function useChatController({
         setStreamingDraft(null);
         const turnToComplete = localTurnRef.current;
         if (assistantCompletesLocalTurn(turnToComplete, event.conversationId, message.createdAt)) {
+          localTurnRef.current = IDLE_LOCAL_CHAT_TURN;
           setLocalTurn(IDLE_LOCAL_CHAT_TURN);
         }
       }
@@ -173,7 +174,10 @@ export function useChatController({
     const useSelectedSkills = options.useSelectedSkills ?? true;
     const skillsForTurn = options.selectedSkillsOverride
       ?? (useSelectedSkills ? selectedSkills : []);
-    if (turn.busy && activeSessionId && !options.pendingMessage) {
+    // Use the ref as well as React state: two Enter/clicks can race before setState
+    // re-renders, which used to POST the same chat turn twice.
+    const syncBusy = turn.busy || localTurnRef.current.phase !== "idle";
+    if (syncBusy && activeSessionId && !options.pendingMessage) {
       enqueuePending({
         conversationId: activeSessionId,
         text,
@@ -194,6 +198,7 @@ export function useChatController({
       taskId: null,
       phase: "submitting",
     };
+    localTurnRef.current = nextLocalTurn;
     setLocalTurn(nextLocalTurn);
     if (wasDraft) setActiveSessionId(conversationId);
     if (!isCommand) {
@@ -211,9 +216,11 @@ export function useChatController({
       });
       const taskId = taskIdFromResult(result);
       const queued = Boolean(result.queued && !isCommand);
-      setLocalTurn(queued
-        ? { ...nextLocalTurn, taskId, phase: "awaiting_reply" }
-        : IDLE_LOCAL_CHAT_TURN);
+      const settledTurn = queued
+        ? { ...nextLocalTurn, taskId, phase: "awaiting_reply" as const }
+        : IDLE_LOCAL_CHAT_TURN;
+      localTurnRef.current = settledTurn;
+      setLocalTurn(settledTurn);
       if (!isCommand && useSelectedSkills && !options.pendingMessage) setSelectedSkills([]);
       if (result.activeSessionId !== conversationId) {
         setActiveSessionId(result.activeSessionId);
@@ -222,6 +229,7 @@ export function useChatController({
         await navigateToSession(conversationId);
       }
     } catch (error) {
+      localTurnRef.current = IDLE_LOCAL_CHAT_TURN;
       setLocalTurn(IDLE_LOCAL_CHAT_TURN);
       if (options.pendingMessage) restorePending(options.pendingMessage);
       throw error;
@@ -255,6 +263,7 @@ export function useChatController({
   }, [input, submitText]);
 
   const stop = useCallback(() => {
+    localTurnRef.current = IDLE_LOCAL_CHAT_TURN;
     setLocalTurn(IDLE_LOCAL_CHAT_TURN);
     setStreamingDraft(null);
     if (activeSessionId) void stopChatMessage({ data: { conversationId: activeSessionId } });
